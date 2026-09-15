@@ -17,7 +17,9 @@ Key differences: `proxy.ts` replaces `middleware.ts` (Node runtime only), `cooki
 1. **Isolation lives in Postgres.** Every table has RLS. Every query from app code runs with the
    user's session (anon key + user JWT) so RLS applies. UI hiding is never a control.
 2. **Service role** (`src/server/supabase/admin.ts`) is used only for (a) Supabase Auth admin ops
-   (create/ban users) and (b) Twilio webhooks. Nothing else. Grep-able: `createAdminClient(`.
+   (create/ban users), (b) Twilio webhooks, and (c) the voicemail route's
+   `get_voicemail_recording(callId, sessionUserId)` lookup after `getUser()` (DEVIATIONS D13). Nothing else.
+   Grep-able: `createAdminClient(`.
 3. **Every server action, route handler and service** validates input with Zod and checks auth and
    role itself. `proxy.ts` is only an optimistic redirect.
 4. **Unauthorized equals nonexistent.** Return 404 `{ error: 'not_found' }` for IDs the caller
@@ -86,16 +88,18 @@ src/
     api/twilio/voice/{outbound,dial-complete,status,inbound,inbound-dial-complete,voicemail-complete,recording-status}/route.ts
   components/
     ui/                  shadcn (do not hand-edit except theme-level tweaks)
-    app-shell/           sidebar, bottom-nav, page-header, voicemail-badge
+    app-shell/           app-shell, sidebar, bottom-nav, user-menu, brand, nav-config, voicemail-badge
+    common/              page-header, empty-state
     dialer/              call-button, in-call-bar, outcome-sheet, incoming-call, keypad, dialer-provider
-    leads/ follow-ups/ pipeline/ dashboard/ admin/ import/ common/
+    leads/ follow-ups/ pipeline/ dashboard/ admin/ import/
   lib/
     database.types.ts    generated (npm run db:types)
     utils.ts             shadcn cn()
     domain/              PURE, isomorphic, unit-tested:
       phone.ts website.ts dedupe.ts outcomes.ts statuses.ts csv.ts split.ts time.ts import-mapping.ts
     dialer/              client dialer module (types, resolve-mode, drivers/{twilio,tel,mock}.ts)
-    supabase/browser.ts  createBrowserClient
+    supabase/browser.ts  createBrowserSupabase() (singleton)
+    supabase/auth-redirect.ts  safeNextPath, LOGIN_PATH, isPublicPath, isAdminPath
   server/
     env.ts               Zod-validated env ('server-only')
     supabase/server.ts   createServerSupabase() for RSC/actions (next/headers cookies)
@@ -127,7 +131,7 @@ e2e/                     Playwright specs (mock dialer)
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client+server | anon or publishable key |
 | `SUPABASE_SERVICE_ROLE_KEY` | server-only | service_role or secret key |
 | `APP_BASE_URL` | server-only | exact public origin, no trailing slash; used for Twilio signature URLs |
-| `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock` (default `mock` in dev if Twilio vars missing) |
+| `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock`. Unset: `twilio` when configured, else `mock` in development/test and `tel` in production (never silently fake calls in prod) |
 | `TWILIO_ACCOUNT_SID` `TWILIO_AUTH_TOKEN` `TWILIO_API_KEY_SID` `TWILIO_API_KEY_SECRET` `TWILIO_TWIML_APP_SID` | server-only | required when `DIALER_DRIVER=twilio` |
 
 `src/server/env.ts` exports `getServerEnv()`, which parses lazily and caches (so importing never
@@ -225,6 +229,7 @@ create type public.call_mode     as enum ('IN_APP','TEL');
 | voicemail_recording_sid | text | |
 | voicemail_duration_seconds | int | |
 | handled_at | timestamptz | voicemail heard/handled |
+| client_request_id | uuid | TEL idempotency key from `log_call` `p_call_id`, never the row id; not granted to API roles (addition, D16) |
 
 CHECKs: `direction = 'INBOUND' or (user_id is not null and lead_id is not null)`,
 `mode = 'IN_APP' or provider_call_sid is null`.
@@ -242,7 +247,8 @@ anon/authenticated.
 - leads: `(assigned_to, status)`, `(assigned_to, next_follow_up_at)`, `(assigned_to, last_contacted_at)`,
   `(phone)`, `(website_domain)`, `(dedupe_name_key)`, `(created_at)`; GIN `extensions.gin_trgm_ops` on
   `business_name, contact_name, email, website, city, phone`
-- calls: `(user_id, created_at)`, `(lead_id, created_at)`, unique `(provider_call_sid)`
+- calls: `(user_id, created_at)`, `(lead_id, created_at)`, `(phone_number_id, created_at)`, unique `(provider_call_sid)`,
+  unique `(user_id, lead_id, client_request_id) where client_request_id is not null`
 - follow_ups: `(user_id, due_at) where completed_at is null`, `(lead_id) where completed_at is null`
 - phone_numbers: `(assigned_to)`
 - rate_limit_hits: `(user_id, bucket, created_at)`
@@ -255,17 +261,28 @@ anon/authenticated.
 - `profiles_guard`: BEFORE UPDATE, SECURITY INVOKER. If `not public.is_privileged_role() and not public.is_admin()`,
   only `name` may change (else `42501`). `id`, `email`, `created_at` are immutable for non-privileged callers.
   An admin cannot change their own `role` or `active` (lockout guard).
-- `leads_guard`: BEFORE UPDATE, SECURITY INVOKER. If `not is_privileged_role() and not is_admin()`, only
-  `status`, `notes`, `next_follow_up_at` may differ (else `42501`). **Always** sets
-  `NEW.next_follow_up_at := public.lead_earliest_open_follow_up(NEW.id)` (SECURITY DEFINER helper), so
-  direct writes to that column cannot break the invariant.
+- `leads_guard`: BEFORE INSERT OR UPDATE, SECURITY INVOKER. On INSERT `next_follow_up_at` is forced to null
+  (a new lead has no follow-ups). On UPDATE by a privileged caller (definer RPCs, the follow_ups sync trigger,
+  service_role) `NEW.next_follow_up_at := public.lead_earliest_open_follow_up(NEW.id)`. API callers (agents and
+  admins) keep `OLD.next_follow_up_at`, which `follow_ups_sync_lead` keeps current, so direct writes to that
+  column are silently ignored and `lead_earliest_open_follow_up` never needs to be granted to authenticated.
+  Non-admin API callers may change only `status` and `notes` (else `42501`), and may not change `status` away from
+  `DO_NOT_CONTACT` (DEVIATIONS D12).
 - `follow_ups_sync_lead`: AFTER INSERT/UPDATE/DELETE on follow_ups, SECURITY DEFINER. Recomputes
   `leads.next_follow_up_at` for OLD/NEW lead_id.
-- `follow_ups_guard`: BEFORE UPDATE. For non-privileged non-admins, `lead_id` and `user_id` are immutable.
+- `leads_move_open_follow_ups`: AFTER UPDATE OF assigned_to on leads, SECURITY DEFINER. When the new owner is non-null,
+  moves the lead's open follow-ups to them, on every assignment path (`reassign_leads`, a direct admin update, imports).
+  Completed follow-ups keep their user.
+- `follow_ups_guard`: BEFORE UPDATE. For non-privileged non-admins, `id`, `lead_id`, `user_id` and `created_at` are immutable.
+- `profiles_validate_timezone` / `settings_validate_timezone`: BEFORE INSERT/UPDATE OF timezone, invalid IANA zone → `22023`.
+- `profiles_guard` details: the lockout (own `role`/`active`) applies to every caller whose `auth.uid()` is the row;
+  non-privileged non-admins may change only `name` (max 200 chars); admins may change anything except `id`,
+  `email` (synced from auth.users only) and `created_at`.
 
-`public.is_privileged_role()` returns `current_user not in ('anon','authenticated')`. Inside
-SECURITY DEFINER functions `current_user` is the owner (`postgres`), so definer RPCs are trusted and
-must do their own checks.
+`public.is_privileged_role()` returns `current_user not in ('anon','authenticated')`. It is SECURITY INVOKER
+(it must see the real caller) and granted to authenticated, because the invoker guard triggers call it as the
+API role. Inside SECURITY DEFINER functions `current_user` is the owner (`postgres`), so definer RPCs are
+trusted and must do their own checks.
 
 ### 4.5 Grants (Supabase grants ALL to anon/authenticated by default, so revoke explicitly)
 - `revoke all on all tables in schema public from anon;` (anon gets nothing; login page is static).
@@ -274,9 +291,21 @@ must do their own checks.
   Hidden from API reads: `user_id`, `phone_number_id`, `provider_call_sid`, `voicemail_recording_sid`.
   The app reads those through SECURITY DEFINER RPCs only.
 - `rate_limit_hits`: revoke all from anon, authenticated.
+- `follow_ups`: authenticated has INSERT and UPDATE only on `(lead_id, user_id, due_at, note, completed_at)`. API callers
+  never choose `id` or `created_at`: a chosen id that collides with an existing row would reveal that row (D16).
 - Functions: every migration ends by `revoke execute on function … from public, anon;` for each function
-  it creates, then `grant execute … to authenticated` (API RPCs) or `to service_role` (webhook-only).
-  `get_company_name()` is additionally granted to anon.
+  it creates, then `grant execute … to authenticated` (API RPCs) or `to service_role` (webhook-only; also
+  revoke from authenticated). `get_company_name()` is additionally granted to anon. Trigger functions and the internal
+  `apply_rate_limit` are revoked from every API role, service_role included.
+- Default privileges (migration 000300): `alter default privileges for role postgres revoke execute on functions from public`
+  and `... in schema public revoke execute on functions from anon`, so a function a later migration forgets to
+  revoke is still not callable by anon. authenticated/service_role keep Supabase's default EXECUTE, so
+  service-only functions must still be revoked from authenticated. Tables: later tables are not granted to anon;
+  they are granted to authenticated by default, so every later table must enable RLS.
+- `revoke truncate, references, trigger on all tables in schema public from authenticated` (RLS does not cover TRUNCATE),
+  plus `alter default privileges for role postgres in schema public revoke truncate, references, trigger on tables from
+  authenticated` so tables created by later migrations never get them either.
+- `tests/db/grants.test.ts` holds the EXECUTE matrix for every public function; a new function must be added there.
 
 ### 4.6 RLS policies (all `to authenticated`; wrap helpers as `(select public.is_admin())`)
 - **profiles**: SELECT `is_admin() or (id = auth.uid() and is_active_user())`. UPDATE same using/check.
@@ -303,29 +332,38 @@ Helpers (SECURITY DEFINER, STABLE, `search_path=''`, granted to authenticated):
 Outcome mapping: NO_ANSWER→NO_ANSWER, VOICEMAIL→VOICEMAIL, CONNECTED→CONNECTED, INTERESTED→INTERESTED,
 FOLLOW_UP→FOLLOW_UP, APPOINTMENT→APPOINTMENT, NOT_INTERESTED→NOT_INTERESTED, WRONG_NUMBER→DO_NOT_CONTACT.
 No downgrade: NO_ANSWER/VOICEMAIL on APPOINTMENT/PROPOSAL/CLIENT keeps the current status.
+Sticky DO_NOT_CONTACT: any outcome on a DO_NOT_CONTACT lead keeps DO_NOT_CONTACT (DEVIATIONS D11).
+`src/lib/domain/outcomes.ts` `outcomeToStatus` must stay identical (tests/db/log-call.test.ts checks all 96 pairs).
 "Connected" in stats = outcome not null and not in (NO_ANSWER, VOICEMAIL, WRONG_NUMBER).
 
-Error conventions raised by RPCs (the HTTP layer maps them):
-`not_found` → `errcode 'P0002'` (HTTP 404) · `forbidden` → `'42501'` (403, used only where 404 would
-be wrong, e.g. inactive self) · validation → `'22023'` (400) · `do_not_contact` / `call_in_progress` →
-`'P0001'` with that exact message (409).
+Call notes (log_call): ASCII whitespace (` \t\n\r\f\v`) is trimmed and blank becomes null. WRONG_NUMBER stores
+`'Wrong number'` for blank notes, keeps notes that already match `^wrong number( — |$)` case-insensitively
+(so a retried save never doubles the prefix), and otherwise stores `'Wrong number — ' || notes` (em dash U+2014).
+`normalizeCallNotes` / `applyWrongNumberPrefix` in `outcomes.ts` mirror this exactly.
+
+Error conventions raised by RPCs: `not_found` → `errcode 'P0002'` · `forbidden` → `'42501'` (used only where
+404 would be wrong, e.g. inactive self) · validation → `'22023'` · `do_not_contact` / `call_in_progress` /
+`rate_limited` → `'P0001'` with that exact message. App code maps by **error code** (`mapPostgrestError`), never by the
+PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. The app's own responses are
+404 / 403 / 400 / 409 (429 for `rate_limited`) respectively.
 
 | RPC | security | who | behavior |
 |---|---|---|---|
-| `log_call(p_outcome call_outcome, p_lead_id uuid default null, p_call_id uuid default null, p_notes text default null, p_follow_up_at timestamptz default null, p_follow_up_note text default null, p_duration_seconds int default null) → jsonb` | definer | authenticated | One transaction. Caller must be active. If `p_call_id` names an existing row: caller must be admin or `user_id = auth.uid()`, the row's lead must match `p_lead_id` (if given) and be accessible, else `not_found`. If the row has no outcome yet, `call_count += 1`, else no increment (re-log only updates outcome/notes). `p_duration_seconds` applies only if `duration_seconds` is null. If no row exists: `p_lead_id` is required and must be accessible, then insert a `TEL` OUTBOUND row (with `id = p_call_id` if given, making TEL logging idempotent), `call_count += 1`. For lead rows: `last_contacted_at = now()`, `status = outcome_to_status()`, unhandled voicemails on that lead get `handled_at = now()`, open follow-ups with `due_at <= now()` get completed, and if `p_follow_up_at` is set a follow-up is inserted for `coalesce(lead.assigned_to, auth.uid())`. `FOLLOW_UP` requires `p_follow_up_at` (22023). `WRONG_NUMBER` prefixes notes with `Wrong number` (`'Wrong number — ' \|\| notes` when notes are non-empty). Returns `{call_id, lead_id, status, call_count, next_follow_up_at}`. |
+| `log_call(p_outcome call_outcome, p_lead_id uuid default null, p_call_id uuid default null, p_notes text default null, p_follow_up_at timestamptz default null, p_follow_up_note text default null, p_duration_seconds int default null) → jsonb` | definer | authenticated | One transaction. Caller must be active. `p_call_id` first names a row the caller may log: any row for an admin, else `user_id = auth.uid()` with the row's lead assigned to the caller (or no lead). Failing that, it is looked up as the caller's TEL idempotency key on `p_lead_id` (`client_request_id`). A row the caller may not log is handled exactly like an unknown id, so known ids reveal nothing (D16). A found row's lead must match `p_lead_id` (if given), else `not_found`. If the row has no outcome yet, `call_count += 1`, else no increment (re-log only updates outcome/notes). `p_duration_seconds` (0..86400, else `22023`) applies only to TEL rows, and only if `duration_seconds` is null. In-app durations come from Twilio. If no row exists: `p_lead_id` is required and must be accessible, then insert a `TEL` OUTBOUND row with a server-generated id and `client_request_id = p_call_id` (unique per user and lead, making TEL logging idempotent; a retry sends the same `p_lead_id` or the returned `call_id`), `call_count += 1`. For lead rows: `last_contacted_at = now()`, `status = outcome_to_status()`, unhandled voicemails on that lead get `handled_at = now()`, and on the first log of that call row only (never on a retry) open follow-ups with `due_at <= now()` get completed and, if `p_follow_up_at` is set, a follow-up is inserted for `coalesce(lead.assigned_to, auth.uid())`. `FOLLOW_UP` requires `p_follow_up_at` (22023). `WRONG_NUMBER` prefixes notes once (see "Call notes" above). A **new** TEL row on a DO_NOT_CONTACT lead raises `do_not_contact` (DEVIATIONS D8); logging an existing row still works. Returns `{call_id, lead_id, status, call_count, next_follow_up_at}` (lead fields null for an unmatched inbound call). |
 | `get_next_lead(p_exclude_ids uuid[] default '{}') → table(lead_id, business_name, contact_name, phone, status, city, state, last_contacted_at, next_follow_up_at, call_count, reason text)` | definer | authenticated | Caller's own assigned leads only. Excludes CLIENT/NOT_INTERESTED/DO_NOT_CONTACT and `p_exclude_ids`. Excludes leads with `last_contacted_at > now() - 4h` unless they have an open follow-up due (`due_at <= now()`) or an unheard voicemail. Buckets in order, reason codes: `VOICEMAIL` (unheard voicemail, oldest voicemail first) → `OVERDUE` (open follow-up `due_at < now()`, oldest first) → `DUE_TODAY` (open follow-up due later today in caller's timezone, soonest first) → `NEW` (status NEW/TO_CALL, oldest created first) → `RETRY` (NO_ANSWER/VOICEMAIL, `last_contacted_at asc nulls first`, then `call_count asc`). Leads matching no bucket are not suggested. Returns 0 or 1 row. |
-| `create_outbound_call(p_lead_id uuid) → uuid` | definer | authenticated | Active caller with `in_app_calling_enabled`, else forbidden. Lead must be accessible (admin: any lead), else `not_found`. DO_NOT_CONTACT → `do_not_contact`. If the caller has a call with `call_status in ('queued','ringing','in-progress')` created in the last 2h → `call_in_progress`. Inserts OUTBOUND/IN_APP row with `user_id = auth.uid()` and `remote_e164 = lead.phone`. |
+| `create_outbound_call(p_lead_id uuid) → uuid` | definer | authenticated | Active caller with `in_app_calling_enabled`, else forbidden. Lead must be accessible (admin: any lead), else `not_found`. DO_NOT_CONTACT → `do_not_contact`. Deletes the caller's un-started pre-created rows (OUTBOUND/IN_APP with no provider SID, no status and no outcome), so each agent has at most one dialable row (D15). If the caller has an unlogged call (`outcome is null`) with `call_status in ('queued','ringing','in-progress')` created in the last 2h → `call_in_progress`. Applies the `outbound_call` rate limit (12/min) itself → `P0001 rate_limited` (D14). Inserts OUTBOUND/IN_APP row with `user_id = auth.uid()` and `remote_e164 = lead.phone`. |
 | `get_lead_call_history(p_lead_id uuid) → table(id, created_at, direction, mode, call_status, outcome, notes, duration_seconds, has_voicemail boolean, voicemail_duration_seconds, handled_at, is_mine boolean, caller_name text, caller_id_e164 text)` | definer | authenticated | Empty set if `not can_access_lead`. `caller_name`/`caller_id_e164` are non-null **only for admins**. Newest first. |
-| `get_voicemail_recording(p_call_id uuid) → text` | definer | authenticated | Recording SID if the caller may access that call (admin, lead accessible, or `lead_id is null and user_id = auth.uid()`), else null. |
+| `get_voicemail_recording(p_call_id uuid, p_user_id uuid) → text` | definer | **service_role only** | Recording SID if the active user `p_user_id` may access that call (admin, lead assigned to them, or `lead_id is null and user_id = p_user_id`), else null. Refuses API-role JWT claims. Called only by `/api/voicemail/[callId]` with the `getUser()` id (D13). |
 | `mark_voicemail_heard(p_call_id uuid) → boolean` | definer | authenticated | Same access. Sets `handled_at` if null. |
 | `list_voicemails(p_unheard_only boolean default false, p_limit int default 50, p_offset int default 0) → table(call_id, created_at, lead_id, business_name, contact_name, phone, lead_status, voicemail_duration_seconds, handled_at, total_count bigint)` | definer | authenticated | Scoped like `get_voicemail_recording`. For unmatched calls, `phone = remote_e164` and business is null. |
 | `unheard_voicemail_count() → int` | definer | authenticated | Scoped count. |
-| `reassign_leads(p_lead_ids uuid[], p_to_user_id uuid) → int` | definer | admin | `p_to_user_id` must be an active AGENT or ADMIN, or null (= unassign). Updates `assigned_to` and moves open follow-ups to the new owner (when non-null). Calls are untouched. Returns the updated count. |
-| `search_leads(p_query text default null, p_statuses lead_status[] default null, p_source text default null, p_assigned_to uuid default null, p_unassigned boolean default false, p_sort text default 'created_at', p_dir text default 'desc', p_limit int default 25, p_offset int default 0) → table(id, created_at, business_name, contact_name, phone, email, website, city, state, country, source, status, assigned_to, last_contacted_at, next_follow_up_at, call_count, total_count bigint)` | **invoker** | authenticated | RLS scopes rows. Non-admins also get an explicit `assigned_to = auth.uid()`, and `p_assigned_to`/`p_unassigned` are ignored. Query matches ILIKE on business/contact/email/website/city, or phone digits substring when the query contains ≥3 digits. Sort whitelist: `business_name, last_contacted_at, next_follow_up_at, call_count, created_at` (nulls last). `p_limit` is clamped to 1..100. |
+| `reassign_leads(p_lead_ids uuid[], p_to_user_id uuid) → int` | definer | admin | `p_to_user_id` must be an active AGENT or ADMIN, or null (= unassign). Updates `assigned_to`; the `leads_move_open_follow_ups` trigger moves open follow-ups to the new owner (when non-null). Calls are untouched. Returns the updated count. |
+| `search_leads(p_query text default null, p_statuses lead_status[] default null, p_source text default null, p_assigned_to uuid default null, p_unassigned boolean default false, p_sort text default 'created_at', p_dir text default 'desc', p_limit int default 25, p_offset int default 0) → table(id, created_at, business_name, contact_name, phone, email, website, city, state, country, source, status, assigned_to, last_contacted_at, next_follow_up_at, call_count, total_count bigint)` | **invoker** | authenticated | RLS scopes rows. Non-admins also get an explicit `assigned_to = auth.uid()`, and `p_assigned_to`/`p_unassigned` are ignored. Query matches ILIKE on business/contact/email/website/city, or phone digits substring when the query is phone-like (only digits, spaces and `+-().`) with ≥3 digits (D17). Sort whitelist: `business_name, last_contacted_at, next_follow_up_at, call_count, created_at` (nulls last). `p_limit` is clamped to 1..100. |
 | `list_lead_sources() → setof text` | invoker | authenticated | Distinct non-null sources visible to the caller. |
 | `touch_device_presence() → void` | definer | authenticated | `device_seen_at = now()` for the active caller. |
-| `consume_rate_limit(p_bucket text, p_max int, p_window_seconds int) → boolean` | definer | authenticated | Keyed on `auth.uid()`. Prunes old hits, returns false when over the limit, otherwise records a hit. |
-| `claim_caller_id(p_user_id uuid) → table(phone_number_id uuid, e164 text)` | definer | **service_role only** | Least recently used active number assigned to the user, else least recently used active pool number (`last_used_at nulls first, created_at`), with `for update skip locked`. Sets `last_used_at = now()`. |
+| `consume_rate_limit(p_bucket text) → boolean` | definer | authenticated | Keyed on `auth.uid()`; inactive or missing caller → `42501`. Only `voice_token` is accepted (else `22023`). Delegates to `apply_rate_limit`. |
+| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min; unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
+| `claim_caller_id(p_user_id uuid) → table(phone_number_id uuid, e164 text)` | definer | **service_role only** | Least recently used active number assigned to the user, else least recently used active pool number (`last_used_at nulls first, created_at`), locking the assigned number with `for no key update` (without SKIP LOCKED, so the KEY SHARE lock of a concurrent calls insert never causes a pool fallback) and pool numbers with `for no key update skip locked`. Sets `last_used_at = now()`. |
 | `apply_call_status(p_call_sid text, p_status text, p_duration int default null) → boolean` | definer | service_role only | Idempotent. Finds the row by `provider_call_sid`. Terminal statuses (completed/busy/no-answer/failed/canceled) are never replaced by non-terminal ones, and a terminal status only changes if the duration is being filled. `duration_seconds = greatest(existing, p_duration)`. |
 | `record_voicemail(p_call_sid text, p_recording_sid text, p_duration int) → boolean` | definer | service_role only | Atomic: sets the recording where `voicemail_recording_sid is null`. On first set, if the lead has an owner, inserts follow-up (owner, `due_at = now()`, note 'Voicemail received'). Returns whether it was newly set. |
 
@@ -366,8 +404,9 @@ export function requireAdmin(ctx): RequestContext   // throws AppError('forbidde
 - The user is identified via `supabase.auth.getUser()` (server-validated), and the profile is read with
   the same session. An inactive profile or a missing row counts as unauthorized.
 - `AppError` codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `validation` (400),
-  `conflict` (409), `rate_limited` (429), `unavailable` (503). `mapPostgrestError(err)` maps P0002→not_found,
-  42501→forbidden, 22023/22P02/23514→validation, P0001 do_not_contact/call_in_progress→conflict.
+  `conflict` (409), `rate_limited` (429), `unavailable` (503), `internal` (500, unmapped errors).
+  Route handlers that browsers call with cookies use `getRouteAuth(req) → { ctx, applyCookies }`. `mapPostgrestError(err)` maps P0002→not_found,
+  42501→forbidden, 22023/22P02/23514→validation, P0001 do_not_contact/call_in_progress→conflict, P0001 rate_limited→rate_limited.
 - Server actions return `ActionResult<T> = { ok: true; data: T } | { ok: false; error: { code: AppErrorCode; message: string } }`
   and never throw to the client.
 - Route handler cores: `src/server/http/<name>.ts` exports `handle<Name>(req: Request, deps?: Partial<Deps>)`.
@@ -418,7 +457,8 @@ every CALL button is disabled unless idle. Flow for in-app: POST `/api/calls/out
 When the call disconnects, the outcome sheet opens with **No Answer pre-selected** for busy/no-answer/failed.
 For tel: CALL renders `<a href="tel:…">`. On click, remember `{leadId, startedAt}`. When the page becomes
 visible again, open the outcome sheet (and show a sticky "Log outcome" bar as a fallback). The TEL `callId`
-is a client-generated UUID passed to `log_call` for idempotency. Mock driver: rings 1.2s → connected until
+is a client-generated UUID passed to `log_call` together with the lead id for idempotency. It is stored as
+`client_request_id`, and `log_call` returns the row id as `call_id`. Mock driver: rings 1.2s → connected until
 hangup. It exposes `window.__fmqMockDialer = { remoteHangup(reason), simulateIncoming(callId) }` only
 when `DIALER_DRIVER=mock`.
 
@@ -434,10 +474,15 @@ when `DIALER_DRIVER=mock`.
 - `/api/twilio/voice/outbound` (TwiML App Voice URL). If `From` starts with `client:` it is the outbound
   flow, otherwise it delegates to the inbound handler (numbers point at the TwiML App).
   Outbound checks: load the row by `params.callId` (uuid) via service role. The row must be OUTBOUND/IN_APP
-  with `provider_call_sid is null` and be created ≤10 min ago. `From` must equal `client:<calls.user_id>`.
+  with `provider_call_sid is null` and `call_status is null`, and be created ≤10 min ago. `From` must equal `client:<calls.user_id>`.
   The user must be active with in-app calling enabled. The lead must still be assigned to that user
   (or the user is admin), and its status must not be DO_NOT_CONTACT. Then `claim_caller_id`. If there is no
-  number, return failure TwiML. Otherwise set `provider_call_sid=CallSid, phone_number_id, call_status='queued'`.
+  number, return failure TwiML. Otherwise claim the row atomically:
+  `update … set provider_call_sid=CallSid, phone_number_id, call_status='queued' where id = … and provider_call_sid is null
+  and call_status is null and outcome is null`. If no row was updated (superseded by a newer call, already claimed, or already
+  logged), return failure TwiML. The `outcome is null` condition matters: `create_outbound_call` keeps rows whose outcome was
+  logged, and its `call_in_progress` check ignores logged rows, so without it several logged-but-never-dialed rows could be
+  dialed at once.
   Respond: `<Dial callerId="{e164}" timeout="30" answerOnBridge="true" action="{APP_BASE_URL}/api/twilio/voice/dial-complete"><Number statusCallback="{APP_BASE_URL}/api/twilio/voice/status" statusCallbackEvent="initiated ringing answered completed">{lead.phone}</Number></Dial>`.
 - `/status`: child-leg callbacks carry `ParentCallSid`, so look up by `ParentCallSid ?? CallSid` and call `apply_call_status`.
 - `/dial-complete`: `DialCallStatus` and `DialCallDuration` go to `apply_call_status`. Respond with an empty `<Response/>`.
@@ -454,11 +499,14 @@ when `DIALER_DRIVER=mock`.
 - `/inbound-dial-complete`: `DialCallStatus` completed → `<Response/>`. Anything else → voicemail TwiML.
 - `/recording-status`: `record_voicemail(CallSid, RecordingSid, RecordingDuration)`.
 - `/voicemail-complete`: `<Say>Thank you. Goodbye.</Say><Hangup/>`.
-- `/api/voice/token`: requires an active session with in-app calling enabled. Rate limit `voice_token` 20/10min.
+- `/api/voice/token`: requires an active session with in-app calling enabled. Rate limit with `consume_rate_limit('voice_token')` (20/10min, fixed in SQL).
   Returns 503 if Twilio isn't configured. AccessToken `{identity: userId, ttl: 3600}` + VoiceGrant
   `{outgoingApplicationSid, incomingAllow: true}` → `{ token, identity, ttl }`.
-- `/api/calls/outbound`: Zod `{leadId: uuid}`, rate limit `outbound_call` 12/min, then `create_outbound_call`.
-- `/api/voicemail/[callId]`: uuid check, then session, then `get_voicemail_recording`; if null → 404. Fetch
+- `/api/calls/outbound`: Zod `{leadId: uuid}`, then `create_outbound_call`, which enforces the `outbound_call` 12/min limit
+  itself (`P0001 rate_limited` → 429). The route does not consume a separate hit.
+- `/api/voicemail/[callId]`: uuid check, then session (`getUser()`, active), then
+  `createAdminClient().rpc('get_voicemail_recording', { p_call_id, p_user_id: ctx.userId })`; if null → 404. The SID never
+  leaves the server (D13). Fetch
   `https://api.twilio.com/2010-04-01/Accounts/{sid}/Recordings/{RecordingSid}.mp3` with API-key basic auth
   (forward `Range`) and stream back with `Cache-Control: private, no-store`. In mock/unconfigured mode,
   stream a generated short WAV tone so dev seed voicemails play.
@@ -492,7 +540,8 @@ It boots PGlite (memory when no `dataDir`), loads `pg_trgm` + `pgcrypto`, runs `
 
 **Kong-like gate:** every request needs an `apikey` header equal to the anon or service key (else 401).
 The role comes from the verified `Authorization: Bearer` JWT (`role` claim ∈ anon/authenticated/service_role;
-anything else → 401).
+anything else → 401). As in PostgREST, a verified token without a `role` claim runs as `anon`, and an `authenticated`
+token without `sub` runs with `auth.uid()` null.
 
 **Per request:** `BEGIN; SET LOCAL ROLE <role>; select set_config('request.jwt.claims', $claims, true);`
 run; `COMMIT` (or `ROLLBACK` on error). All work is serialized through one PGlite queue. **Never** run a
@@ -503,14 +552,16 @@ request's SQL as `postgres`.
 - `select=` columns with `alias:col`; `*` allowed; embeds are rejected (400 `PGRST100`).
 - Filters `eq,neq,gt,gte,lt,lte,like,ilike,is(null|true|false),in.(…)`, `not.<op>`, `or=(…)`/`and=(…)`
   with nesting and quoted values. `order=col.asc|desc[.nullsfirst|.nullslast]`. `limit`, `offset`, `Range`.
-- `Prefer: count=exact`, `return=representation|minimal`. `Accept: application/vnd.pgrst.object+json`
+- `Prefer: count=exact`, `return=representation|minimal`. `count=planned|estimated` → 400 `PGRST100`: PostgREST answers
+  those from planner statistics of the whole table, which RLS does not scope, so the app uses only `count=exact` or an
+  RPC's `total_count`. `Accept: application/vnd.pgrst.object+json`
   gives a single object or 406 `PGRST116`. `Content-Range` header.
 - `POST /rest/v1/rpc/:fn` (named JSON args, looked up in `pg_proc`, each arg JSON→declared type in SQL).
   Returns set/table → JSON array, scalar/composite → JSON value, void → 204.
 - Columns and functions are validated against the catalog. Values are always bound parameters.
-- Errors use the PostgREST shape `{code,message,details,hint}` with the PostgREST HTTP status mapping
-  (42501→403 for authenticated / 401 for anon, P0002→404, 23505/23503→409, 22P02/22023/23514/P0001→400,
-  PGRST116→406). Unsupported syntax → 400, never silently ignored.
+- Errors use the PostgREST shape `{code,message,details,hint}` with PostgREST 12's HTTP status mapping
+  (42501→403 for authenticated / 401 for anon, 23505/23503→409, 22P02/22023/23514/P0001→400, other P0xxx
+  such as P0002→500, 25006→405, PGRST116→406). Unsupported syntax → 400, never silently ignored.
 
 **/auth/v1 (GoTrue subset):** `POST /token?grant_type=password|refresh_token`, `GET/PUT /user`,
 `POST /logout`, `GET /health`, `GET/POST /admin/users`, `GET/PUT/DELETE /admin/users/:id`
@@ -533,6 +584,25 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
 - `server-only` is aliased to an empty module in vitest.
 - Seeded data is **read-only** for tests. Any test that mutates (reassign, disable, log_call, webhooks)
   creates its own users/leads via `tests/helpers/fixtures.ts` with unique emails.
+- Helpers (`tests/helpers/`):
+  - `global-setup.ts` (integration globalSetup): starts `startLocalbase({ port: 0 })` in memory, runs `seed()`,
+    verifies the seeded row counts, and provides `supabaseUrl`, `supabaseAnonKey`, `supabaseServiceRoleKey`,
+    `supabaseJwtSecret` (string | null), `supabaseStack` ('localbase' | 'external') and `seedCounts`
+    (typed in `provided-context.d.ts`). Setting only some of the three `SUPABASE_TEST_*` vars is an error; an external
+    stack must already be seeded (optional `SUPABASE_TEST_JWT_SECRET` enables `mintJwt`).
+  - `env.ts`: `testStack()`, `isLocalbaseStack()`.
+  - `clients.ts`: `anonClient()`, `serviceClient()`, `clientWithAccessToken(token)`,
+    `signInAs(email, password = SEED_PASSWORD) → { client, userId, accessToken }`, `trySignIn()`, `mintJwt(claims, { secret?, expiresInSeconds? })`.
+  - `seeded.ts`: `SEEDED_EMAILS`, `SEED_PASSWORD`, `seededUserId(key)`, `signInSeeded(key)`, `seededLeadId(ref)`,
+    `seededLeadPhone(ref)`, `seededPhoneNumberId(key)`, `seededPhoneNumberE164(key)`.
+  - `fixtures.ts`: `createUser({ role, active, timezone, inAppCallingEnabled, dailyCallTarget, name })`, `disableUser(id)`
+    (profile inactive + Auth ban), `enableUser(id)`, `createLead`, `createCall`, `createFollowUp`, `createPhoneNumber`,
+    `uniqueEmail`, `fictionalPhone` (per-worker partition of +1 NXX 555-01xx that avoids seed area codes), `fakeTwilioSid`.
+  - `pglite.ts` (db project): `bootDb()`, `asUser(db, userId, fn)` / `asAnon` / `asService` (one transaction with
+    `SET LOCAL ROLE` + claims), `userRows` / `anonRows` / `serviceRows` / `adminSqlRows`, `pgError(promise) → {code, message}`,
+    `createAuthUser(db, { email, name, role, active, timezone, inAppCallingEnabled, dailyCallTarget })`, `insertRow`,
+    `createLeadRow`, `createCallRow`, `createFollowUpRow`, `createPhoneNumberRow`, `nextPhone`.
+  - PGlite does not serialize JS arrays for enum-array parameters: pass `$1::text[]::public.lead_status[]`.
 - Seed users (password for all: `McQueen-dev-2026`):
   `admin@funnelmcqueen.test` (ADMIN, "Velo Admin"), `alex@funnelmcqueen.test` ("Alex Rivera", America/New_York),
   `blair@funnelmcqueen.test` ("Blair Chen", America/Chicago), `casey@funnelmcqueen.test`

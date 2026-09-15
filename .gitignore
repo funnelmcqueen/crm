@@ -12,6 +12,12 @@
 
 # testing
 /coverage
+test-results/
+playwright-report/
+blob-report/
+
+# localbase (PGlite data directory)
+.localbase/
 
 # next.js
 /.next/
@@ -30,8 +36,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files: real values stay local; the documented template is committed
 .env*
+!.env.example
 
 # vercel
 .vercel

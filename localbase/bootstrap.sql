@@ -156,3 +156,30 @@ create table if not exists localbase.schema_migrations (
   name text primary key,
   applied_at timestamptz not null default now()
 );
+
+-- GoTrue subset state. Real Supabase keeps these in auth.sessions / auth.refresh_tokens; localbase keeps
+-- them out of the auth schema so app SQL cannot come to depend on emulator-specific shapes.
+create table if not exists localbase.sessions (
+  id uuid primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  aal text not null default 'aal1',
+  amr jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists localbase.refresh_tokens (
+  id bigint generated always as identity primary key,
+  token text not null unique,
+  session_id uuid not null references localbase.sessions (id) on delete cascade,
+  user_id uuid not null,
+  parent text,
+  revoked boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists refresh_tokens_session_idx on localbase.refresh_tokens (session_id);
+
+-- The GoTrue emulator runs its SQL as supabase_auth_admin, like the real Auth server.
+grant usage on schema localbase to supabase_auth_admin;
+grant select, insert, update, delete on localbase.sessions, localbase.refresh_tokens to supabase_auth_admin;

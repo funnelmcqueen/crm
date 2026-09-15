@@ -1,0 +1,30 @@
+# Supabase CLI configuration for local development with `supabase start`.
+# Docker-free development uses localbase instead (see docs/ARCHITECTURE.md section 9).
+project_id = "funnel-mcqueen-crm"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://127.0.0.1:3000/auth/confirm", "http://localhost:3000/auth/confirm"]
+jwt_expiry = 3600
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+double_confirm_changes = true

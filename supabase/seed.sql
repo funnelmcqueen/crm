@@ -1,0 +1,5 @@
+-- Intentionally empty.
+--
+-- Seed data is created by `npm run db:seed` (scripts/seed.ts). It goes through the Supabase Auth
+-- admin API and the service-role REST API, so the same seed works on localbase and on a real
+-- Supabase stack (local `supabase start` or hosted), and auth users get real password hashes.

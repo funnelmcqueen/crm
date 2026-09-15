@@ -1,0 +1,250 @@
+// EXECUTE privileges on every public function, checked in the catalog and by calling them.
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  adminSqlRows,
+  anonRows,
+  bootDb,
+  createAuthUser,
+  pgError,
+  serviceRows,
+  userRows,
+  type PGlite,
+} from '../helpers/pglite';
+
+type Access = 'none' | 'service' | 'api' | 'public_api';
+
+/**
+ * Every function in schema public must be listed here. A later migration that adds a function
+ * must add it with a deliberate access level.
+ * none: trigger functions (no API role). service: service_role only. api: authenticated + service_role.
+ * public_api: anon too.
+ */
+const MATRIX: Record<string, Access> = {
+  // triggers
+  set_updated_at: 'none',
+  profiles_validate_timezone: 'none',
+  settings_validate_timezone: 'none',
+  handle_new_auth_user: 'none',
+  handle_auth_user_email_changed: 'none',
+  follow_ups_sync_lead: 'none',
+  profiles_guard: 'none',
+  leads_guard: 'none',
+  follow_ups_guard: 'none',
+  leads_move_open_follow_ups: 'none',
+  // internal helper called only by definer RPCs
+  apply_rate_limit: 'none',
+  // service-only
+  lead_earliest_open_follow_up: 'service',
+  claim_caller_id: 'service',
+  apply_call_status: 'service',
+  record_voicemail: 'service',
+  get_voicemail_recording: 'service',
+  // API
+  is_privileged_role: 'api',
+  is_admin: 'api',
+  is_active_user: 'api',
+  can_access_lead: 'api',
+  outcome_to_status: 'api',
+  log_call: 'api',
+  get_next_lead: 'api',
+  create_outbound_call: 'api',
+  get_lead_call_history: 'api',
+  mark_voicemail_heard: 'api',
+  list_voicemails: 'api',
+  unheard_voicemail_count: 'api',
+  reassign_leads: 'api',
+  search_leads: 'api',
+  list_lead_sources: 'api',
+  touch_device_presence: 'api',
+  consume_rate_limit: 'api',
+  get_company_name: 'public_api',
+};
+
+const INVOKER = new Set(['is_privileged_role', 'outcome_to_status', 'search_leads', 'list_lead_sources']);
+
+interface FnAcl {
+  proname: string;
+  signature: string;
+  anon: boolean;
+  authenticated: boolean;
+  service_role: boolean;
+  public_exec: boolean;
+  is_trigger: boolean;
+  security_definer: boolean;
+  config: string[] | null;
+}
+
+let db: PGlite;
+let functions: FnAcl[];
+const u = { admin: '', agent: '' };
+
+beforeAll(async () => {
+  db = await bootDb();
+  u.admin = await createAuthUser(db, { role: 'ADMIN' });
+  u.agent = await createAuthUser(db);
+  functions = await adminSqlRows<FnAcl>(
+    db,
+    `select p.proname,
+            p.oid::regprocedure::text as signature,
+            has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+            has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
+            has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role,
+            exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                     where a.grantee = 0 and a.privilege_type = 'EXECUTE') as public_exec,
+            p.prorettype = 'trigger'::regtype as is_trigger,
+            p.prosecdef as security_definer,
+            p.proconfig as config
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prokind = 'f'
+      order by 1, 2`,
+  );
+});
+
+afterAll(async () => {
+  await db?.close();
+});
+
+describe('function EXECUTE matrix (catalog)', () => {
+  it('lists every public function', () => {
+    const unknown = functions.map((f) => f.proname).filter((name) => !(name in MATRIX));
+    expect(unknown, 'add new public functions to MATRIX with a deliberate access level').toEqual([]);
+    const missing = Object.keys(MATRIX).filter((name) => !functions.some((f) => f.proname === name));
+    expect(missing).toEqual([]);
+  });
+
+  it('matches the access level of each function', () => {
+    const actual = functions.map((f) => ({
+      fn: f.signature,
+      anon: f.anon,
+      authenticated: f.authenticated,
+      service_role: f.service_role,
+      public: f.public_exec,
+    }));
+    const expected = functions.map((f) => {
+      const access = MATRIX[f.proname];
+      return {
+        fn: f.signature,
+        anon: access === 'public_api',
+        authenticated: access === 'api' || access === 'public_api',
+        service_role: access !== 'none',
+        public: false,
+      };
+    });
+    expect(actual).toEqual(expected);
+  });
+
+  it('only get_company_name is executable by anon, and nothing by PUBLIC', () => {
+    expect(functions.filter((f) => f.anon).map((f) => f.proname)).toEqual(['get_company_name']);
+    expect(functions.filter((f) => f.public_exec).map((f) => f.signature)).toEqual([]);
+  });
+
+  it('trigger functions are not executable by any API role', () => {
+    const triggers = functions.filter((f) => f.is_trigger);
+    expect(triggers.length).toBeGreaterThanOrEqual(9);
+    expect(triggers.filter((f) => f.anon || f.authenticated || f.service_role)).toEqual([]);
+  });
+
+  it('every function pins search_path to empty', () => {
+    expect(functions.filter((f) => !(f.config ?? []).includes('search_path=""')).map((f) => f.signature)).toEqual([]);
+  });
+
+  it('only the intended helpers run as SECURITY INVOKER', () => {
+    const invokers = functions.filter((f) => !f.is_trigger && !f.security_definer).map((f) => f.proname);
+    expect(new Set(invokers)).toEqual(INVOKER);
+  });
+
+  it('functions added by later migrations are not granted to PUBLIC or anon by default', async () => {
+    await db.exec(`create function public.zz_default_acl_probe() returns int language sql set search_path = '' as 'select 1'`);
+    try {
+      const [row] = await adminSqlRows<{ anon: boolean; public_exec: boolean }>(
+        db,
+        `select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+                exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                         where a.grantee = 0 and a.privilege_type = 'EXECUTE') as public_exec
+           from pg_proc p where p.proname = 'zz_default_acl_probe'`,
+      );
+      expect(row).toEqual({ anon: false, public_exec: false });
+    } finally {
+      await db.exec('drop function public.zz_default_acl_probe()');
+    }
+  });
+});
+
+describe('function EXECUTE matrix (calls)', () => {
+  const API_CALLS = [
+    `select public.log_call('NO_ANSWER'::public.call_outcome)`,
+    `select * from public.get_next_lead()`,
+    `select public.create_outbound_call(gen_random_uuid())`,
+    `select * from public.get_lead_call_history(gen_random_uuid())`,
+    `select public.mark_voicemail_heard(gen_random_uuid())`,
+    `select * from public.list_voicemails()`,
+    `select public.unheard_voicemail_count()`,
+    `select public.reassign_leads('{}'::uuid[], null::uuid)`,
+    `select * from public.search_leads()`,
+    `select * from public.list_lead_sources()`,
+    `select public.touch_device_presence()`,
+    `select public.consume_rate_limit('voice_token')`,
+    `select public.is_admin()`,
+    `select public.can_access_lead(gen_random_uuid())`,
+  ];
+  const SERVICE_CALLS = [
+    `select * from public.claim_caller_id(gen_random_uuid())`,
+    `select public.apply_call_status('CAxxx', 'ringing')`,
+    `select public.record_voicemail('CAxxx', 'RExxx', 1)`,
+    `select public.lead_earliest_open_follow_up(gen_random_uuid())`,
+    `select public.get_voicemail_recording(gen_random_uuid(), gen_random_uuid())`,
+  ];
+  const TRIGGER_CALLS = [`select public.set_updated_at()`, `select public.leads_guard()`, `select public.handle_new_auth_user()`];
+  const INTERNAL_CALLS = [`select public.apply_rate_limit(gen_random_uuid(), 'voice_token')`];
+
+  it.each([...API_CALLS, ...SERVICE_CALLS, ...TRIGGER_CALLS, ...INTERNAL_CALLS])('anon is denied: %s', async (sql) => {
+    expect((await pgError(anonRows(db, sql))).code).toBe('42501');
+  });
+
+  it.each(INTERNAL_CALLS)('no API role, not even service_role, may call internal helpers: %s', async (sql) => {
+    expect((await pgError(userRows(db, u.agent, sql))).code).toBe('42501');
+    expect((await pgError(serviceRows(db, sql))).code).toBe('42501');
+  });
+
+  it('anon may read the company name', async () => {
+    expect(await anonRows(db, 'select public.get_company_name() as name')).toEqual([{ name: 'Funnel McQueen' }]);
+  });
+
+  it.each([...SERVICE_CALLS, ...TRIGGER_CALLS])('authenticated (agent and admin) is denied: %s', async (sql) => {
+    for (const userId of [u.agent, u.admin]) {
+      expect((await pgError(userRows(db, userId, sql))).code).toBe('42501');
+    }
+  });
+
+  it('admin-only RPCs reject agents with 42501', async () => {
+    const err = await pgError(userRows(db, u.agent, `select public.reassign_leads(array[gen_random_uuid()], $1::uuid)`, [u.agent]));
+    expect(err.code).toBe('42501');
+  });
+
+  it('service_role may call the webhook functions', async () => {
+    expect(await serviceRows(db, `select * from public.claim_caller_id(gen_random_uuid())`)).toEqual([]);
+    expect(await serviceRows(db, `select public.apply_call_status('CA-missing', 'ringing') as ok`)).toEqual([{ ok: false }]);
+  });
+
+  it('service-only functions refuse API-role JWT claims even if a grant were widened', async () => {
+    for (const role of ['authenticated', 'anon']) {
+      const err = await pgError(
+        db.transaction(async (tx) => {
+          await tx.exec('set local role service_role');
+          await tx.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role, sub: u.agent })]);
+          return tx.query(`select * from public.claim_caller_id($1)`, [u.agent]);
+        }),
+      );
+      expect(err.code).toBe('42501');
+      const recording = await pgError(
+        db.transaction(async (tx) => {
+          await tx.exec('set local role service_role');
+          await tx.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role, sub: u.agent })]);
+          return tx.query(`select public.get_voicemail_recording(gen_random_uuid(), $1)`, [u.agent]);
+        }),
+      );
+      expect(recording.code).toBe('42501');
+    }
+  });
+});
