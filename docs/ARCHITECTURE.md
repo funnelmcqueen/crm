@@ -131,7 +131,7 @@ e2e/                     Playwright specs (mock dialer)
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client+server | anon or publishable key |
 | `SUPABASE_SERVICE_ROLE_KEY` | server-only | service_role or secret key |
 | `APP_BASE_URL` | server-only | exact public origin, no trailing slash; used for Twilio signature URLs |
-| `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock`. Unset: `twilio` when configured, else `mock` in development/test and `tel` in production (never silently fake calls in prod) |
+| `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock`. Unset: `twilio` when configured, else `mock` in development/test and `tel` in production (never silently fake calls in prod). `mock` with `NODE_ENV=production` is an invalid environment (D24) |
 | `TWILIO_ACCOUNT_SID` `TWILIO_AUTH_TOKEN` `TWILIO_API_KEY_SID` `TWILIO_API_KEY_SECRET` `TWILIO_TWIML_APP_SID` | server-only | required when `DIALER_DRIVER=twilio` |
 
 `src/server/env.ts` exports `getServerEnv()`, which parses lazily and caches (so importing never
@@ -349,12 +349,12 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 
 | RPC | security | who | behavior |
 |---|---|---|---|
-| `log_call(p_outcome call_outcome, p_lead_id uuid default null, p_call_id uuid default null, p_notes text default null, p_follow_up_at timestamptz default null, p_follow_up_note text default null, p_duration_seconds int default null) → jsonb` | definer | authenticated | One transaction. Caller must be active. `p_call_id` first names a row the caller may log: any row for an admin, else `user_id = auth.uid()` with the row's lead assigned to the caller (or no lead). Failing that, it is looked up as the caller's TEL idempotency key on `p_lead_id` (`client_request_id`). A row the caller may not log is handled exactly like an unknown id, so known ids reveal nothing (D16). A found row's lead must match `p_lead_id` (if given), else `not_found`. If the row has no outcome yet, `call_count += 1`, else no increment (re-log only updates outcome/notes). `p_duration_seconds` (0..86400, else `22023`) applies only to TEL rows, and only if `duration_seconds` is null. In-app durations come from Twilio. If no row exists: `p_lead_id` is required and must be accessible, then insert a `TEL` OUTBOUND row with a server-generated id and `client_request_id = p_call_id` (unique per user and lead, making TEL logging idempotent; a retry sends the same `p_lead_id` or the returned `call_id`), `call_count += 1`. For lead rows: `last_contacted_at = now()`, `status = outcome_to_status()`, unhandled voicemails on that lead get `handled_at = now()`, and on the first log of that call row only (never on a retry) open follow-ups with `due_at <= now()` get completed and, if `p_follow_up_at` is set, a follow-up is inserted for `coalesce(lead.assigned_to, auth.uid())`. `FOLLOW_UP` requires `p_follow_up_at` (22023). `WRONG_NUMBER` prefixes notes once (see "Call notes" above). A **new** TEL row on a DO_NOT_CONTACT lead raises `do_not_contact` (DEVIATIONS D8); logging an existing row still works. Returns `{call_id, lead_id, status, call_count, next_follow_up_at}` (lead fields null for an unmatched inbound call). |
+| `log_call(p_outcome call_outcome, p_lead_id uuid default null, p_call_id uuid default null, p_notes text default null, p_follow_up_at timestamptz default null, p_follow_up_note text default null, p_duration_seconds int default null) → jsonb` | definer | authenticated | One transaction. Caller must be active. `p_call_id` first names a row the caller may log: any row for an admin, else `user_id = auth.uid()` with the row's lead assigned to the caller (or no lead). Failing that, it is looked up as the caller's TEL idempotency key on `p_lead_id` (`client_request_id`). A row the caller may not log is handled exactly like an unknown id, so known ids reveal nothing (D16). A found row's lead must match `p_lead_id` (if given), else `not_found`. If the row has no outcome yet, `call_count += 1`, else no increment (re-log only updates outcome/notes). `p_duration_seconds` (0..86400, else `22023`) applies only to TEL rows, and only if `duration_seconds` is null. In-app durations come from Twilio. If no row exists: `p_lead_id` is required and must be accessible, then insert a `TEL` OUTBOUND row with a server-generated id and `client_request_id = p_call_id` (unique per user and lead, making TEL logging idempotent; a retry sends the same `p_lead_id` or the returned `call_id`), `call_count += 1`. For lead rows: `last_contacted_at = now()`, `status = outcome_to_status()`, unhandled voicemails on that lead get `handled_at = now()`, and on the first log of that call row only (never on a retry) open follow-ups due before the end of today (lead owner's timezone, else the caller's; D22) get completed and, if `p_follow_up_at` is set (must be within `now() - 1 minute` .. `now() + 1825 days`, else `22023`; D21), a follow-up is inserted for `coalesce(lead.assigned_to, auth.uid())`. `FOLLOW_UP` requires `p_follow_up_at` (22023). `WRONG_NUMBER` prefixes notes once (see "Call notes" above). A **new** TEL row on a DO_NOT_CONTACT lead raises `do_not_contact` (DEVIATIONS D8); logging an existing row still works. Returns `{call_id, lead_id, status, call_count, next_follow_up_at}` (lead fields null for an unmatched inbound call). |
 | `get_next_lead(p_exclude_ids uuid[] default '{}') → table(lead_id, business_name, contact_name, phone, status, city, state, last_contacted_at, next_follow_up_at, call_count, reason text)` | definer | authenticated | Caller's own assigned leads only. Excludes CLIENT/NOT_INTERESTED/DO_NOT_CONTACT and `p_exclude_ids`. Excludes leads with `last_contacted_at > now() - 4h` unless they have an open follow-up due (`due_at <= now()`) or an unheard voicemail. Buckets in order, reason codes: `VOICEMAIL` (unheard voicemail, oldest voicemail first) → `OVERDUE` (open follow-up `due_at < now()`, oldest first) → `DUE_TODAY` (open follow-up due later today in caller's timezone, soonest first) → `NEW` (status NEW/TO_CALL, oldest created first) → `RETRY` (NO_ANSWER/VOICEMAIL, `last_contacted_at asc nulls first`, then `call_count asc`). Leads matching no bucket are not suggested. Returns 0 or 1 row. |
 | `create_outbound_call(p_lead_id uuid) → uuid` | definer | authenticated | Active caller with `in_app_calling_enabled`, else forbidden. Lead must be accessible (admin: any lead), else `not_found`. DO_NOT_CONTACT → `do_not_contact`. Deletes the caller's un-started pre-created rows (OUTBOUND/IN_APP with no provider SID, no status and no outcome), so each agent has at most one dialable row (D15). If the caller has an unlogged call (`outcome is null`) with `call_status in ('queued','ringing','in-progress')` created in the last 2h → `call_in_progress`. Applies the `outbound_call` rate limit (12/min) itself → `P0001 rate_limited` (D14). Inserts OUTBOUND/IN_APP row with `user_id = auth.uid()` and `remote_e164 = lead.phone`. |
 | `get_lead_call_history(p_lead_id uuid) → table(id, created_at, direction, mode, call_status, outcome, notes, duration_seconds, has_voicemail boolean, voicemail_duration_seconds, handled_at, is_mine boolean, caller_name text, caller_id_e164 text)` | definer | authenticated | Empty set if `not can_access_lead`. `caller_name`/`caller_id_e164` are non-null **only for admins**. Newest first. |
 | `get_voicemail_recording(p_call_id uuid, p_user_id uuid) → text` | definer | **service_role only** | Recording SID if the active user `p_user_id` may access that call (admin, lead assigned to them, or `lead_id is null and user_id = p_user_id`), else null. Refuses API-role JWT claims. Called only by `/api/voicemail/[callId]` with the `getUser()` id (D13). |
-| `mark_voicemail_heard(p_call_id uuid) → boolean` | definer | authenticated | Same access. Sets `handled_at` if null. |
+| `mark_voicemail_heard(p_call_id uuid) → boolean` | definer | authenticated | Same access (true for any accessible voicemail). Sets `handled_at` if null only when the caller owns it: lead assigned to the caller, or unmatched call routed to the caller; for admins also admin-only unmatched calls and unassigned leads. An admin play of an agent's voicemail leaves it unheard (D20). |
 | `list_voicemails(p_unheard_only boolean default false, p_limit int default 50, p_offset int default 0) → table(call_id, created_at, lead_id, business_name, contact_name, phone, lead_status, voicemail_duration_seconds, handled_at, total_count bigint)` | definer | authenticated | Scoped like `get_voicemail_recording`. For unmatched calls, `phone = remote_e164` and business is null. |
 | `unheard_voicemail_count() → int` | definer | authenticated | Scoped count. |
 | `reassign_leads(p_lead_ids uuid[], p_to_user_id uuid) → int` | definer | admin | `p_to_user_id` must be an active AGENT or ADMIN, or null (= unassign). Updates `assigned_to`; the `leads_move_open_follow_ups` trigger moves open follow-ups to the new owner (when non-null). Calls are untouched. Returns the updated count. |
@@ -462,6 +462,40 @@ is a client-generated UUID passed to `log_call` together with the lead id for id
 hangup. It exposes `window.__fmqMockDialer = { remoteHangup(reason), simulateIncoming(callId) }` only
 when `DIALER_DRIVER=mock`.
 
+Stage 3 module details (`src/lib/dialer`, `src/components/dialer`):
+- `IncomingCall.onCancel?(listener)` (optional): the caller hung up before it was answered. Without it the incoming
+  dialog closes after 30s. The twilio driver implements it from the moment the call arrives (a listener added after the
+  cancel is called at once), and its `accept()` throws once the SDK call is no longer `pending`, so a late Accept shows
+  "Could not answer" instead of an in-call state with no call. `hangup()` on an SDK call that is already closed ends the call locally.
+- `InAppDriver.onStateChange?(cb: (state: 'ready' | 'unavailable') => void)` (optional): the twilio driver reports
+  `unavailable` on `unregistered`, on token-expired errors (20104/31205) and when a token refresh still fails at the end of the
+  60s `tokenRefreshMs` window (retries with 2s..16s backoff), and `ready` on `registered`.
+- `startDeviceSession` (`lib/dialer/device-session.ts`) is the device lifecycle behind `DialerProvider`. The device state is
+  `off | registering | ready | failed`. After 15s without registration the state is `failed` (tel: fallback), but a later success
+  still becomes `ready`. `unavailable` → `failed`, with re-registration every 60s. A 403 from `/api/calls/outbound` → `turnOff()`
+  (driver destroyed) plus `router.refresh()`. A 503 → `failed`, retried later. Presence heartbeats run only while `ready`. Accept
+  uses the loaded driver whatever its state.
+- `useCallModePreference(): [CallModePreference, (p) => void]` (`lib/dialer/preference.ts`); renders `auto` on the server.
+- `useDialer()` (`components/dialer/dialer-context.tsx`) returns `{ state, timezone, dialMode, connecting, startCall,
+  beginTelCall, hangup, setMuted, sendDigits }`, or null outside the provider. `state` is the `dialerReducer` union
+  from `lib/dialer/state.ts`.
+- Microphone permission is requested before the first in-app call or answer of the page session for the `twilio`
+  driver only (the mock driver plays no audio).
+- A tapped tel: call is kept in sessionStorage `fmq.pendingTel` (`{userId, leadId, label, clientRequestId, startedAt,
+  stage}`) until it is logged or dismissed, so the outcome sheet survives a reload. Sign-out (user menu) clears it, calls the
+  `signOut` action (cookies only, no redirect) and then does a full page load of `/login`, so no client state of the previous user
+  survives. The nav voicemail badge store is keyed by user id (`components/app-shell/voicemail-count-store.ts`).
+- Outcome sheet keys: `1`-`8` pick an outcome and move focus to it. Enter on an outcome button that is not selected selects it;
+  Enter on the selected outcome, on Save & Next or in an input saves (`outcomeSheetEnterAction`).
+- `logCall` sends an in-app or inbound call by `p_call_id` only (never with `p_lead_id`), so an id the caller may not
+  log fails as `not_found` instead of falling back to inserting a TEL row. TEL calls send `p_call_id = clientRequestId`
+  with `p_lead_id`.
+- Next Lead: `/next?skip=<uuid,...>` (max 200, most recent kept) redirects to
+  `/leads/<id>?flow=next&skip=<same>&reason=<VOICEMAIL|OVERDUE|DUE_TODAY|NEW|RETRY>`; the lead page renders
+  `<NextLeadControls leadId>` when `flow=next`. Save & Next pushes `/next` with the current page's `skip`.
+- Anything that changes the unheard voicemail count calls `notifyVoicemailsChanged()` (`lib/dialer/events.ts`) so the
+  nav badge refetches immediately; otherwise it polls every 60s and on window focus.
+
 ---
 
 ## 7. Twilio contract (`src/server/twilio`, `src/server/http/twilio`)
@@ -476,7 +510,9 @@ when `DIALER_DRIVER=mock`.
   Outbound checks: load the row by `params.callId` (uuid) via service role. The row must be OUTBOUND/IN_APP
   with `provider_call_sid is null` and `call_status is null`, and be created ≤10 min ago. `From` must equal `client:<calls.user_id>`.
   The user must be active with in-app calling enabled. The lead must still be assigned to that user
-  (or the user is admin), and its status must not be DO_NOT_CONTACT. Then `claim_caller_id`. If there is no
+  (or the user is admin), and its status must not be DO_NOT_CONTACT. Other calls of that user created ≤ 2 h ago with a live
+  `call_status` and a logged outcome are checked with `rest.fetchCallStatus`: still live or a failed lookup → failure TwiML; a final
+  status is recorded with `apply_call_status` (D23). Then `claim_caller_id`. If there is no
   number, return failure TwiML. Otherwise claim the row atomically:
   `update … set provider_call_sid=CallSid, phone_number_id, call_status='queued' where id = … and provider_call_sid is null
   and call_status is null and outcome is null`. If no row was updated (superseded by a newer call, already claimed, or already
@@ -489,14 +525,17 @@ when `DIALER_DRIVER=mock`.
 - Inbound (`/inbound`, or delegated): normalize `From`. The pure `decideInboundRoute(facts)` picks the target:
   1) matched lead (most recently contacted if duplicated) **with owner** → owner;
   2) matched lead without owner → admin-only voicemail;
-  3) no match and `To` number assigned to an agent → that agent;
+  3) no match and `To` is an active number assigned to an agent → that agent;
   4) otherwise admin-only voicemail.
   Ring only if the target is active, has in-app calling enabled, `device_seen_at` ≤ 3 min old, and no
   in-progress call. Always insert an INBOUND row (lead_id when matched; `user_id` = target, or null for
   admin-only; `phone_number_id`; `remote_e164 = From`; `provider_call_sid = CallSid`).
   Ring: `<Dial timeout="20" answerOnBridge="true" action="…/inbound-dial-complete"><Client><Identity>{userId}</Identity><Parameter name="callId" value="{callId}"/></Client></Dial>`.
   Voicemail: `<Say>{settings.voicemail_greeting}</Say><Record maxLength="120" playBeep="true" action="…/voicemail-complete" recordingStatusCallback="…/recording-status" recordingStatusCallbackEvent="completed"/>`.
-- `/inbound-dial-complete`: `DialCallStatus` completed → `<Response/>`. Anything else → voicemail TwiML.
+- `/inbound-dial-complete`: `DialCallStatus` completed → `<Response/>`. Anything else → voicemail TwiML. It also records
+  `DialCallStatus`/`DialCallDuration` on the INBOUND row with `apply_call_status(CallSid, …)`. The inbound row is inserted
+  without a `call_status`, so an unanswered or unreported inbound call never makes the agent "busy". A Twilio retry with the same
+  `CallSid` reuses the existing INBOUND row.
 - `/recording-status`: `record_voicemail(CallSid, RecordingSid, RecordingDuration)`.
 - `/voicemail-complete`: `<Say>Thank you. Goodbye.</Say><Hangup/>`.
 - `/api/voice/token`: requires an active session with in-app calling enabled. Rate limit with `consume_rate_limit('voice_token')` (20/10min, fixed in SQL).
@@ -511,6 +550,16 @@ when `DIALER_DRIVER=mock`.
   (forward `Range`) and stream back with `Cache-Control: private, no-store`. In mock/unconfigured mode,
   stream a generated short WAV tone so dev seed voicemails play.
 - Twilio REST client and fetch are injected via deps so tests never hit the network.
+- Code: signature/TwiML/token/routing/REST in `src/server/twilio/{signature,twiml,token,inbound-routing,rest,sids,log}.ts`;
+  route cores in `src/server/http/voice.ts` (`handleVoiceToken`, `handleVoicePresence`, `handleCallsOutbound`),
+  `src/server/http/voicemail.ts` (`handleVoicemail(req, callId, deps)`), `src/server/http/twilio/{outbound,inbound,callbacks}.ts`.
+  Deps: `{ env, adminClient, rest, now }` (webhooks) / `{ env }` (browser POST routes), each defaulting to the real one.
+- CSRF: the cookie-authenticated POST routes (`/api/voice/token`, `/api/voice/presence`, `/api/calls/outbound`) answer 403
+  `{ error: 'forbidden' }` when an `Origin` header is present and is neither `APP_BASE_URL`'s origin nor the request's own origin.
+- `/api/calls/outbound` bodies: an empty or non-JSON body → 400 `{ error: 'validation' }`. A JSON body that fails the schema (for example a
+  malformed `leadId`) → 404 `{ error: 'not_found' }`, identical to an inaccessible id. Conflicts → 409 `{ error: 'conflict', reason }`.
+- `/api/voicemail/[callId]` streams from Twilio when Twilio is configured and `DIALER_DRIVER` is not `mock`. Otherwise it streams the WAV tone
+  (8 kHz mono, 1.5 s, single `Range` supported). A stored SID must match `^RE[0-9a-fA-F]{32}$`, else 404.
 
 ---
 
@@ -595,6 +644,8 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
     `signInAs(email, password = SEED_PASSWORD) → { client, userId, accessToken }`, `trySignIn()`, `mintJwt(claims, { secret?, expiresInSeconds? })`.
   - `seeded.ts`: `SEEDED_EMAILS`, `SEED_PASSWORD`, `seededUserId(key)`, `signInSeeded(key)`, `seededLeadId(ref)`,
     `seededLeadPhone(ref)`, `seededPhoneNumberId(key)`, `seededPhoneNumberE164(key)`.
+  - `context.ts`: `contextFor(session) → RequestContext` (profile read through that session with `PROFILE_COLUMNS`) and
+    `contextForUser(fixtureUser)` (signs in first), for calling services under RLS. Use these instead of per-folder copies.
   - `fixtures.ts`: `createUser({ role, active, timezone, inAppCallingEnabled, dailyCallTarget, name })`, `disableUser(id)`
     (profile inactive + Auth ban), `enableUser(id)`, `createLead`, `createCall`, `createFollowUp`, `createPhoneNumber`,
     `uniqueEmail`, `fictionalPhone` (per-worker partition of +1 NXX 555-01xx that avoids seed area codes), `fakeTwilioSid`.

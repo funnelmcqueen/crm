@@ -12,6 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { clearPendingTel } from "@/lib/dialer/drivers/tel";
+import { LOGIN_PATH } from "@/lib/supabase/auth-redirect";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/server/actions/auth";
 import { roleLabel, type ShellUser } from "./nav-config";
@@ -67,7 +69,11 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
           className="min-h-11"
           onSelect={() => {
             startSignOut(async () => {
+              // A tapped phone call is this user's data; the next person on a shared device must not find it.
+              clearPendingTel();
               await signOut();
+              // A full page load drops every in-memory client store (dialer, badge counts) of this user.
+              window.location.replace(LOGIN_PATH);
             });
           }}
         >

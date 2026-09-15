@@ -126,3 +126,67 @@ record ten hours of talk time on a 30-second call.
 **Built:** `search_leads` applies the digit match only when the query consists of digits, spaces and `+-().` with at least
 three digits. Text queries such as "Suite 100" match text columns only.
 **Why:** Mixed text queries matched unrelated leads whose phone numbers happened to contain the same digits.
+
+## D18. Inbound routing ignores deactivated numbers; inbound call status comes from the Dial action
+**Spec:** §7c "No match, number assigned to an agent → that agent". §7a.6 status callbacks update call status.
+**Built:** An unmatched caller reaches the agent only when the dialed number is **active** and assigned to them. A deactivated
+number goes to admin-only voicemail. A matched lead still routes to its owner whatever number was dialed. The INBOUND row is
+inserted without a `call_status`. `/inbound-dial-complete` records `DialCallStatus`/`DialCallDuration` on it through
+`apply_call_status`, and a Twilio retry with the same `CallSid` reuses the row instead of logging the call twice.
+**Why:** Admins deactivate a number before handing it to someone else, so stale assignments must not receive unknown callers.
+An inbound row created as `ringing` could stay "live" if Twilio never reported its end. That would make the agent "busy" for
+inbound routing and block `create_outbound_call` (`call_in_progress`) for up to two hours.
+
+## D19. Browser POST routes check Origin; malformed call ids are 404
+**Spec:** §12 Zod validation on every route. §1 unauthorized ids return 404 like nonexistent ones.
+**Built:** `/api/voice/token`, `/api/voice/presence` and `/api/calls/outbound` answer 403 when an `Origin` header is present and is
+neither `APP_BASE_URL`'s origin nor the request's own origin (CSRF defense for cookie sessions). `/api/calls/outbound` returns 400
+only for an empty or non-JSON body. A JSON body that fails the schema, such as a malformed `leadId`, gets the same 404 `{error:'not_found'}` as an
+inaccessible or random id. `/api/voicemail/[callId]` also answers 404 for a malformed id and for a stored recording SID that does not match `^RE[0-9a-fA-F]{32}$`.
+**Why:** A distinct 400 for some ids and 404 for others is an oracle. Cookie-authenticated POSTs from other sites must not create
+calls, heartbeat presence or consume rate limits.
+
+## D20. Only a voicemail's owner marks it heard
+**Spec:** §7c unheard voicemail badge; §7g Next Lead puts "unheard voicemails from own leads" first. §3 admins can do everything.
+**Built:** `mark_voicemail_heard` still returns true for any voicemail the caller can access, but it sets `handled_at` only when
+the caller owns it: the lead is assigned to the caller, or the call is unmatched and routed to the caller. For admins, voicemails
+nobody else owns also count (admin-only unmatched calls, unassigned leads). An admin playing an agent's voicemail leaves it unheard.
+The lead page passes `canMarkHeard` to the player, so the admin UI keeps showing "Unheard" and does not call the action. Logging a
+call on the lead (D6) still handles its voicemails, whoever logs it.
+**Why:** `handled_at` is shared. An admin reviewing call quality cleared the agent's badge and removed the callback from the top
+of Next Lead before the agent ever heard it.
+
+## D21. `log_call` bounds the follow-up time
+**Spec:** §6 the Follow Up outcome asks for a date/time.
+**Built:** `p_follow_up_at` must be between `now() - 1 minute` and `now() + 1825 days`, else `22023`. `logCallInputSchema` applies
+the same bounds with the message "Pick a follow-up time in the future, within five years." The minute absorbs clock skew between
+the device that picked the time and the server.
+**Why:** A past follow-up is overdue at once, so Save & Next served the lead that was just logged again as OVERDUE. Year-9999 or
+1970 rows also distorted follow-up lists and counts.
+
+## D22. `log_call` completes follow-ups due before the end of the owner's day (amends D6)
+**Spec:** §7g Next Lead order includes "follow-ups due today".
+**Built:** On the first log of a call row, open follow-ups on that lead with `due_at` before the end of today are completed. "Today"
+is in the lead owner's timezone, or the caller's when the lead is unassigned, computed the same way `get_next_lead` computes it.
+Previously only follow-ups with `due_at <= now()` were completed. A follow-up created by the same log is inserted afterwards and
+stays open. D6's "completes its follow-ups that are already due" now reads "completes its follow-ups due today or earlier".
+**Why:** Next Lead serves a follow-up due later today as DUE_TODAY. Calling it left that follow-up open, so the same lead came back
+as OVERDUE when its due time passed, and the prospect was called twice for a follow-up that had already been handled.
+
+## D23. The outbound webhook checks the agent's other live calls with Twilio (amends D15)
+**Spec:** §7a "One active call per agent".
+**Built:** Before claiming a row, `/api/twilio/voice/outbound` looks for other calls of the same user that were created in the last 2 hours,
+have a live `call_status` (`queued`, `ringing`, `in-progress`) and have a **logged outcome**. `create_outbound_call` already
+refuses while a live call has no outcome. For each one it asks Twilio (`TwilioRest.fetchCallStatus`). If Twilio reports the call
+still live, or the lookup fails, it returns failure TwiML. A final status is recorded with `apply_call_status` and no longer blocks.
+If Twilio does not know the call, it does not block either.
+**Why:** D15 lets a logged call stop blocking `create_outbound_call` so a lost status callback cannot lock the agent out. As a
+result, logging an outcome while call 1 was still live (for example from devtools) allowed a second concurrent Twilio call.
+Asking Twilio keeps both guarantees.
+
+## D24. `DIALER_DRIVER=mock` is refused in production
+**Spec:** §6 the mock driver is for local dev and tests.
+**Built:** `parseServerEnv` rejects `DIALER_DRIVER=mock` when `NODE_ENV=production`, so the server environment is invalid and
+fails loudly. Unset still falls back to `tel` in production. The e2e suite runs `next dev` and is unaffected.
+**Why:** A copied dev `.env` would silently fake calls, log outcomes and talk time for calls that never happened, and replace real
+voicemail audio with the test tone.

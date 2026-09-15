@@ -85,6 +85,13 @@ const serverEnvSchema = publicSupabaseSchema
     if (env.SUPABASE_SERVICE_ROLE_KEY === env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       ctx.addIssue({ code: "custom", path: ["SUPABASE_SERVICE_ROLE_KEY"], message: "must differ from NEXT_PUBLIC_SUPABASE_ANON_KEY" });
     }
+    if (env.DIALER_DRIVER === "mock" && env.NODE_ENV === "production") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DIALER_DRIVER"],
+        message: "must not be mock in production (the mock dialer fakes calls and voicemail audio)",
+      });
+    }
     if (env.DIALER_DRIVER !== "twilio") return;
     for (const key of [...TWILIO_KEYS, "APP_BASE_URL"] as const) {
       if (env[key] === undefined) {

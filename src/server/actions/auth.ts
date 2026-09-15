@@ -59,8 +59,8 @@ export async function signIn(
   redirect(safeNextPath(parsed.data.next));
 }
 
+/** Clears the session cookies. The caller then does a full page load of /login so no client state survives. */
 export async function signOut(): Promise<void> {
   const supabase = await createServerSupabase();
   await supabase.auth.signOut({ scope: "local" });
-  redirect(LOGIN_PATH);
 }

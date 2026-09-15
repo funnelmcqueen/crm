@@ -1,6 +1,7 @@
 // SPEC 5/13 reassignment A -> B: A loses every path to the lead, B gains the lead with its history
 // (without learning who made the earlier calls), open follow-ups move to B, and stats stay with A.
 import { beforeAll, describe, expect, it } from 'vitest';
+import { handleTwilioInbound } from '@/server/http/twilio/inbound';
 import { serviceClient, signInAs, type SignedInUser } from '../helpers/clients';
 import {
   createCall,
@@ -9,6 +10,7 @@ import {
   createPhoneNumber,
   createUser,
   fakeTwilioSid,
+  fictionalPhone,
   type Call,
   type FixtureUser,
   type FollowUp,
@@ -17,6 +19,7 @@ import {
 } from '../helpers/fixtures';
 import { expectEmptyRows, expectError, expectNoRowsAffected } from '../helpers/isolation';
 import { signInSeeded } from '../helpers/seeded';
+import { WEBHOOK_PATHS, callRowBySid, inboundParams, markOnline, readTwiml, twilioRequest, twimlParts, webhookDeps } from '../routes/_helpers';
 
 const HOUR = 3_600_000;
 const CALL_COLUMNS = 'id, created_at, lead_id, direction, mode, remote_e164, call_status, outcome, notes, duration_seconds, voicemail_duration_seconds, handled_at';
@@ -221,5 +224,18 @@ describe('reassignment A -> B', () => {
     expectEmptyRows(await a.client.rpc('get_lead_call_history', { p_lead_id: lead.id }));
   });
 
-  it.todo('an inbound callback from the reassigned lead routes to B, not A (stage 5, /api/twilio/voice/inbound)');
+  it("an inbound callback from the reassigned lead routes to B, not A, even on A's own number (/api/twilio/voice/inbound)", async () => {
+    await Promise.all([markOnline(userA.id), markOnline(userB.id)]);
+    // A's assigned number, and a number the CRM does not know (no new pool number, so pool rotation tests are unaffected).
+    for (const to of [numberA.e164, fictionalPhone()]) {
+      const callSid = fakeTwilioSid('CA');
+      const xml = await readTwiml(await handleTwilioInbound(twilioRequest(WEBHOOK_PATHS.inbound, inboundParams(lead.phone, to, callSid)), webhookDeps()));
+      expect(twimlParts.identity(xml)).toBe(userB.id);
+      expect(xml).not.toContain(userA.id);
+      const rows = await callRowBySid(callSid);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ direction: 'INBOUND', lead_id: lead.id, user_id: userB.id });
+    }
+    expectEmptyRows(await a.client.from('calls').select('id').eq('lead_id', lead.id));
+  });
 });

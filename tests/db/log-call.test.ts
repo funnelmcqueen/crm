@@ -113,12 +113,12 @@ describe('TEL logging and counting', () => {
   it('re-logging the same call id never double counts, duplicates the follow-up or changes the duration', async () => {
     const lead = await createLeadRow(db, { assigned_to: u.a });
     const callId = crypto.randomUUID();
-    const first = await logCall(u.a, { outcome: 'FOLLOW_UP', leadId: lead.id, callId, followUpAt: new Date(Date.now() - 60_000), duration: 12 });
+    const first = await logCall(u.a, { outcome: 'FOLLOW_UP', leadId: lead.id, callId, followUpAt: new Date(Date.now() + 2 * 86_400_000), duration: 12 });
     const relog = await logCall(u.a, { outcome: 'CONNECTED', leadId: lead.id, callId, notes: 'second try', duration: 99 });
     expect(relog).toMatchObject({ call_id: first.call_id, call_count: 1, status: 'CONNECTED' });
     await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
-        logCall(u.a, { outcome: 'FOLLOW_UP', leadId: lead.id, callId, notes: `retry ${i}`, followUpAt: new Date(Date.now() - 60_000), duration: 500 }),
+        logCall(u.a, { outcome: 'FOLLOW_UP', leadId: lead.id, callId, notes: `retry ${i}`, followUpAt: new Date(Date.now() + 2 * 86_400_000), duration: 500 }),
       ),
     );
     expect((await leadState(lead.id)).call_count).toBe(1);

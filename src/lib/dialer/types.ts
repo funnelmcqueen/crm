@@ -28,13 +28,23 @@ export interface IncomingCall {
   callId: string | null;
   accept(events: CallEvents): ActiveCall;
   reject(): void;
+  /**
+   * Optional: called when the caller hangs up (or the provider cancels) before the call is answered.
+   * Without it the incoming call UI closes after a timeout instead.
+   */
+  onCancel?(listener: () => void): void;
 }
 
 export type RegisterResult = { ok: true } | { ok: false; reason: string };
 
+/** Device health after registration: "unavailable" means it can no longer place or receive calls. */
+export type DriverState = "ready" | "unavailable";
+
 export interface InAppDriver {
   readonly name: "twilio" | "mock";
   register(): Promise<RegisterResult>;
+  /** Optional: reports when a registered device stops (or resumes) working, e.g. an expired token. */
+  onStateChange?(cb: (state: DriverState) => void): () => void;
   /** Sends ONLY the server-created call id to the provider. */
   connect(callId: string, events: CallEvents): Promise<ActiveCall>;
   onIncoming(cb: (call: IncomingCall) => void): () => void;

@@ -130,7 +130,20 @@ describe("isTwilioConfigured", () => {
 describe("getDialerDriver", () => {
   it("uses DIALER_DRIVER when set", () => {
     expect(getDialerDriver(parseServerEnv({ ...BASE, ...TWILIO, DIALER_DRIVER: "tel" }))).toBe("tel");
-    expect(getDialerDriver(parseServerEnv({ ...BASE, NODE_ENV: "production", DIALER_DRIVER: "mock" }))).toBe("mock");
+    expect(getDialerDriver(parseServerEnv({ ...BASE, NODE_ENV: "development", DIALER_DRIVER: "mock" }))).toBe("mock");
+    expect(getDialerDriver(parseServerEnv({ ...BASE, NODE_ENV: "test", DIALER_DRIVER: "mock" }))).toBe("mock");
+  });
+
+  it("refuses DIALER_DRIVER=mock in production (SPEC 6: mock is for local dev and tests only)", () => {
+    for (const source of [
+      { ...BASE, NODE_ENV: "production", DIALER_DRIVER: "mock" },
+      { ...BASE, ...TWILIO, NODE_ENV: "production", DIALER_DRIVER: " MOCK " },
+    ]) {
+      const err = thrownBy(() => parseServerEnv(source));
+      expect(err.message).toContain("DIALER_DRIVER");
+      expect(err.message).toMatch(/production/);
+    }
+    expect(getDialerDriver(parseServerEnv({ ...BASE, NODE_ENV: "production", DIALER_DRIVER: "tel" }))).toBe("tel");
   });
 
   it("defaults to twilio when Twilio is fully configured", () => {

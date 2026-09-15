@@ -335,7 +335,7 @@ describe('log_call retries and durations', () => {
     const lead = await createLeadRow(db, { assigned_to: u.a });
     const key = crypto.randomUUID();
     for (let i = 0; i < 3; i += 1) {
-      await logCall(u.a, { outcome: 'FOLLOW_UP', leadId: lead.id, callId: key, followUpAt: new Date(Date.now() - MINUTE), notes: 'call back' });
+      await logCall(u.a, { outcome: 'FOLLOW_UP', leadId: lead.id, callId: key, followUpAt: new Date(Date.now() + 2 * DAY), notes: 'call back' });
     }
     expect(await adminSqlRows(db, 'select completed_at from public.follow_ups where lead_id = $1', [lead.id])).toEqual([{ completed_at: null }]);
     expect(await count('select call_count as n from public.leads where id = $1', [lead.id])).toBe(1);
