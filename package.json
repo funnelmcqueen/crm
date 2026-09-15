@@ -1,12 +1,27 @@
 {
-  "name": "scratch-2026-09-15-776ca0",
+  "name": "funnel-mcqueen-crm",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "tsx scripts/dev-local.ts",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:db": "vitest run --project db",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "playwright test",
+    "verify": "npm run typecheck && npm run lint && npm test",
+    "localbase": "tsx localbase/cli.ts",
+    "localbase:reset": "tsx localbase/cli.ts --reset",
+    "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
+    "db:types": "tsx scripts/gen-types.ts",
+    "make-admin": "tsx --env-file-if-exists=.env.local scripts/make-admin.ts",
+    "samples:csv": "tsx scripts/gen-sample-csv.ts",
+    "check:bundle": "tsx --env-file-if-exists=.env.local scripts/check-bundle-secrets.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -49,5 +64,8 @@
     "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=20.9"
   }
 }
