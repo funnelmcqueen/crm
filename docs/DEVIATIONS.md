@@ -51,7 +51,7 @@ worse than no index.
 | [D19](#d19-browser-post-routes-check-origin-malformed-call-ids-are-404) | Browser POST routes check `Origin`; malformed ids are 404, not 400 |
 | [D20](#d20-only-a-voicemails-owner-marks-it-heard) | Only a voicemail's owner marks it heard |
 | [D23](#d23-the-outbound-webhook-checks-the-agents-other-live-calls-with-twilio-amends-d15) | The outbound webhook checks the agent's other live calls with Twilio (amends D15) |
-| [D31](#d31-disabling-an-agent-ends-their-auth-sessions-through-an-endpoint-auth-js-does-not-wrap) | Disabling an agent ends their Auth sessions, not just their ability to sign in |
+| [D31](#d31-disabling-an-agent-ends-their-auth-sessions-through-a-service-role-rpc-because-auth-has-no-admin-api-for-it) | Disabling an agent ends their Auth sessions, not just their ability to sign in |
 | [D32](#d32-a-malformed-id-is-not_found-everywhere-log_call-included) | A malformed id is `not_found` everywhere, `log_call` included (completes D19) |
 | [D33](#d33-voicemail-audio-is-never-synthesized-in-production) | Voicemail audio is never synthesized in production |
 | [D34](#d34-the-session-cookie-is-secure-in-production) | The session cookie is `Secure` in production |
@@ -77,6 +77,7 @@ worse than no index.
 | [D30](#d30-review-round-2-identically-labelled-numbers-agree-across-screens) | Review round 2: identically labelled numbers agree across screens |
 | [D37](#d37-the-import-fallback-bisects-instead-of-walking-and-is-capped) | The import fallback bisects instead of walking, and is capped |
 | [D39](#d39-review-round-3-hot-path-cost-the-location-column-and-a-docs-drift-guard) | Review round 3: hot-path cost, the Location column, and a docs drift guard |
+| [D40](#d40-admins-can-delete-agents-who-have-no-leads-or-open-follow-ups) | Admins can delete agents who have no leads or open follow-ups |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -414,7 +415,7 @@ one is true, and neither screen explains the difference. Each change picks the d
 every surface use it, rather than relabelling one screen. The import fixes serve SPEC 9's "Never drop data silently": a row the app
 itself wrote out must come back in, and a file the parser could not read must be refused instead of quietly losing its tail.
 
-## D31. Disabling an agent ends their Auth sessions, through an endpoint auth-js does not wrap
+## D31. Disabling an agent ends their Auth sessions, through a service-role RPC because Auth has no admin API for it
 **Spec:** §5 "Inactive users get zero rows on every table even with a valid JWT. On disable, also ban the user in
 Supabase Auth." §13 "A disabled agent with a still-valid token gets zero rows and cannot get a Twilio token."
 **Built:** `setAgentActive` now also revokes the account's Supabase Auth sessions, on both transitions:
@@ -430,13 +431,23 @@ the session stop working, reactivate, the old refresh token *still* fails, a fre
 
 `@supabase/auth-js` (2.116.0) exposes no admin method for this: `auth.admin.signOut(jwt, scope)` signs out the holder of a
 user access token, which an admin server disabling someone else's account never has, and `auth.admin.deleteUser` would
-destroy the account and its history. So `revokeAuthSessionsAt` (`src/server/services/agents.ts`) calls the GoTrue admin
-session route directly with the service-role key: `DELETE /auth/v1/admin/users/<id>/sessions`. localbase implements it in
-`localbase/auth.ts` (service role only; deletes `localbase.sessions` for the user, which cascades to their refresh tokens;
-404 `user_not_found` for an unknown or malformed id, which the caller treats as "nothing to revoke").
+destroy the account and its history. Hosted Supabase Auth has no admin route that signs a user out by id either. So the
+service-role-only RPC `revoke_user_sessions(p_user_id)` (`20260915001500_revoke_user_sessions.sql`) deletes the user's
+`auth.sessions` rows, which is exactly what Auth's own sign-out-everywhere (`models.Logout`) does. Refresh tokens go with
+their sessions (`auth.refresh_tokens.session_id` is ON DELETE CASCADE), and `/auth/v1/user` rejects an access token whose
+`session_id` no longer exists. `revokeAuthSessionsWith(service, id)` in `src/server/services/agents.ts` calls it. On
+localbase, `auth.sessions` is a view over `localbase.sessions` (`localbase/auth-compat.sql`, applied on every boot).
 
-Failure handling, because silently not revoking is the bug this exists to fix: an Auth server that does not implement the
-route answers 404 *without* a `user_not_found` code and that is reported, not passed over. A failed revoke on **reactivate**
+**Correction (found while reviewing D40):** the first version called `DELETE /auth/v1/admin/users/<id>/sessions`, a route
+only localbase implemented. Hosted Supabase Auth has no such route (checked against the router in the supabase/auth source),
+so on the live site every revoke failed: disabling an agent still cut them off but always reported an error, and
+reactivating always failed and left the agent disabled. localbase no longer serves that route, and
+`tests/integration/agents/session-revocation.test.ts` asserts it does not, so the emulator cannot hide a missing hosted route
+this way again. Before the fix, production was checked read-only: `postgres`, which owns the app's functions, may delete
+from `auth.sessions`, and the refresh-token foreign key cascades.
+
+Failure handling, because silently not revoking is the bug this exists to fix: an RPC error is reported, not passed over.
+A failed revoke on **reactivate**
 aborts before the ban is lifted (the agent stays disabled, message "Their earlier sessions could not be ended…"); on
 **disable** the flag and the ban are already written, so the agent is cut off either way and the admin is told to retry
 ("The agent was disabled, but their open sessions could not be ended."). Both are idempotent, so the retry is the fix.
@@ -587,3 +598,38 @@ and its cost grew with leads-per-agent — the one query in the app where that i
 monitor and present on an ordinary laptop, which is how it survived review. And the stale project list was not merely untidy: a
 contributor reading the binding contract would have named a new spec so it matched no `testMatch`, and Playwright reports nothing
 about a project that matched no files, so the spec would simply never have run.
+
+## D40. Admins can delete agents who have no leads or open follow-ups
+**Spec:** §4 "FKs to profiles use RESTRICT. Disabling an agent never deletes data." §8 lists the Agents actions as create,
+disable, reactivate, toggle in-app calling, bulk reassign and view activity, with no delete.
+**Built:** At the product owner's request, an admin can delete an **agent** (never an admin, never themselves) from the Agents
+page, but only when that agent has **no leads assigned and no open follow-ups**. Otherwise the dialog shows the counts and hands
+off to Reassign leads (or, for open follow-ups on leads the agent no longer owns, to the Follow-ups page). Deleting keeps the
+profile row and its history: calls and completed follow-ups stay attributed to it, so reports keep the stats, and the name gets a
+" (deleted)" suffix. Assigned phone numbers go back to the pool, and `profiles.deleted_at` is set with `active = false`
+(`admin_delete_agent`, which locks the profile row so a concurrent assignment cannot slip in). A CHECK constraint keeps a deleted
+profile inactive; `profiles_guard` freezes it for every caller, postgres and the service role included (no reactivation, edits or
+undelete; the one change still allowed is the email that the Auth email-sync trigger copies in); and `reject_deleted_owner` triggers
+stop leads, follow-ups and phone numbers from ever being assigned to it again, and stop a completed follow-up of theirs from being
+reopened.
+
+The Supabase Auth login is closed for good by the service, in three steps that can each be repeated: a new random password and a
+permanent ban, then every session ended (D31), then the email moved to `deleted-<id>@deleted.invalid` so the real address can be
+reused for a new agent. The security steps go first, so an email change Auth refuses never leaves the login open. The email step goes
+last because it is what marks the delete finished (the profile email follows the Auth email): until it has run, the agent stays on the
+Agents list with a **Delete unfinished** badge and a single **Finish deleting** action, and deleting again finishes it because the
+database step is idempotent.
+
+`admin_agent_rows` gains a `deleted` column rather than dropping those rows, so `admin_team_totals` still counts calls a deleted
+agent made today, while the app hides deleted agents from every list and picker (Agents, reassign targets, settings, dashboard rows,
+and the agent filter on Leads and Pipeline). Reports list a deleted agent only for a range in which they made calls, and
+`admin_report_totals` counts agents the same way. A voicemail from an unknown caller that was routed to the agent can still be marked
+heard, by an admin, once that agent is deleted. A reactivation that races a delete puts the permanent ban back: `setAgentActive`
+re-reads the profile after lifting the ban.
+
+**Known limit:** the database refuses to delete an admin, but an admin can still demote another admin to AGENT and then delete
+them. Nothing in the UI does that; it is recorded here rather than blocked.
+**Why:** Agents who leave, and accounts created by mistake, should disappear from the CRM and free their email, but deleting their
+history would silently rewrite past reports, and removing an agent who still holds leads or pending follow-ups would strand that
+work. Requiring the work to be reassigned first leaves nothing orphaned. The Auth user row itself is kept (anonymized and banned)
+because `profiles.id` references it with ON DELETE RESTRICT, which is what protects the call history.

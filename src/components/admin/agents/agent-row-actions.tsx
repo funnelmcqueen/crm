@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowRightLeft, MoreHorizontal, Pencil, PhoneOff, PhoneCall, UserCheck, UserX } from "lucide-react";
+import { Activity, ArrowRightLeft, MoreHorizontal, Pencil, PhoneOff, PhoneCall, Trash2, UserCheck, UserX } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,16 +15,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { setInAppCallingAction } from "@/server/actions/agents";
 import type { AgentRow } from "@/server/services/agents";
-import { EditAgentDialog, ReassignLeadsDialog, SetAgentActiveDialog, type ReassignTarget } from "./agent-dialogs";
+import {
+  DeleteAgentDialog,
+  EditAgentDialog,
+  ReassignLeadsDialog,
+  SetAgentActiveDialog,
+  type ReassignTarget,
+} from "./agent-dialogs";
 
 export interface AgentRowActionsProps {
   agent: AgentRow;
   reassignTargets: ReassignTarget[];
 }
 
-type OpenDialog = "edit" | "active" | "reassign" | null;
+type OpenDialog = "edit" | "active" | "reassign" | "delete" | null;
 
 const ITEM = "min-h-12 gap-2";
+const DESTRUCTIVE_ITEM = `${ITEM} text-destructive focus:text-destructive`;
 
 export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps) {
   const [dialog, setDialog] = useState<OpenDialog>(null);
@@ -61,26 +68,37 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
               View activity
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem className={ITEM} onSelect={() => setDialog("edit")}>
-            <Pencil aria-hidden />
-            Edit name, target, time zone
-          </DropdownMenuItem>
-          <DropdownMenuItem className={ITEM} onSelect={toggleInApp}>
-            {agent.inAppCallingEnabled ? <PhoneOff aria-hidden /> : <PhoneCall aria-hidden />}
-            {agent.inAppCallingEnabled ? "Turn off in-app calling" : "Turn on in-app calling"}
-          </DropdownMenuItem>
-          <DropdownMenuItem className={ITEM} disabled={agent.leadsAssigned === 0} onSelect={() => setDialog("reassign")}>
-            <ArrowRightLeft aria-hidden />
-            Reassign leads
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className={agent.active ? `${ITEM} text-destructive focus:text-destructive` : ITEM}
-            onSelect={() => setDialog("active")}
-          >
-            {agent.active ? <UserX aria-hidden /> : <UserCheck aria-hidden />}
-            {agent.active ? "Disable agent" : "Reactivate agent"}
-          </DropdownMenuItem>
+          {agent.deletePending ? (
+            // Already deleted in the CRM, so nothing is left to manage but finishing the delete (D40).
+            <DropdownMenuItem className={DESTRUCTIVE_ITEM} onSelect={() => setDialog("delete")}>
+              <Trash2 aria-hidden />
+              Finish deleting
+            </DropdownMenuItem>
+          ) : (
+            <>
+              <DropdownMenuItem className={ITEM} onSelect={() => setDialog("edit")}>
+                <Pencil aria-hidden />
+                Edit name, target, time zone
+              </DropdownMenuItem>
+              <DropdownMenuItem className={ITEM} onSelect={toggleInApp}>
+                {agent.inAppCallingEnabled ? <PhoneOff aria-hidden /> : <PhoneCall aria-hidden />}
+                {agent.inAppCallingEnabled ? "Turn off in-app calling" : "Turn on in-app calling"}
+              </DropdownMenuItem>
+              <DropdownMenuItem className={ITEM} disabled={agent.leadsAssigned === 0} onSelect={() => setDialog("reassign")}>
+                <ArrowRightLeft aria-hidden />
+                Reassign leads
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className={agent.active ? DESTRUCTIVE_ITEM : ITEM} onSelect={() => setDialog("active")}>
+                {agent.active ? <UserX aria-hidden /> : <UserCheck aria-hidden />}
+                {agent.active ? "Disable agent" : "Reactivate agent"}
+              </DropdownMenuItem>
+              <DropdownMenuItem className={DESTRUCTIVE_ITEM} onSelect={() => setDialog("delete")}>
+                <Trash2 aria-hidden />
+                Delete agent
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -88,6 +106,9 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
       {dialog === "active" ? <SetAgentActiveDialog agent={agent} onClose={close} /> : null}
       {dialog === "reassign" ? (
         <ReassignLeadsDialog from={{ userId: agent.userId, name: agent.name }} targets={reassignTargets} onClose={close} />
+      ) : null}
+      {dialog === "delete" ? (
+        <DeleteAgentDialog agent={agent} onClose={close} onReassign={() => setDialog("reassign")} />
       ) : null}
     </>
   );

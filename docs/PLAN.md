@@ -95,7 +95,7 @@ database did not support.
 
 ## Where it landed
 
-- 12 migrations (000100-001300), the single source of truth for schema, RLS, grants and RPCs.
+- 14 migrations (000100-001500), the single source of truth for schema, RLS, grants and RPCs.
 - `npm run verify` and `npm run test:e2e` are green. Run them for the current counts rather than
   trusting a number written here: the four Playwright projects are `mobile`, `desktop`, `journey`
   and `import`, all on the mock dialer. `tests/unit/docs/docs-drift.test.ts` fails if this file, the

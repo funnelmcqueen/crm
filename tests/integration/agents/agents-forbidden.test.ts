@@ -17,7 +17,9 @@ import {
   bulkReassign,
   countReassignableLeads,
   createAgent,
+  deleteAgent,
   getAgentActivity,
+  getAgentDeleteCheck,
   listAgents,
   reassignSelected,
   setAgentActive,
@@ -33,6 +35,8 @@ const mockedContext = vi.mocked(getActionContext);
 
 let agent: FixtureUser;
 let other: FixtureUser;
+// No leads or follow-ups: the delete probes target an agent that really could be deleted.
+let idle: FixtureUser;
 let agentCtx: RequestContext;
 let agentLead: Lead;
 let otherLead: Lead;
@@ -47,8 +51,8 @@ async function snapshot() {
   const service = serviceClient();
   const profiles = await service
     .from('profiles')
-    .select('id, name, role, active, daily_call_target, timezone, in_app_calling_enabled')
-    .in('id', [agent.id, other.id])
+    .select('id, name, email, role, active, deleted_at, daily_call_target, timezone, in_app_calling_enabled')
+    .in('id', [agent.id, other.id, idle.id])
     .order('id');
   const leads = await service.from('leads').select('id, assigned_to, status').in('id', [agentLead.id, otherLead.id]).order('id');
   const followUp = await service.from('follow_ups').select('id, user_id').eq('id', followUpId).single();
@@ -58,9 +62,10 @@ async function snapshot() {
 }
 
 beforeAll(async () => {
-  [agent, other] = await Promise.all([
+  [agent, other, idle] = await Promise.all([
     createUser({ name: 'Forbidden Agent', dailyCallTarget: 40, timezone: 'America/Chicago' }),
     createUser({ name: 'Other Agent' }),
+    createUser({ name: 'Idle Agent' }),
   ]);
   agentCtx = await contextForUser(agent);
   [agentLead, otherLead] = await Promise.all([createLead({ assigned_to: agent.id }), createLead({ assigned_to: other.id })]);
@@ -97,6 +102,9 @@ describe('admin services refuse an agent', () => {
       () => countReassignableLeads(agentCtx, other.id),
       () => getAgentActivity(agentCtx, other.id, 'today'),
       () => getAgentActivity(agentCtx, agent.id, 'today'),
+      () => getAgentDeleteCheck(agentCtx, idle.id),
+      () => deleteAgent(agentCtx, idle.id, deps),
+      () => deleteAgent(agentCtx, agent.id, deps),
       () => updateCompanySettings(agentCtx, companyInput),
       () => updateAgentTarget(agentCtx, agent.id, 999),
       () => updateAgentTarget(agentCtx, other.id, 1),
@@ -133,6 +141,8 @@ describe('admin server actions refuse an agent', () => {
     ['countReassignableLeadsAction', () => agentActions.countReassignableLeadsAction(other.id)],
     ['bulkReassignAction', () => agentActions.bulkReassignAction({ fromUserId: other.id, toUserId: agent.id })],
     ['reassignSelectedAction', () => agentActions.reassignSelectedAction([otherLead.id], agent.id)],
+    ['agentDeleteCheckAction', () => agentActions.agentDeleteCheckAction(idle.id)],
+    ['deleteAgentAction', () => agentActions.deleteAgentAction(idle.id)],
     ['updateCompanySettingsAction', () => settingsActions.updateCompanySettingsAction(companyInput)],
     ['updateAgentTargetAction', () => settingsActions.updateAgentTargetAction(agent.id, 999)],
   ];

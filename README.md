@@ -82,7 +82,10 @@ are unsure about.
 - All Leads, including unassigned; create, reassign and hard-delete leads.
 - Agents: create (one-time password shown once), disable (also banned in Supabase Auth) and
   reactivate, toggle in-app calling, set targets and timezones, bulk-reassign, and a banner when
-  leads are still held by disabled agents.
+  leads are still held by disabled agents. **Disable** is reversible and keeps everything. **Delete**
+  is permanent and only allowed once an agent has no leads and no open follow-ups (reassign them
+  first): the login is closed for good and the email can be reused, while their past calls stay in
+  reports under "(deleted)".
 - Phone Numbers: add an already-purchased Twilio number (the CRM looks it up and points its voice
   handler at the TwiML App), assign to an agent or leave it in the shared pool, deactivate.
 - Reports: date range, per agent (dials, connect rate, talk minutes, average call length,
@@ -133,7 +136,7 @@ prints a ready-to-paste env block:
 ```
 [localbase] applied bootstrap.sql
 [localbase] applied migration 20260915000100_core_schema.sql
-... (12 migrations)
+... (14 migrations)
 [localbase] listening on http://127.0.0.1:54321
 
 localbase is running (data: .../.localbase/data)

@@ -158,12 +158,15 @@ export async function getAgentDashboard(ctx: RequestContext): Promise<AgentDashb
   return { stats, nextLead: lead };
 }
 
-/** Per-user rows for AGENT and ADMIN profiles, "today" in each user's own timezone. Admin only. */
+/**
+ * Per-user rows for AGENT and ADMIN profiles, "today" in each user's own timezone. Admin only. Deleted
+ * agents are left out; admin_team_totals still counts calls they made today.
+ */
 export async function listAgentStatsRows(ctx: RequestContext): Promise<AgentStatsRow[]> {
   const { supabase } = requireAdmin(ctx);
   const { data, error } = await supabase.rpc("admin_agent_rows");
   if (error) throw mapPostgrestError(error);
-  return (data ?? []).map((r) => ({
+  return (data ?? []).filter((r) => !r.deleted).map((r) => ({
     userId: r.user_id,
     name: r.name,
     email: r.email,

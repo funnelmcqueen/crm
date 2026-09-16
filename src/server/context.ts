@@ -17,7 +17,7 @@ export interface RequestContext {
 }
 
 export const PROFILE_COLUMNS =
-  "id, email, name, role, active, daily_call_target, timezone, in_app_calling_enabled, device_seen_at, created_at";
+  "id, email, name, role, active, daily_call_target, timezone, in_app_calling_enabled, device_seen_at, created_at, deleted_at";
 
 type AuthState =
   | { status: "anonymous" }

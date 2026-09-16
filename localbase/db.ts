@@ -92,6 +92,17 @@ export async function createDatabase(options: CreateDatabaseOptions = {}): Promi
       log('applied bootstrap.sql');
     }
 
+    // Idempotent, and applied on every boot so existing data directories pick up new views too.
+    const compatPath = path.join(localbaseDir(), 'auth-compat.sql');
+    const compatSql = readFileSync(compatPath, 'utf8');
+    try {
+      await db.transaction(async (tx) => {
+        await tx.exec(compatSql);
+      });
+    } catch (error) {
+      throw new MigrationError('auth-compat.sql', error, `auth-compat.sql failed: ${describeSqlError(error, compatSql)}`);
+    }
+
     const migrationsDir = path.resolve(options.migrationsDir ?? 'supabase/migrations');
     const files = listMigrationFiles(migrationsDir);
     const applied = new Set(

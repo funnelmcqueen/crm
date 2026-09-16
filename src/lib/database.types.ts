@@ -270,6 +270,7 @@ export type Database = {
           active: boolean
           created_at: string
           daily_call_target: number
+          deleted_at: string | null
           device_seen_at: string | null
           email: string
           id: string
@@ -282,6 +283,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           daily_call_target?: number
+          deleted_at?: string | null
           device_seen_at?: string | null
           email: string
           id: string
@@ -294,6 +296,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           daily_call_target?: number
+          deleted_at?: string | null
           device_seen_at?: string | null
           email?: string
           id?: string
@@ -365,6 +368,12 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_agent_delete_check: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Json
+      }
       admin_agent_rows: {
         Args: never
         Returns: {
@@ -373,6 +382,7 @@ export type Database = {
           assigned_numbers: string[]
           connected_today: number
           daily_call_target: number
+          deleted: boolean
           dials_today: number
           email: string
           in_app_calling_enabled: boolean
@@ -384,6 +394,12 @@ export type Database = {
           timezone: string
           user_id: string
         }[]
+      }
+      admin_delete_agent: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Json
       }
       admin_phone_number_rows: {
         Args: never
@@ -713,6 +729,12 @@ export type Database = {
           p_recording_sid: string
         }
         Returns: boolean
+      }
+      revoke_user_sessions: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: number
       }
       search_leads: {
         Args: {

@@ -8,7 +8,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RequestContext } from '@/server/context';
 import { AppError } from '@/server/errors';
-import { revokeAuthSessionsAt, setAgentActive, type AgentServiceDeps } from '@/server/services/agents';
+import { revokeAuthSessionsWith, setAgentActive, type AgentServiceDeps } from '@/server/services/agents';
 import { anonClient, clientWithAccessToken, serviceClient } from '../../helpers/clients';
 import { contextForUser } from '../../helpers/context';
 import { isLocalbaseStack, testStack } from '../../helpers/env';
@@ -18,10 +18,7 @@ const UNKNOWN_USER_ID = '00000000-0000-4000-8000-000000000000';
 
 const deps: Partial<AgentServiceDeps> = {
   authAdmin: () => serviceClient(),
-  revokeSessions: (userId) => {
-    const stack = testStack();
-    return revokeAuthSessionsAt(stack.url, stack.serviceRoleKey, userId);
-  },
+  revokeSessions: (userId) => revokeAuthSessionsWith(serviceClient(), userId),
 };
 
 const revokeFails: Partial<AgentServiceDeps> = {
@@ -191,21 +188,42 @@ describe('setAgentActive ends existing Auth sessions', () => {
   });
 });
 
-// The route is localbase's stand-in for GoTrue's admin session revocation (localbase/auth.ts).
-describe.runIf(isLocalbaseStack())('DELETE /auth/v1/admin/users/:id/sessions', () => {
-  it('needs the service role and reports an unknown user as nothing to revoke', async () => {
-    const stack = testStack();
-    const agent = await createUser({ name: 'Endpoint Shape' });
-    await signIn(agent);
+// Hosted Supabase Auth has no admin route that signs a user out by id, so revoke_user_sessions (which
+// deletes the user's auth.sessions rows) is the only way the app ends someone else's sessions. It must
+// be reachable by the service role alone.
+describe('revoke_user_sessions', () => {
+  it("needs the service role, ends only that user's sessions, and has nothing to revoke for an unknown user", async () => {
+    const [agent, bystander] = await Promise.all([createUser({ name: 'Rpc Shape' }), createUser({ name: 'Rpc Bystander' })]);
+    const session = await signIn(agent);
+    const bystanderSession = await signIn(bystander);
 
-    // The anon key is a valid API key but not an admin token.
-    await expect(revokeAuthSessionsAt(stack.url, stack.anonKey, agent.id)).rejects.toThrow(/HTTP 403/);
-    // That refusal really left the session alone.
+    for (const client of [anonClient(), clientWithAccessToken(session.accessToken)]) {
+      const { error } = await client.rpc('revoke_user_sessions', { p_user_id: agent.id });
+      expect(error?.code).toBe('42501');
+    }
+    // Those refusals really left the session alone.
+    expect(await getUserStatus(session.accessToken)).toBe(200);
+
+    await expect(revokeAuthSessionsWith(serviceClient(), UNKNOWN_USER_ID)).resolves.toBeUndefined();
+    await expect(revokeAuthSessionsWith(serviceClient(), agent.id)).resolves.toBeUndefined();
+    expect(await getUserStatus(session.accessToken)).not.toBe(200);
+    expect((await refreshSession(session.refreshToken)).status).not.toBe(200);
+    expect(await getUserStatus(bystanderSession.accessToken)).toBe(200);
+    // Ending sessions is not a ban: the agent can sign in again.
     expect(await trySignIn(agent)).toBe(true);
+  });
+});
 
-    // An account Auth does not know holds no sessions, so there is nothing to fail about.
-    await expect(revokeAuthSessionsAt(stack.url, stack.serviceRoleKey, UNKNOWN_USER_ID)).resolves.toBeUndefined();
-    // A malformed id is answered the same way.
-    await expect(revokeAuthSessionsAt(stack.url, stack.serviceRoleKey, 'not-a-uuid')).resolves.toBeUndefined();
+// localbase must not answer routes hosted Supabase Auth does not have: a by-id sessions route that only
+// localbase served is what hid D31's production failure.
+describe.runIf(isLocalbaseStack())('localbase Auth', () => {
+  it('does not serve DELETE /auth/v1/admin/users/:id/sessions', async () => {
+    const stack = testStack();
+    const response = await fetch(`${stack.url}/auth/v1/admin/users/${UNKNOWN_USER_ID}/sessions`, {
+      method: 'DELETE',
+      headers: { apikey: stack.serviceRoleKey, Authorization: `Bearer ${stack.serviceRoleKey}` },
+    });
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain('user_not_found');
   });
 });

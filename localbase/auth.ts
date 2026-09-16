@@ -719,32 +719,6 @@ async function adminUpdateUser(req: LbRequest, deps: AuthDeps, id: string): Prom
   return ok(200, userJson(updated));
 }
 
-/**
- * Ends every session of one user: the session rows and (by cascade) their refresh tokens.
- *
- * GoTrue's own admin surface can only sign out the holder of a user access token
- * (`POST /logout`, which `supabase.auth.admin.signOut(jwt, scope)` wraps), and an admin server
- * disabling an account does not have that token. This route is the by-id equivalent, so the app's
- * "disable an agent" flow can end the sessions the agent's browser is still holding. See
- * docs/DEVIATIONS.md D31.
- *
- * Service role only, like every other /admin route. Deleting sessions is not the same as deleting
- * the user: the account, its identities and its password are untouched.
- */
-async function adminDeleteUserSessions(req: LbRequest, deps: AuthDeps, id: string): Promise<LbResponse> {
-  await requireAdmin(req);
-  if (!UUID_RE.test(id)) throw new AuthHttpError(404, 'user_not_found', 'User not found');
-  const revoked = await withDbFailure(deps, 'Database error revoking sessions', () =>
-    authTx(deps, async (q) => {
-      const user = await loadUser(q, 'id', id);
-      if (!user) throw new AuthHttpError(404, 'user_not_found', 'User not found');
-      const result = await q.query(`delete from localbase.sessions where user_id = $1`, [id]);
-      return result.affectedRows ?? 0;
-    }),
-  );
-  return ok(200, { revoked });
-}
-
 async function adminDeleteUser(req: LbRequest, deps: AuthDeps, id: string): Promise<LbResponse> {
   await requireAdmin(req);
   const body = parseBody(req);
@@ -831,10 +805,6 @@ export async function handleAuth(req: LbRequest, deps: AuthDeps): Promise<LbResp
     if (path === '/admin/users') {
       if (method === 'GET') return await adminListUsers(req, deps);
       if (method === 'POST') return await adminCreateUser(req, deps);
-    }
-    const adminSessions = /^\/admin\/users\/([^/]+)\/sessions$/.exec(path);
-    if (adminSessions && method === 'DELETE') {
-      return await adminDeleteUserSessions(req, deps, decodeURIComponent(adminSessions[1]));
     }
     const adminUser = /^\/admin\/users\/([^/]+)$/.exec(path);
     if (adminUser) {

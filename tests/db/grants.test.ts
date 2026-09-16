@@ -31,6 +31,7 @@ const MATRIX: Record<string, Access> = {
   leads_guard: 'none',
   follow_ups_guard: 'none',
   leads_move_open_follow_ups: 'none',
+  reject_deleted_owner: 'none',
   // internal helper called only by definer RPCs
   apply_rate_limit: 'none',
   // service-only
@@ -62,6 +63,10 @@ const MATRIX: Record<string, Access> = {
   get_my_dashboard: 'api',
   admin_agent_rows: 'api',
   admin_team_totals: 'api',
+  // delete agent (D40)
+  admin_agent_delete_check: 'api',
+  admin_delete_agent: 'api',
+  revoke_user_sessions: 'service',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',

@@ -10,6 +10,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  turbopack: {
+    // Pin the root to this project: Turbopack otherwise walks up to any lockfile in a parent folder
+    // (e.g. a stray package-lock.json in Downloads) and warns or resolves from the wrong directory.
+    root: __dirname,
+  },
   experimental: {
     serverActions: {
       // CSV import sends lead batches of 500 rows through a server action.

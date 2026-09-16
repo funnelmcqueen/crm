@@ -17,7 +17,7 @@ Key differences: `proxy.ts` replaces `middleware.ts` (Node runtime only), `cooki
 1. **Isolation lives in Postgres.** Every table has RLS. Every query from app code runs with the
    user's session (anon key + user JWT) so RLS applies. UI hiding is never a control.
 2. **Service role** (`src/server/supabase/admin.ts`) is used only for (a) Supabase Auth admin ops
-   (create/ban users), (b) Twilio webhooks, and (c) the voicemail route's
+   (create/ban users, and the `revoke_user_sessions` RPC that ends a user's sessions, D31), (b) Twilio webhooks, and (c) the voicemail route's
    `get_voicemail_recording(callId, sessionUserId)` lookup after `getUser()` (DEVIATIONS D13). Nothing else.
    Grep-able: `createAdminClient(`.
 3. **Every server action, route handler and service** validates input with Zod and checks auth and
@@ -182,6 +182,7 @@ create type public.call_mode     as enum ('IN_APP','TEL');
 | in_app_calling_enabled | boolean not null default true | |
 | device_seen_at | timestamptz null | Twilio Device presence heartbeat (addition) |
 | created_at | timestamptz not null default now() | |
+| deleted_at | timestamptz null | set only by `admin_delete_agent` (D40); CHECK `deleted_at is null or not active` |
 
 **settings** (single row; `id boolean primary key default true check (id)`)
 `company_name text not null default 'Funnel McQueen'`, `default_daily_target int not null default 50`,
@@ -282,7 +283,14 @@ anon/authenticated.
 - `profiles_validate_timezone` / `settings_validate_timezone`: BEFORE INSERT/UPDATE OF timezone, invalid IANA zone → `22023`.
 - `profiles_guard` details: the lockout (own `role`/`active`) applies to every caller whose `auth.uid()` is the row;
   non-privileged non-admins may change only `name` (max 200 chars); admins may change anything except `id`,
-  `email` (synced from auth.users only) and `created_at`.
+  `email` (synced from auth.users only) and `created_at`. Since `20260915001400_delete_agent.sql` (D40), no API caller,
+  admins included, may set or clear `deleted_at`, and a deleted profile is frozen for every caller, postgres and the service role
+  included, except for the `email` that `on_auth_user_email_changed` copies in.
+- `leads_reject_deleted_owner` / `follow_ups_reject_deleted_owner` / `phone_numbers_reject_deleted_owner`: BEFORE INSERT/UPDATE OF
+  the owner column, run `reject_deleted_owner(column [, open_column])` (SECURITY DEFINER, no API role). They take FOR KEY SHARE on
+  the owner's profile row and refuse a deleted owner with `22023`; with `admin_delete_agent`'s FOR UPDATE this serializes an
+  assignment racing a delete. The follow-ups trigger also fires on `completed_at` (`open_column`), so reopening a deleted agent's
+  completed follow-up is refused too.
 
 `public.is_privileged_role()` returns `current_user not in ('anon','authenticated')`. It is SECURITY INVOKER
 (it must see the real caller) and granted to authenticated, because the invoker guard triggers call it as the
@@ -447,6 +455,31 @@ with `range ∈ today | 7d | 30d` in the admin's timezone). `deps.authAdmin` (se
 false without a loaded driver that supports it); the chosen devices live in localStorage `fmq.audioInput` / `fmq.audioOutput` and are
 re-applied whenever the in-app device becomes ready.
 
+Delete agent (`20260915001400_delete_agent.sql`, DEVIATIONS D40):
+
+| RPC | who | behavior |
+|---|---|---|
+| `admin_agent_delete_check(p_user_id uuid) → jsonb {leads, open_follow_ups, completed_follow_ups, calls, phone_numbers, deleted, email, reason, deletable}` | admin (else `42501`) | Read only. `reason` is `deleted`, `self`, `admin`, `has_work` (leads or open follow-ups) or null; `deletable = reason is null`. `email` is the profile email, which tells a finished delete from an unfinished one. Unknown id → `P0002`. |
+| `admin_delete_agent(p_user_id uuid) → jsonb {user_id, already_deleted, phone_numbers_unassigned}` | admin (else `42501`) | Locks the profile FOR UPDATE. Unknown id → `P0002`; admin target or self → `42501`; leads or open follow-ups → `P0001 agent_has_work` with `DETAIL` `{"leads":n,"open_follow_ups":m}`. Otherwise unassigns the agent's phone numbers and sets `deleted_at = now()`, `active = false`, name + " (deleted)" ("Deleted agent" when blank). Calls and completed follow-ups are untouched. An already deleted profile returns `already_deleted: true`. |
+
+| `revoke_user_sessions(p_user_id uuid) → integer` (`20260915001500_revoke_user_sessions.sql`, D31) | service role only | Deletes the user's `auth.sessions` rows (their refresh tokens cascade) and returns how many. Null id → `22023`. On localbase `auth.sessions` is a view over `localbase.sessions` (`localbase/auth-compat.sql`). |
+
+The same migration also replaces two existing functions, changing one condition each: `admin_report_agents` lists an AGENT profile
+only when it is not deleted, unless it has calls in the range or CLIENT leads (so `admin_report_totals.agents` drops deleted agents
+too), and `mark_voicemail_heard` lets an admin mark heard a lead-less voicemail routed to a deleted agent.
+
+`admin_agent_rows` is dropped and recreated with a trailing `deleted boolean` column. Deleted agents stay in its result so
+`admin_team_totals` keeps counting calls they made today; `listAllAgentRows` (settings) and `listAgentStatsRows` (admin dashboard rows)
+filter them out, and `listAgents` keeps only unfinished deletes (`AgentRow.deletePending`, profile email not yet
+`deletedAuthEmail(id)`) on the Agents list and out of the reassign targets. `listAgentsForFilter` (Leads and Pipeline) skips deleted
+profiles. App side: `src/server/services/agents.ts` `getAgentDeleteCheck(ctx, id)` (adds `loginClosed`) and
+`deleteAgent(ctx, id, deps)`, which runs the RPC with the admin's session and then closes the login in three repeatable steps:
+through `deps.authAdmin` a new password and a permanent ban, then `deps.revokeSessions(id)`, then the Auth email moved to
+`deletedAuthEmail(id)` = `deleted-<id>@deleted.invalid` (with `email_confirm: true`, so nothing is mailed). A failed step is
+`unavailable` with a message naming what is already done; deleting again finishes it, and `deleteAgentAction` refreshes on that error
+so the list shows **Delete unfinished** with a **Finish deleting** action. `setAgentActive` answers `not_found` for a deleted agent,
+and if a delete lands while it reactivates, it bans the login again. The drill-down page shows a **Deleted** badge.
+
 ### 4.8 Migration files (ownership slots)
 ```
 supabase/migrations/20260915000100_core_schema.sql     stage 1
@@ -461,6 +494,8 @@ supabase/migrations/20260915001000_admin_agents.sql    stage 10a (agents drill-d
 supabase/migrations/20260915001100_numbers_reports.sql stage 10b (phone numbers, reports)
 supabase/migrations/20260915001200_review_fixes_2.sql  stages 6-10 review fixes (round 2)
 supabase/migrations/20260915001300_review_fixes_3.sql  final review round (get_next_lead cost, export limit)
+supabase/migrations/20260915001400_delete_agent.sql    delete agent (D40)
+supabase/migrations/20260915001500_revoke_user_sessions.sql  end a user's Auth sessions without a hosted admin route (D31)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
 Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`

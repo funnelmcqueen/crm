@@ -11,7 +11,7 @@ import {
   getAgentActivity,
   listAgents,
   reassignSelected,
-  revokeAuthSessionsAt,
+  revokeAuthSessionsWith,
   setAgentActive,
   setInAppCalling,
   updateAgentProfile,
@@ -19,7 +19,6 @@ import {
 } from '@/server/services/agents';
 import { clientWithAccessToken, serviceClient, signInAs, trySignIn } from '../../helpers/clients';
 import { contextForUser } from '../../helpers/context';
-import { testStack } from '../../helpers/env';
 import {
   createCall,
   createFollowUp,
@@ -33,10 +32,7 @@ import {
 // The app's defaults read the Supabase service role from the server env; tests point both at the test stack.
 const deps: Partial<AgentServiceDeps> = {
   authAdmin: () => serviceClient(),
-  revokeSessions: (userId) => {
-    const stack = testStack();
-    return revokeAuthSessionsAt(stack.url, stack.serviceRoleKey, userId);
-  },
+  revokeSessions: (userId) => revokeAuthSessionsWith(serviceClient(), userId),
 };
 
 async function expectAppError(promise: Promise<unknown>, code: AppError['code']): Promise<AppError> {

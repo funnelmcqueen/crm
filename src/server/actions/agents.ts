@@ -7,14 +7,18 @@ import {
   bulkReassign,
   countReassignableLeads,
   createAgent,
+  deleteAgent,
+  getAgentDeleteCheck,
   reassignSelected,
   setAgentActive,
   setInAppCalling,
   updateAgentProfile,
+  type AgentDeleteCheck,
   type AgentProfileSummary,
   type BulkReassignInput,
   type CreateAgentInput,
   type CreateAgentResult,
+  type DeleteAgentResult,
   type SetAgentActiveResult,
   type UpdateAgentProfileInput,
 } from "@/server/services/agents";
@@ -70,5 +74,17 @@ export async function reassignSelectedAction(
 ): Promise<ActionResult<{ count: number }>> {
   const result = await runAction(async () => reassignSelected(await getActionContext(), leadIds, toUserId));
   if (result.ok) refresh();
+  return result;
+}
+
+export async function agentDeleteCheckAction(userId: string): Promise<ActionResult<AgentDeleteCheck>> {
+  return runAction(async () => getAgentDeleteCheck(await getActionContext(), userId));
+}
+
+export async function deleteAgentAction(userId: string): Promise<ActionResult<DeleteAgentResult>> {
+  const result = await runAction(async () => deleteAgent(await getActionContext(), userId));
+  // "unavailable" means the agent is already deleted but closing their login stopped half way: refresh so
+  // the Agents list shows the unfinished delete the admin can come back to.
+  if (result.ok || result.error.code === "unavailable") refresh();
   return result;
 }

@@ -170,7 +170,8 @@ export interface AgentOption {
 const AGENT_OPTION_PAGE_SIZE = 500;
 
 /**
- * Admin only: every profile, for the agent filter and the reassign picker.
+ * Admin only: every profile except deleted agents (D40, who own no leads), for the agent filter and the
+ * reassign picker.
  *
  * Read in explicit pages: PostgREST truncates an unpaginated response at db-max-rows without saying
  * so, which silently dropped agents past the cap out of the filter on /leads and /pipeline.
@@ -182,6 +183,7 @@ export async function listAgentsForFilter(ctx: RequestContext | null): Promise<A
     const { data, error } = await admin.supabase
       .from("profiles")
       .select("id, name, email, active, role")
+      .is("deleted_at", null)
       .order("name", { ascending: true })
       .order("email", { ascending: true })
       .range(offset, offset + AGENT_OPTION_PAGE_SIZE - 1);

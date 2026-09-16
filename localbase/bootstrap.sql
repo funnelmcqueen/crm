@@ -158,7 +158,8 @@ create table if not exists localbase.schema_migrations (
 );
 
 -- GoTrue subset state. Real Supabase keeps these in auth.sessions / auth.refresh_tokens; localbase keeps
--- them out of the auth schema so app SQL cannot come to depend on emulator-specific shapes.
+-- them out of the auth schema so app SQL cannot come to depend on emulator-specific shapes. The hosted
+-- columns app SQL does use are exposed as views in localbase/auth-compat.sql.
 create table if not exists localbase.sessions (
   id uuid primary key,
   user_id uuid not null references auth.users (id) on delete cascade,

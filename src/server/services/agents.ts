@@ -4,13 +4,12 @@ import type { Database, Json } from "@/lib/database.types";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
 import { endOfDayInTz, isValidTimeZone, startOfDayInTz } from "@/lib/domain/time";
 import { requireAdmin, type RequestContext } from "@/server/context";
-import { getServerEnv } from "@/server/env";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
 import { createAdminClient } from "@/server/supabase/admin";
 
 // Admin agent management (SPEC 8 "Agents (admin)", SPEC 5 "On disable, also ban the user in Supabase Auth").
 // Every profile read and write runs with the admin's own session. The service role is used only for the
-// Supabase Auth admin API (create user, ban/unban), per ARCHITECTURE golden rule 2.
+// Supabase Auth admin API (create user, ban/unban, end sessions), per ARCHITECTURE golden rule 2.
 
 type CallDirection = Database["public"]["Enums"]["call_direction"];
 type CallMode = Database["public"]["Enums"]["call_mode"];
@@ -32,7 +31,7 @@ export interface AgentServiceDeps {
   authAdmin(): SupabaseClient<Database>;
   /** One-time password generator (injectable for tests). */
   generatePassword(): string;
-  /** Ends every Supabase Auth session of a user (see `revokeAuthSessionsAt`). Throws on failure. */
+  /** Ends every Supabase Auth session of a user (see `revokeAuthSessionsWith`). Throws on failure. */
   revokeSessions(userId: string): Promise<void>;
 }
 
@@ -69,36 +68,22 @@ function parseUserId(id: unknown): string {
  * (which is what `getUser()` in `src/proxy.ts` and `src/server/context.ts` call), and their refresh
  * token can no longer mint a new one.
  *
- * `@supabase/auth-js` (2.116.0) has no admin method for this. `auth.admin.signOut(jwt, scope)` signs
- * out the holder of a *user* access token, which an admin server disabling someone else's account
- * never has, and `auth.admin.deleteUser` would destroy the account and its history. A ban alone is
- * not enough either: it blocks sign-in and refresh only while it lasts, so lifting it on reactivation
- * makes every pre-disable cookie and refresh token valid again. So the GoTrue admin session endpoint
- * is called directly with the service-role key. localbase implements it in `localbase/auth.ts`.
- * See docs/DEVIATIONS.md D31.
- *
- * A deployment whose Auth server does not implement the route answers 404 *without* a
- * `user_not_found` code, and that is reported as a failure rather than passed over: quietly not
- * revoking is exactly the bug this exists to fix.
+ * Supabase Auth has no admin API for this. `auth.admin.signOut(jwt, scope)` signs out the holder of a
+ * *user* access token, which an admin server disabling someone else's account never has, hosted Auth
+ * exposes no by-id sessions route, and `auth.admin.deleteUser` would destroy the account and its
+ * history. A ban alone is not enough either: it blocks sign-in and refresh only while it lasts, so
+ * lifting it on reactivation makes every pre-disable cookie and refresh token valid again. So the
+ * service-role-only `revoke_user_sessions` RPC deletes the rows in `auth.sessions`, exactly what Auth's
+ * own sign-out-everywhere does. See docs/DEVIATIONS.md D31.
  */
-export async function revokeAuthSessionsAt(supabaseUrl: string, serviceRoleKey: string, userId: string): Promise<void> {
-  const base = supabaseUrl.replace(/\/+$/, "");
-  const response = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(userId)}/sessions`, {
-    method: "DELETE",
-    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
-    cache: "no-store",
-  });
-  if (response.ok) return;
-  const body = await response.text().catch(() => "");
-  // An account that no longer exists in Auth holds no sessions either.
-  if (response.status === 404 && body.includes("user_not_found")) return;
-  throw new Error(`revoking Auth sessions failed with HTTP ${response.status}`);
+export async function revokeAuthSessionsWith(service: SupabaseClient<Database>, userId: string): Promise<void> {
+  const { error } = await service.rpc("revoke_user_sessions", { p_user_id: userId });
+  if (error) throw new Error(`revoking Auth sessions failed: ${error.code ?? "unknown"} ${error.message}`);
 }
 
-/** `revokeAuthSessionsAt` pointed at this deployment's Supabase. Read lazily, like `createAdminClient`. */
+/** `revokeAuthSessionsWith` this deployment's service-role client. Created lazily, like the ban. */
 export async function revokeAuthSessions(userId: string): Promise<void> {
-  const env = getServerEnv();
-  await revokeAuthSessionsAt(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, userId);
+  await revokeAuthSessionsWith(createAdminClient(), userId);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -180,6 +165,11 @@ export interface AgentRow {
   appointmentsToday: number;
   talkSecondsToday: number;
   assignedNumbers: string[];
+  /**
+   * Deleted in the CRM, but closing the login did not finish (D40). Only the Agents list shows these,
+   * so the admin can finish the delete; every other list leaves deleted agents out.
+   */
+  deletePending: boolean;
 }
 
 export interface DisabledAgentsWithLeads {
@@ -215,20 +205,32 @@ function toAgentRow(row: AgentRowsRow): AgentRow {
     appointmentsToday: Number(row.appointments_today ?? 0),
     talkSecondsToday: Number(row.talk_seconds_today ?? 0),
     assignedNumbers: Array.isArray(row.assigned_numbers) ? row.assigned_numbers : [],
+    deletePending: row.deleted && row.email !== deletedAuthEmail(row.user_id),
   };
 }
 
-/** All AGENT and ADMIN rows from admin_agent_rows (admin only). */
-export async function listAllAgentRows(ctx: RequestContext | null): Promise<AgentRow[]> {
+async function readAgentRows(ctx: RequestContext | null): Promise<AgentRowsRow[]> {
   const admin = requireAdmin(ctx);
   const { data, error } = await admin.supabase.rpc("admin_agent_rows");
   if (error) fail(error);
-  return ((data ?? []) as AgentRowsRow[]).map(toAgentRow);
+  return (data ?? []) as AgentRowsRow[];
+}
+
+/**
+ * AGENT and ADMIN rows from admin_agent_rows (admin only). Deleted agents are left out of every list and
+ * picker built on this; admin_team_totals still counts calls they made today.
+ */
+export async function listAllAgentRows(ctx: RequestContext | null): Promise<AgentRow[]> {
+  return (await readAgentRows(ctx)).filter((row) => !row.deleted).map(toAgentRow);
 }
 
 export async function listAgents(ctx: RequestContext | null): Promise<AgentListResult> {
-  const rows = await listAllAgentRows(ctx);
-  const agents = rows.filter((row) => row.role === "AGENT");
+  const all = (await readAgentRows(ctx)).map((row) => ({ deleted: row.deleted, row: toAgentRow(row) }));
+  const rows = all.filter((entry) => !entry.deleted).map((entry) => entry.row);
+  // A delete whose login closing failed stays on the Agents list, marked, until the admin finishes it.
+  const agents = all
+    .filter((entry) => entry.row.role === "AGENT" && (!entry.deleted || entry.row.deletePending))
+    .map((entry) => entry.row);
   const disabled = rows.filter((row) => !row.active && row.leadsAssigned > 0);
   return {
     agents,
@@ -319,10 +321,15 @@ export async function createAgent(
 // ---------------------------------------------------------------------------------------------
 
 async function readProfileFlags(admin: RequestContext, userId: string): Promise<{ id: string; active: boolean }> {
-  const { data, error } = await admin.supabase.from("profiles").select("id, active").eq("id", userId).maybeSingle();
+  const { data, error } = await admin.supabase
+    .from("profiles")
+    .select("id, active, deleted_at")
+    .eq("id", userId)
+    .maybeSingle();
   if (error) fail(error);
-  if (!data) throw new AppError("not_found");
-  return data;
+  // A deleted agent is gone as far as management goes: it can never be reactivated (the database refuses too).
+  if (!data || data.deleted_at !== null) throw new AppError("not_found");
+  return { id: data.id, active: data.active };
 }
 
 export interface SetAgentActiveResult {
@@ -405,6 +412,23 @@ export async function setAgentActive(
         : "Sign-in could not be blocked, so the agent stays active. Try again.",
       { cause: banError },
     );
+  }
+
+  // Reactivating races a delete: if the agent was deleted after the flag above was written, lifting the
+  // ban just undid the delete's permanent ban. Put it back; a deleted login never signs in again (D40).
+  if (next) {
+    try {
+      await readProfileFlags(admin, id);
+    } catch (error) {
+      if (!(error instanceof AppError && error.code === "not_found")) throw error;
+      const reban = await authAdmin().auth.admin.updateUserById(id, { ban_duration: PERMANENT_BAN_DURATION });
+      if (reban.error) {
+        throw new AppError("unavailable", "This agent was deleted while being reactivated. Delete them again to finish.", {
+          cause: reban.error,
+        });
+      }
+      throw error;
+    }
   }
 
   // Disabling: the ban stops new sign-ins and refreshes; this also ends the sessions the agent's
@@ -657,6 +681,8 @@ export interface AgentActivity {
     email: string;
     role: UserRole;
     active: boolean;
+    /** Deleted by an admin (history kept). Set by getAgentActivity, not by admin_agent_activity. */
+    deleted: boolean;
     timezone: string;
     dailyCallTarget: number;
     inAppCallingEnabled: boolean;
@@ -716,6 +742,7 @@ export function parseAgentActivity(json: Json, range: AgentActivity["range"]): A
       email: str(profile.email) ?? "",
       role: profile.role === "ADMIN" ? "ADMIN" : "AGENT",
       active: profile.active === true,
+      deleted: false,
       timezone: str(profile.timezone) ?? "America/New_York",
       dailyCallTarget: num(profile.daily_call_target),
       inAppCallingEnabled: profile.in_app_calling_enabled === true,
@@ -777,7 +804,7 @@ export async function getAgentActivity(
   // same agent's numbers, with both screens labelling the window "Today".
   const { data: target, error: targetError } = await admin.supabase
     .from("profiles")
-    .select("timezone")
+    .select("timezone, deleted_at")
     .eq("id", id)
     .maybeSingle();
   if (targetError) fail(targetError);
@@ -794,5 +821,160 @@ export async function getAgentActivity(
     if (error.code === "P0002") return null;
     fail(error);
   }
-  return parseAgentActivity(data, { key, from: from.toISOString(), to: to.toISOString(), timezone });
+  const activity = parseAgentActivity(data, { key, from: from.toISOString(), to: to.toISOString(), timezone });
+  activity.profile.deleted = target.deleted_at !== null;
+  return activity;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Delete (docs/DEVIATIONS.md D40)
+// ---------------------------------------------------------------------------------------------
+
+export type AgentDeleteBlocker = "deleted" | "self" | "admin" | "has_work";
+
+export interface AgentDeleteCheck {
+  leads: number;
+  openFollowUps: number;
+  completedFollowUps: number;
+  calls: number;
+  phoneNumbers: number;
+  deleted: boolean;
+  /**
+   * The login of a deleted agent is fully closed. False while `deleted` is true means an earlier delete
+   * stopped half way; deleting again finishes it.
+   */
+  loginClosed: boolean;
+  /** Why the user can't be deleted, or null when they can. */
+  reason: AgentDeleteBlocker | null;
+  deletable: boolean;
+}
+
+const DELETE_BLOCKERS: readonly AgentDeleteBlocker[] = ["deleted", "self", "admin", "has_work"];
+
+/** What stands between the admin and deleting this user: counts of their work and history. Admin only. */
+export async function getAgentDeleteCheck(ctx: RequestContext | null, userId: unknown): Promise<AgentDeleteCheck> {
+  const admin = requireAdmin(ctx);
+  const id = parseUserId(userId);
+  const { data, error } = await admin.supabase.rpc("admin_agent_delete_check", { p_user_id: id });
+  if (error) fail(error);
+  const row = asRecord(data as Json);
+  const reason = DELETE_BLOCKERS.find((blocker) => blocker === row.reason) ?? null;
+  return {
+    leads: num(row.leads),
+    openFollowUps: num(row.open_follow_ups),
+    completedFollowUps: num(row.completed_follow_ups),
+    calls: num(row.calls),
+    phoneNumbers: num(row.phone_numbers),
+    deleted: row.deleted === true,
+    loginClosed: row.deleted === true && row.email === deletedAuthEmail(id),
+    reason,
+    deletable: row.deletable === true && reason === null,
+  };
+}
+
+export interface DeleteAgentResult {
+  userId: string;
+  /** The profile was already deleted; this call only finished closing the login. */
+  alreadyDeleted: boolean;
+  phoneNumbersUnassigned: number;
+}
+
+/**
+ * The Auth email a deleted agent's login is moved to. `.invalid` is reserved (RFC 2606), so it can never
+ * receive mail or belong to a real person, and deriving it from the id keeps it unique and stable across
+ * retries. Moving the login off the original address is what lets an admin reuse that address.
+ */
+export function deletedAuthEmail(userId: string): string {
+  return `deleted-${userId}@deleted.invalid`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${formatCount(count)} ${count === 1 ? one : many}`;
+}
+
+function formatCount(count: number): string {
+  return new Intl.NumberFormat("en-US").format(count);
+}
+
+function agentHasWorkError(error: PostgrestLikeError): AppError {
+  let leads = 0;
+  let openFollowUps = 0;
+  try {
+    const details = asRecord(JSON.parse(error.details ?? "{}") as Json);
+    leads = num(details.leads);
+    openFollowUps = num(details.open_follow_ups);
+  } catch {
+    // Fall back to the generic wording below.
+  }
+  const work = [
+    leads > 0 ? plural(leads, "lead", "leads") : null,
+    openFollowUps > 0 ? plural(openFollowUps, "open follow-up", "open follow-ups") : null,
+  ].filter(Boolean);
+  return new AppError(
+    "conflict",
+    work.length > 0
+      ? `Reassign this agent's ${work.join(" and ")} before deleting them.`
+      : "Reassign this agent's leads and open follow-ups before deleting them.",
+    { cause: error },
+  );
+}
+
+/**
+ * Deletes an agent who has no leads and no open follow-ups. The database half (admin_delete_agent) marks
+ * the profile deleted and inactive, unassigns their phone numbers and keeps their call history; from that
+ * moment RLS gives the agent zero rows. The Auth half then closes the login for good, in three steps that
+ * can each be repeated: a new random password and a permanent ban, then every open session ended, then
+ * the email moved to `deletedAuthEmail` to free the real address. The security steps come first, so a
+ * failure to move the email never leaves the login open. The email step goes last because it is what
+ * marks the delete finished (the profile email follows the Auth email): until then the agent stays on the
+ * Agents list as an unfinished delete, and deleting again (the database half is idempotent) finishes it.
+ */
+export async function deleteAgent(
+  ctx: RequestContext | null,
+  userId: unknown,
+  deps?: Partial<AgentServiceDeps>,
+): Promise<DeleteAgentResult> {
+  const admin = requireAdmin(ctx);
+  const id = parseUserId(userId);
+  if (id === admin.userId) {
+    throw new AppError("forbidden", "You can't delete your own account.");
+  }
+  const { authAdmin, generatePassword, revokeSessions } = resolveDeps(deps);
+
+  const { data, error } = await admin.supabase.rpc("admin_delete_agent", { p_user_id: id });
+  if (error) {
+    if (error.code === "P0001" && error.message === "agent_has_work") throw agentHasWorkError(error);
+    if (error.code === "42501") throw new AppError("forbidden", "Only agents can be deleted.");
+    fail(error);
+  }
+  const result = asRecord(data as Json);
+
+  await closeLoginStep("They are removed from the CRM, but their sign-in could not be blocked yet.", async () => {
+    const banned = await authAdmin().auth.admin.updateUserById(id, {
+      password: generatePassword(),
+      ban_duration: PERMANENT_BAN_DURATION,
+    });
+    if (banned.error) throw banned.error;
+  });
+  await closeLoginStep("They are removed from the CRM and can't sign in, but their open sessions could not be ended yet.", () =>
+    revokeSessions(id),
+  );
+  await closeLoginStep("They are signed out and can't sign in, but their email address could not be freed yet.", async () => {
+    const moved = await authAdmin().auth.admin.updateUserById(id, { email: deletedAuthEmail(id), email_confirm: true });
+    if (moved.error) throw moved.error;
+  });
+
+  return {
+    userId: id,
+    alreadyDeleted: result.already_deleted === true,
+    phoneNumbersUnassigned: num(result.phone_numbers_unassigned),
+  };
+}
+
+async function closeLoginStep(progress: string, step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch (cause) {
+    throw new AppError("unavailable", `${progress} Delete them again to finish.`, { cause });
+  }
 }

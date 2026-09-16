@@ -47,7 +47,7 @@ export default defineConfig({
       // with test.use, because that flow has to work both ways.
       name: 'desktop',
       testMatch:
-        /(admin-(agent-drilldown|agents|bulk-reassign|phone-numbers|reports)|desktop-.*|export|isolation|pipeline-followups|settings-call-mode)\.spec\.ts$/,
+        /(admin-(agent-drilldown|agents|bulk-reassign|delete-agent|phone-numbers|reports)|desktop-.*|export|isolation|pipeline-followups|settings-call-mode)\.spec\.ts$/,
       use: { viewport: desktopViewport },
     },
     {

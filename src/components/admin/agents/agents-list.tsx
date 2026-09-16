@@ -8,17 +8,39 @@ import type { ReassignTarget } from "./agent-dialogs";
 import { AgentRowActions } from "./agent-row-actions";
 import { formatCount, formatTalkTime } from "./format";
 
-export function AgentStatusBadge({ active, className }: { active: boolean; className?: string }) {
+export function AgentStatusBadge({
+  active,
+  deleted = false,
+  deletePending = false,
+  className,
+}: {
+  active: boolean;
+  deleted?: boolean;
+  /** Deleted, but closing the login has not finished (D40). */
+  deletePending?: boolean;
+  className?: string;
+}) {
+  const tone = deletePending ? "warn" : deleted ? "muted" : active ? "ok" : "warn";
   return (
     <span
       className={cn(
         "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold whitespace-nowrap",
-        active ? "border-success/30 bg-success/10 text-foreground" : "border-destructive/40 bg-destructive/10 text-destructive",
+        tone === "muted"
+          ? "border-border bg-muted text-muted-foreground"
+          : tone === "ok"
+            ? "border-success/30 bg-success/10 text-foreground"
+            : "border-destructive/40 bg-destructive/10 text-destructive",
         className,
       )}
     >
-      <span aria-hidden className={cn("size-1.5 rounded-full", active ? "bg-success" : "bg-destructive")} />
-      {active ? "Active" : "Disabled"}
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 rounded-full",
+          tone === "muted" ? "bg-muted-foreground" : tone === "ok" ? "bg-success" : "bg-destructive",
+        )}
+      />
+      {deletePending ? "Delete unfinished" : deleted ? "Deleted" : active ? "Active" : "Disabled"}
     </span>
   );
 }
@@ -93,7 +115,7 @@ export function AgentsTable({ agents, reassignTargets }: AgentsListProps) {
               </TableCell>
               <TableCell>
                 <div className="flex flex-col items-start gap-1">
-                  <AgentStatusBadge active={agent.active} />
+                  <AgentStatusBadge active={agent.active} deletePending={agent.deletePending} />
                   {agent.inAppCallingEnabled ? null : <InAppOffNote />}
                 </div>
               </TableCell>
@@ -133,7 +155,7 @@ export function AgentCards({ agents, reassignTargets }: AgentsListProps) {
             <AgentRowActions agent={agent} reassignTargets={reassignTargets} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <AgentStatusBadge active={agent.active} />
+            <AgentStatusBadge active={agent.active} deletePending={agent.deletePending} />
             {agent.inAppCallingEnabled ? null : <InAppOffNote />}
           </div>
           <dl className="grid grid-cols-4 gap-2 border-t pt-3 text-center">

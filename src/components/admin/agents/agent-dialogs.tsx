@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, Copy, UserPlus } from "lucide-react";
-import { useEffect, useState, useTransition, type FormEvent } from "react";
+import Link from "next/link";
+import { useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { TimeZoneSelect } from "@/components/settings/time-zone-select";
 import {
@@ -30,13 +31,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/domain/statuses";
 import {
+  agentDeleteCheckAction,
   bulkReassignAction,
   countReassignableLeadsAction,
   createAgentAction,
+  deleteAgentAction,
   setAgentActiveAction,
   updateAgentProfileAction,
 } from "@/server/actions/agents";
-import type { CreateAgentResult } from "@/server/services/agents";
+import type { AgentDeleteCheck, CreateAgentResult } from "@/server/services/agents";
 import { formatCount } from "./format";
 
 const INPUT_CLASS = "h-12 text-base lg:text-sm";
@@ -404,6 +407,170 @@ export function SetAgentActiveDialog({ agent, onClose }: { agent: ActiveToggleAg
           >
             {pending ? (disabling ? "Disabling…" : "Reactivating…") : disabling ? "Disable agent" : "Reactivate"}
           </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Delete
+// ---------------------------------------------------------------------------------------------
+
+export interface DeletableAgent {
+  userId: string;
+  name: string;
+}
+
+function countText(count: number, one: string, many: string): string {
+  return `${formatCount(count)} ${count === 1 ? one : many}`;
+}
+
+export interface DeleteAgentDialogProps {
+  agent: DeletableAgent;
+  onClose(): void;
+  /** Opens the reassign dialog for this agent (offered while they still have leads). */
+  onReassign(): void;
+}
+
+export function DeleteAgentDialog({ agent, onClose, onReassign }: DeleteAgentDialogProps) {
+  // Keyed by `checkKey`, so a check that belongs to an earlier attempt is never shown as current.
+  const [loaded, setLoaded] = useState<{ key: number; check: AgentDeleteCheck | null; error: string | null }>({
+    key: -1,
+    check: null,
+    error: null,
+  });
+  const [checkKey, setCheckKey] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    let cancelled = false;
+    agentDeleteCheckAction(agent.userId)
+      .then((result) => {
+        if (cancelled) return;
+        setLoaded(
+          result.ok
+            ? { key: checkKey, check: result.data, error: null }
+            : { key: checkKey, check: null, error: result.error.message },
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded({ key: checkKey, check: null, error: "This agent could not be checked. Try again." });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.userId, checkKey]);
+
+  function confirm() {
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteAgentAction(agent.userId);
+      if (result.ok) {
+        toast.success(`${agent.name} was deleted`);
+        onClose();
+      } else {
+        setError(result.error.message);
+        // Whatever went wrong (new work was assigned meanwhile, or closing the login stopped half way),
+        // check again so the dialog offers what is possible now.
+        setCheckKey((key) => key + 1);
+      }
+    });
+  }
+
+  const loading = loaded.key !== checkKey;
+  const check = loading ? null : loaded.check;
+  const loadError = loading ? null : loaded.error;
+  const hasWork = check?.reason === "has_work";
+  const unfinished = check?.reason === "deleted" && !check.loginClosed;
+  const deletable = check?.deletable === true;
+
+  let title = `Delete ${agent.name}?`;
+  let description: ReactNode;
+  if (loading) {
+    description = "Checking their leads and follow-ups…";
+  } else if (loadError !== null || check === null) {
+    description = loadError ?? "This agent could not be checked. Try again.";
+  } else if (hasWork) {
+    title = `${agent.name} still has work`;
+    const work = [
+      check.leads > 0 ? countText(check.leads, "lead", "leads") : null,
+      check.openFollowUps > 0 ? countText(check.openFollowUps, "open follow-up", "open follow-ups") : null,
+    ]
+      .filter(Boolean)
+      .join(" and ");
+    description =
+      check.leads > 0 ? (
+        <>
+          They still have {work}. Reassign their leads to another agent first (open follow-ups go with the leads).
+          Then you can delete them.
+        </>
+      ) : (
+        <>
+          They still have {work} on leads they no longer own. Complete those on the Follow-ups page, then you can delete
+          them.
+        </>
+      );
+  } else if (unfinished) {
+    title = `Finish deleting ${agent.name}?`;
+    description =
+      "They’re already removed from the CRM, but closing their login didn’t finish. Finish now to sign them out for good and free their email for a new agent.";
+  } else if (check.reason === "deleted") {
+    description = "This agent was already deleted.";
+  } else if (!deletable) {
+    description = "Only agents can be deleted, and never your own account.";
+  } else {
+    const kept = [
+      check.calls > 0 ? countText(check.calls, "call", "calls") : null,
+      check.completedFollowUps > 0 ? countText(check.completedFollowUps, "completed follow-up", "completed follow-ups") : null,
+    ].filter(Boolean);
+    description = (
+      <>
+        They&rsquo;ll be signed out and can&rsquo;t sign in again. Their email can be reused for a new agent.{" "}
+        {kept.length > 0 ? `Their ${kept.join(" and ")} stay in your reports.` : "Past calls stay in your reports."}{" "}
+        {check.phoneNumbers > 0
+          ? `${countText(check.phoneNumbers, "phone number goes", "phone numbers go")} back to the pool.`
+          : null}
+      </>
+    );
+  }
+
+  return (
+    <AlertDialog open onOpenChange={(next) => (next || pending ? undefined : onClose())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription aria-live="polite">{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <FormError message={error} />
+        <AlertDialogFooter>
+          <AlertDialogCancel className="h-12" disabled={pending}>
+            {hasWork ? "Close" : "Cancel"}
+          </AlertDialogCancel>
+          {hasWork && check && check.leads > 0 ? (
+            <Button type="button" className="h-12 font-bold" onClick={onReassign}>
+              Reassign leads
+            </Button>
+          ) : null}
+          {hasWork && check && check.leads === 0 ? (
+            <Button asChild className="h-12 font-bold">
+              <Link href="/follow-ups">Open Follow-ups</Link>
+            </Button>
+          ) : null}
+          {deletable || unfinished ? (
+            <AlertDialogAction
+              variant="destructive"
+              className="h-12 font-bold"
+              disabled={pending}
+              onClick={(event) => {
+                event.preventDefault();
+                confirm();
+              }}
+            >
+              {unfinished ? (pending ? "Finishing…" : "Finish deleting") : pending ? "Deleting…" : "Delete agent"}
+            </AlertDialogAction>
+          ) : null}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

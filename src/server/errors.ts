@@ -100,6 +100,9 @@ export function mapPostgrestError(err: PostgrestLikeError | null | undefined): A
       if (message === "rate_limited") {
         return new AppError("rate_limited", undefined, { cause });
       }
+      if (message === "agent_has_work") {
+        return new AppError("conflict", "Reassign this agent's leads and open follow-ups before deleting them.", { cause });
+      }
       return new AppError("internal", undefined, { cause });
     }
     default:

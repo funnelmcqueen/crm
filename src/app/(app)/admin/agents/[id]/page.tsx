@@ -58,7 +58,7 @@ export default async function AgentActivityPage({
         title={profile.name}
         description={
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <AgentStatusBadge active={profile.active} />
+            <AgentStatusBadge active={profile.active} deleted={profile.deleted} />
             {profile.inAppCallingEnabled ? null : (
               <span className="inline-flex items-center gap-1 text-xs">
                 <PhoneOff aria-hidden className="size-3" />
