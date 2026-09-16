@@ -116,11 +116,11 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="start" className="max-h-80">
-              <SelectItem value={UNASSIGNED} className="min-h-11">
+              <SelectItem value={UNASSIGNED} className="min-h-12">
                 Unassigned
               </SelectItem>
               {agents.map((agent) => (
-                <SelectItem key={agent.id} value={agent.id} className="min-h-11">
+                <SelectItem key={agent.id} value={agent.id} className="min-h-12">
                   {agent.name}
                 </SelectItem>
               ))}

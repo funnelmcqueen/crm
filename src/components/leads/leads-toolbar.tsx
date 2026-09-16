@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, ListFilter, Search, X } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, Download, ListFilter, Search, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
@@ -181,11 +181,11 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
             <SelectValue />
           </SelectTrigger>
           <SelectContent position="popper" align="start">
-            <SelectItem value={ALL} className="min-h-11">
+            <SelectItem value={ALL} className="min-h-12">
               All sources
             </SelectItem>
             {sourceOptions.map((source) => (
-              <SelectItem key={source} value={source} className="min-h-11">
+              <SelectItem key={source} value={source} className="min-h-12">
                 {source}
               </SelectItem>
             ))}
@@ -203,11 +203,11 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start">
-                <SelectItem value={ALL} className="min-h-11">
+                <SelectItem value={ALL} className="min-h-12">
                   All agents
                 </SelectItem>
                 {agents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id} className="min-h-11">
+                  <SelectItem key={agent.id} value={agent.id} className="min-h-12">
                     {agent.name}
                     {agent.active ? "" : " (disabled)"}
                   </SelectItem>
@@ -241,7 +241,7 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
             </SelectTrigger>
             <SelectContent position="popper" align="start">
               {LEAD_SORT_KEYS.map((key) => (
-                <SelectItem key={key} value={key} className="min-h-11">
+                <SelectItem key={key} value={key} className="min-h-12">
                   {LEAD_SORT_LABELS[key]}
                 </SelectItem>
               ))}
@@ -256,6 +256,14 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
             <SortIcon aria-hidden className="size-5" />
           </Button>
         </div>
+
+        <Button asChild variant="outline" className="h-12 gap-2 px-3">
+          {/* Exports every lead matching the current search and filters (RLS scopes agents to their own). */}
+          <a href={leadListHref({ ...params, statuses, q: query.trim().slice(0, MAX_QUERY_LENGTH), page: 1 }, "/api/leads/export")} download>
+            <Download aria-hidden />
+            Export CSV
+          </a>
+        </Button>
 
         {filtersActive ? (
           <Button variant="ghost" className="h-12 gap-1.5 px-3 text-muted-foreground" onClick={clearAll}>

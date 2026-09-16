@@ -423,6 +423,14 @@ export function countryCodeFromName(country: string | null | undefined): Country
   return undefined;
 }
 
+/**
+ * The apostrophe SPEC section 10 puts in front of a formula trigger when writing a CSV. The import
+ * result file is meant to be fixed and uploaded again, so a value this app wrote has to survive the
+ * round trip. Only an apostrophe directly followed by a trigger is removed, so an ordinary leading
+ * apostrophe ("'Tis Pizza") is untouched.
+ */
+const FORMULA_ESCAPE_PREFIX = /^'(?=[=\-@+\t\r\n\uFF1D\uFF0D\uFF20\uFF0B])/;
+
 function cleanCell(value: unknown): string | null {
   let text: string;
   if (value === null || value === undefined) text = '';
@@ -431,7 +439,7 @@ function cleanCell(value: unknown): string | null {
   else if (Array.isArray(value)) text = value.map((item) => (item === null || item === undefined ? '' : String(item))).join(', ');
   else text = String(value);
   // Postgres text cannot store NUL.
-  const trimmed = text.split('\u0000').join('').trim();
+  const trimmed = text.split('\u0000').join('').trim().replace(FORMULA_ESCAPE_PREFIX, '');
   return trimmed === '' ? null : trimmed;
 }
 

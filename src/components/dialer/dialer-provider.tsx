@@ -38,7 +38,12 @@ import type {
 import { preselectOutcomeForEndReason } from "@/lib/domain/outcomes";
 import { isDialable } from "@/lib/domain/statuses";
 import { getCallStatusAction, getIncomingCallContextAction } from "@/server/actions/calls";
-import { DialerContext, type DialerContextValue } from "./dialer-context";
+import {
+  AUDIO_INPUT_STORAGE_KEY,
+  AUDIO_OUTPUT_STORAGE_KEY,
+  DialerContext,
+  type DialerContextValue,
+} from "./dialer-context";
 import { InCallBar } from "./in-call-bar";
 import { IncomingCallDialog } from "./incoming-call-dialog";
 import { OutcomeSheet } from "./outcome-sheet";
@@ -411,6 +416,43 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     activeCallRef.current?.sendDigits(digits);
   }, []);
 
+  const setInputDevice = useCallback(async (deviceId: string): Promise<boolean> => {
+    const driver = sessionRef.current?.loadedDriver() ?? null;
+    if (!driver?.setInputDevice) return false;
+    await driver.setInputDevice(deviceId);
+    return true;
+  }, []);
+
+  const setOutputDevice = useCallback(async (deviceId: string): Promise<boolean> => {
+    const driver = sessionRef.current?.loadedDriver() ?? null;
+    if (!driver?.setOutputDevice) return false;
+    await driver.setOutputDevice(deviceId);
+    return true;
+  }, []);
+
+  const testSpeaker = useCallback(async (): Promise<boolean> => {
+    const driver = sessionRef.current?.loadedDriver() ?? null;
+    if (!driver?.testSpeaker) return false;
+    await driver.testSpeaker();
+    return true;
+  }, []);
+
+  // Re-apply the microphone and speaker chosen in Settings each time the in-app device (re)registers.
+  useEffect(() => {
+    if (device !== "ready") return;
+    let input: string | null = null;
+    let output: string | null = null;
+    try {
+      input = window.localStorage.getItem(AUDIO_INPUT_STORAGE_KEY);
+      output = window.localStorage.getItem(AUDIO_OUTPUT_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    // A device that was unplugged is simply not applied; the browser default stays in use.
+    if (input) void setInputDevice(input).catch(() => undefined);
+    if (output) void setOutputDevice(output).catch(() => undefined);
+  }, [device, setInputDevice, setOutputDevice]);
+
   const endIncoming = useCallback(() => {
     incomingRef.current = null;
     dispatch({ type: "INCOMING_ENDED" });
@@ -518,8 +560,26 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       hangup,
       setMuted,
       sendDigits,
+      deviceReady,
+      setInputDevice,
+      setOutputDevice,
+      testSpeaker,
     }),
-    [state, timezone, dialMode, connecting, startCall, beginTelCall, hangup, setMuted, sendDigits],
+    [
+      state,
+      timezone,
+      dialMode,
+      connecting,
+      startCall,
+      beginTelCall,
+      hangup,
+      setMuted,
+      sendDigits,
+      deviceReady,
+      setInputDevice,
+      setOutputDevice,
+      testSpeaker,
+    ],
   );
 
   return (

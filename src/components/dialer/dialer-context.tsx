@@ -19,7 +19,20 @@ export interface DialerContextValue {
   hangup(): void;
   setMuted(muted: boolean): void;
   sendDigits(digits: string): void;
+  /** The in-app device is registered, so it can place and receive calls. */
+  deviceReady: boolean;
+  /**
+   * Audio device selection through the loaded in-app driver. Each resolves false when there is no loaded driver
+   * or it does not support the operation (e.g. the mock driver), and rejects when the driver refuses the device.
+   */
+  setInputDevice(deviceId: string): Promise<boolean>;
+  setOutputDevice(deviceId: string): Promise<boolean>;
+  testSpeaker(): Promise<boolean>;
 }
+
+/** Per-device audio choices (Settings). The provider re-applies them whenever the in-app device becomes ready. */
+export const AUDIO_INPUT_STORAGE_KEY = "fmq.audioInput";
+export const AUDIO_OUTPUT_STORAGE_KEY = "fmq.audioOutput";
 
 export const DialerContext = createContext<DialerContextValue | null>(null);
 

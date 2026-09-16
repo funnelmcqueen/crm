@@ -357,6 +357,95 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_agent_activity: {
+        Args: {
+          p_from: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      admin_agent_rows: {
+        Args: never
+        Returns: {
+          active: boolean
+          appointments_today: number
+          assigned_numbers: string[]
+          connected_today: number
+          daily_call_target: number
+          dials_today: number
+          email: string
+          in_app_calling_enabled: boolean
+          interested_today: number
+          leads_assigned: number
+          name: string
+          role: Database["public"]["Enums"]["user_role"]
+          talk_seconds_today: number
+          timezone: string
+          user_id: string
+        }[]
+      }
+      admin_phone_number_rows: {
+        Args: never
+        Returns: {
+          active: boolean
+          assigned_active: boolean
+          assigned_name: string
+          assigned_to: string
+          calls_today: number
+          created_at: string
+          e164: string
+          id: string
+          label: string
+          last_used_at: string
+          twilio_sid: string
+        }[]
+      }
+      admin_report_agents: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          active: boolean
+          appointments: number
+          avg_call_seconds: number
+          clients: number
+          connect_rate: number
+          connected: number
+          dials: number
+          interested: number
+          name: string
+          talk_seconds: number
+          user_id: string
+        }[]
+      }
+      admin_report_numbers: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          active: boolean
+          answer_rate: number
+          answered: number
+          dials: number
+          e164: string
+          label: string
+          phone_number_id: string
+        }[]
+      }
+      admin_report_totals: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      admin_team_totals: {
+        Args: never
+        Returns: Json
+      }
       apply_call_status: {
         Args: {
           p_call_sid: string
@@ -399,6 +488,56 @@ export type Database = {
         }
         Returns: string
       }
+      export_leads: {
+        Args: {
+          p_after_created_at?: string
+          p_after_id?: string
+          p_assigned_to?: string
+          p_limit?: number
+          p_query?: string
+          p_source?: string
+          p_statuses?: Database["public"]["Enums"]["lead_status"][]
+          p_unassigned?: boolean
+        }
+        Returns: {
+          address: string
+          assigned_to: string
+          business_name: string
+          call_count: number
+          city: string
+          contact_name: string
+          country: string
+          created_at: string
+          email: string
+          id: string
+          last_contacted_at: string
+          next_follow_up_at: string
+          notes: string
+          phone: string
+          state: string
+          status: Database["public"]["Enums"]["lead_status"]
+          website: string
+        }[]
+      }
+      find_duplicate_leads: {
+        Args: {
+          p_domains: string[]
+          p_name_keys: string[]
+          p_phones: string[]
+        }
+        Returns: {
+          business_name: string
+          city: string
+          dedupe_name_key: string
+          lead_id: string
+          phone: string
+          website_domain: string
+        }[]
+      }
+      follow_up_tab_counts: {
+        Args: never
+        Returns: Json
+      }
       get_company_name: {
         Args: never
         Returns: string
@@ -423,6 +562,10 @@ export type Database = {
           outcome: Database["public"]["Enums"]["call_outcome"]
           voicemail_duration_seconds: number
         }[]
+      }
+      get_my_dashboard: {
+        Args: never
+        Returns: Json
       }
       get_next_lead: {
         Args: {
@@ -466,6 +609,26 @@ export type Database = {
           p_lead_id: string
         }
         Returns: string
+      }
+      list_follow_ups: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_tab: string
+        }
+        Returns: {
+          business_name: string
+          completed_at: string
+          contact_name: string
+          due_at: string
+          follow_up_id: string
+          lead_id: string
+          lead_status: Database["public"]["Enums"]["lead_status"]
+          note: string
+          owner_name: string
+          phone: string
+          total_count: number
+        }[]
       }
       list_lead_sources: {
         Args: never
@@ -514,6 +677,27 @@ export type Database = {
           p_outcome: Database["public"]["Enums"]["call_outcome"]
         }
         Returns: Database["public"]["Enums"]["lead_status"]
+      }
+      pipeline_column: {
+        Args: {
+          p_assigned_to?: string
+          p_limit?: number
+          p_offset?: number
+          p_statuses: Database["public"]["Enums"]["lead_status"][]
+          p_unassigned?: boolean
+        }
+        Returns: {
+          assigned_to: string
+          business_name: string
+          call_count: number
+          contact_name: string
+          id: string
+          next_follow_up_at: string
+          phone: string
+          status: Database["public"]["Enums"]["lead_status"]
+          total_count: number
+          updated_at: string
+        }[]
       }
       reassign_leads: {
         Args: {

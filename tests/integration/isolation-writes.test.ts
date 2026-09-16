@@ -418,7 +418,32 @@ describe('admin-only operations as an agent', () => {
     expect((await a.client.rpc('get_company_name')).data).toBe(before?.company_name);
   });
 
-  it.todo('later-stage admin RPCs (admin_team_overview, admin_agent_rows, admin_report_agents, admin_report_numbers, find_duplicate_leads) raise 42501 for agents');
+  it('later-stage admin RPCs raise 42501 for agents and never echo B', async () => {
+    const from = new Date(Date.now() - DAY).toISOString();
+    const to = new Date(Date.now() + DAY).toISOString();
+    const results = [
+      await a.client.rpc('admin_agent_rows'),
+      await a.client.rpc('admin_team_totals'),
+      await a.client.rpc('admin_agent_activity', { p_user_id: userB.id, p_from: from, p_to: to }),
+      await a.client.rpc('admin_agent_activity', { p_user_id: userA.id, p_from: from, p_to: to }),
+      await a.client.rpc('admin_phone_number_rows'),
+      await a.client.rpc('admin_report_agents', { p_from: from, p_to: to }),
+      await a.client.rpc('admin_report_numbers', { p_from: from, p_to: to }),
+      await a.client.rpc('admin_report_totals', { p_from: from, p_to: to }),
+      await a.client.rpc('find_duplicate_leads', { p_phones: [leadB.phone], p_domains: [], p_name_keys: [] }),
+    ];
+    for (const result of results) {
+      expectError(result, '42501');
+      const text = JSON.stringify(result.error);
+      expect(text).not.toContain(userB.email);
+      expect(text).not.toContain(leadB.phone);
+      expect(text).not.toContain(leadB.business_name);
+    }
+    // The caller-scoped dashboard never includes B's numbers.
+    const mine = await a.client.rpc('get_my_dashboard');
+    expect(mine.error).toBeNull();
+    expect(JSON.stringify(mine.data)).not.toContain(userB.id);
+  });
 });
 
 describe('rate limits', () => {

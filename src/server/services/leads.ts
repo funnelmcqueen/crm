@@ -166,16 +166,32 @@ export interface AgentOption {
   role: "ADMIN" | "AGENT";
 }
 
-/** Admin only: every profile, for the agent filter and the reassign picker. */
+/** Profiles read per request. Must stay at or below the PostgREST row cap so a full page is a full page. */
+const AGENT_OPTION_PAGE_SIZE = 500;
+
+/**
+ * Admin only: every profile, for the agent filter and the reassign picker.
+ *
+ * Read in explicit pages: PostgREST truncates an unpaginated response at db-max-rows without saying
+ * so, which silently dropped agents past the cap out of the filter on /leads and /pipeline.
+ */
 export async function listAgentsForFilter(ctx: RequestContext | null): Promise<AgentOption[]> {
   const admin = requireAdmin(ctx);
-  const { data, error } = await admin.supabase
-    .from("profiles")
-    .select("id, name, email, active, role")
-    .order("name", { ascending: true })
-    .order("email", { ascending: true });
-  if (error) fail(error);
-  return (data ?? []).map((p) => ({ id: p.id, name: p.name || p.email, email: p.email, active: p.active, role: p.role }));
+  const options: AgentOption[] = [];
+  for (let offset = 0; ; offset += AGENT_OPTION_PAGE_SIZE) {
+    const { data, error } = await admin.supabase
+      .from("profiles")
+      .select("id, name, email, active, role")
+      .order("name", { ascending: true })
+      .order("email", { ascending: true })
+      .range(offset, offset + AGENT_OPTION_PAGE_SIZE - 1);
+    if (error) fail(error);
+    const page = data ?? [];
+    for (const p of page) {
+      options.push({ id: p.id, name: p.name || p.email, email: p.email, active: p.active, role: p.role });
+    }
+    if (page.length < AGENT_OPTION_PAGE_SIZE) return options;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

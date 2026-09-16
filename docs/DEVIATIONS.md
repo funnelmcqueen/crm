@@ -190,3 +190,137 @@ Asking Twilio keeps both guarantees.
 fails loudly. Unset still falls back to `tel` in production. The e2e suite runs `next dev` and is unaffected.
 **Why:** A copied dev `.env` would silently fake calls, log outcomes and talk time for calls that never happened, and replace real
 voicemail audio with the test tone.
+
+## D25. Pipeline column order, same-column drops and Do Not Contact moves
+**Spec:** §8 Pipeline: NO_ANSWER and VOICEMAIL sit in TO CALL and FOLLOW_UP in CONNECTED with a badge, "Dropping a card sets that column's status", paginate per column.
+**Built:** `pipeline_column(p_statuses, p_limit, p_offset, p_assigned_to, p_unassigned)` (SECURITY INVOKER, scoped exactly like `search_leads`) serves 20 cards per
+column page, ordered `next_follow_up_at asc nulls last, updated_at desc, id asc`. Dropping a card on the column it already sits in writes nothing, so a No Answer,
+Voicemail or Follow Up card keeps its status (and badge) inside To Call or Connected. The "Move to…" menu lists only the other columns (closed columns in a separate
+group, even while hidden). To turn No Answer back into To Call, change the status on the lead page. Agents confirm before moving a card to Do Not Contact, and their Do
+Not Contact cards cannot be dragged and list no targets (D12; the server still answers 403). Moves do not re-render the page: the board updates optimistically, rolls
+back on any error, and "Load more" uses the number of cards shown as its offset and drops duplicates.
+**Why:** The spec defines neither the order nor what a drop on the same column means. Rewriting NO_ANSWER to TO_CALL on an accidental drop would silently lose the
+badge. A server refresh after each move would reset every column to its first page.
+
+## D26. Follow-up tabs use the viewer's own day; completed follow-ups stay with their user
+**Spec:** §8 Follow-ups: tabs Overdue, Today, Upcoming, Completed, Voicemails; CALL, COMPLETE and RESCHEDULE (Tomorrow 9am, In 3 days,
+Next week, Custom) "all in the agent's timezone". §5 reassignment moves open follow-ups to the new owner.
+**Built:** `list_follow_ups` and `follow_up_tab_counts` (SECURITY INVOKER, RLS-scoped) split Today from Upcoming at the end of today in
+the **caller's** profile time zone, so an admin's Today tab uses the admin's day for every agent's rows, and the tab counts always
+match the lists. Reschedule quick picks and Custom `datetime-local` values are resolved on the server in the caller's profile time
+zone (`rescheduleFollowUpAction(id, { kind: 'quick' | 'custom' })`), not in the browser's zone. Only open follow-ups can be
+completed or rescheduled: a completed one is `not_found` (there is no reopen), and a reschedule uses the `log_call` window (D21).
+Completed follow-ups keep their `user_id` when a lead is reassigned (existing `leads_move_open_follow_ups` behavior), so after A → B
+they appear in neither agent's Completed tab; admins still see them with the original owner's name.
+**Why:** An admin has no single "agent timezone" when viewing the whole team, and one boundary per viewer keeps counts and lists
+consistent. Server-side resolution means a device with a wrong clock zone cannot schedule in the wrong zone. A completed follow-up is
+the previous agent's activity; the follow_ups RLS policy (user and lead owner must both be the caller) keeps it from the new agent.
+
+## D27. Reports and phone numbers: which rows, what counts, and mock number verification
+**Spec:** §8 Reports: per agent (dials, connect rate, talk minutes, avg call length, interested, appointments, clients), per number
+(dials, answer rate), team totals, date range picker. §7d adding a number looks it up in the Twilio account and sets its voice handler.
+**Built:**
+- Per-agent rows (`admin_report_agents`) list every AGENT profile, disabled ones included, plus ADMIN profiles only when they made calls
+  in the range. Team totals (`admin_report_totals`) are sums of those rows, with connect rate and average call length recomputed from
+  the sums. Admin-only unmatched voicemails (`user_id` null) are in no row and no total.
+- Connected, interested and appointments count logged outcomes in both directions (an answered callback logged as Connected counts), while
+  dials are outbound only, so a connect rate above 100% is possible. Clients are leads currently assigned with status CLIENT, whatever
+  the range.
+- Ranges are inclusive local dates in the admin's timezone, kept in the URL (`?from=&to=`), default Last 7 days, at most 366 days. The SQL
+  functions take the half-open instants and accept up to 366 days plus one hour, so a DST change inside the longest range is not refused.
+- Answer rate per number = outbound dials on that number with `call_status = 'completed'` and a positive duration, divided by its dials.
+  A rate under 15% over at least 20 dials shows a "Possible spam flag" hint.
+- Adding a number when `DIALER_DRIVER` resolves to `mock` (development and tests only, D24) uses a clearly labeled mock lookup: no Twilio
+  request, only fictional +1 NXX 555-01xx numbers are accepted, and a deterministic fake `PN…` SID is stored. When Twilio is not configured
+  and the driver is not mock, adding is refused. With Twilio, a failed lookup or a failed voice handler update inserts nothing.
+- Deactivating a number keeps its assignment (reactivating restores it as it was); unassigning is a separate action.
+**Why:** Stats must agree with the dashboards, which use the same shared definitions. Listing disabled agents keeps their historical
+calls visible after they leave. Local development has no Twilio account, and a production environment cannot be in mock mode.
+
+## D28. Agents admin and Settings: drill-down scope, disable order, one-time passwords, audio choices
+**Spec:** §8 Agents (admin): list, create, disable/reactivate, in-app calling toggle, bulk reassign, view activity. §5 "On disable, also
+ban the user in Supabase Auth". §8 Settings: profile, password, daily target, call mode, audio; admin company settings and agent targets.
+**Built:**
+- `/admin/agents` lists AGENT profiles only (active first). Reassign targets are every active AGENT or ADMIN plus Unassigned. A banner
+  lists disabled users (any role) that still have leads, with a Reassign action per user.
+- `/admin/agents/[id]` exists only for AGENT profiles; admins, unknown and malformed ids get the regular 404. Ranges are Today, 7 days
+  and 30 days as whole local calendar days (including today) in the **viewing admin's** timezone, served by
+  `admin_agent_activity(p_user_id, p_from, p_to)` (half-open, at most 400 days). "Clients" is leads currently assigned with status
+  CLIENT, not range-bound (same as D27). Talk time and outcomes include the agent's answered inbound calls; dials are outbound only.
+- Disable writes `profiles.active = false` with the admin's session first, then bans in Auth (`ban_duration = '876000h'`); reactivate
+  writes `active = true`, then `ban_duration = 'none'`. If the Auth call fails, the profile flag is written back and the admin sees an
+  error. The ban call is repeated even when the flag already matches, so a half-finished earlier attempt heals. Admins cannot change
+  their own active flag (service check plus `profiles_guard`).
+- Create agent generates a 20-character random password (all four character classes), shown once in the dialog with Copy. It is
+  never stored or logged. If the Auth user is created but saving the target and timezone with the admin session fails, the account is
+  kept (it has the company defaults) and the dialog shows a warning instead of deleting the user.
+- Change password verifies the current password with a separate non-persisting anon client (then signs that session out) before
+  `auth.updateUser({ password })` on the user's own session. Length 10 to 72 (bcrypt limit). Email-change errors never say whether
+  another account uses the address. On localbase the change applies immediately (D10).
+- Microphone and speaker choices are saved per browser in localStorage (`fmq.audioInput`, `fmq.audioOutput`) and re-applied to the
+  in-app driver whenever it becomes ready. "Test speaker" uses the driver's own test when the device is ready, else plays a generated
+  0.7 s tone through `HTMLMediaElement.setSinkId` when supported. The Audio section explains itself and hides the selects when in-app
+  calling is off for the user or the driver is `tel`.
+**Why:** Writing the profile flag first means RLS cuts a disabled user off even if the Auth call is slow, and the rollback keeps the two
+from disagreeing. Deleting an Auth user after a partial failure would be a destructive surprise. Audio devices are per machine, so a
+server-side setting would be wrong on the agent's other devices.
+
+## D29. CSV import validation extras and CSV export format
+**Spec:** §9 preview shows the reason for each invalid row ("missing business name, unusable phone"); the result has a downloadable CSV
+of skipped and failed rows. §10 export fields; formula-injection prefixing.
+**Built:**
+- Import invalid reasons are "Missing business name", "Missing phone" (phone column mapped but empty), "Unusable phone", plus length
+  limits checked on both sides (business/contact name 200, raw phone 100, email 320, website 2048, address 300, city 200, state/country 100,
+  source 200, notes 10,000, any cell 100,000). A too-long row is invalid instead of failing its whole batch.
+- Files are limited to 200 columns besides the 10 MB / 50,000-row limits. Cells beyond the header count are kept (appended to notes as
+  "Extra columns" when that toggle is on) and appear in the result CSV as "extra columns".
+- The downloadable result CSV holds skipped, **invalid** and failed rows (every row that was not inserted), with the original columns and a
+  `reason` column (`import reason` if the file already has `reason`). Counts inserted + skipped + invalid + failed always equal the file row
+  count (`summarizeImport` throws otherwise); a planned row with no server result counts as failed.
+- The server re-validates every row from its raw cells (`checkImportRow`), and an even split carries the planned total so the server fixes
+  each row's agent block from its position. A batch insert error falls back to row-by-row inserts, so one bad row fails alone.
+- Export is served by `export_leads` (SECURITY INVOKER, keyset-paged by `(created_at, id)`, same filters as `search_leads`) plus an explicit
+  `assigned_to = caller` filter for agents. The file is UTF-8 with BOM and CRLF line endings. Status uses display labels. Dates are ISO 8601
+  with the offset of the **viewer's** profile timezone (e.g. `2026-09-15T08:30:00-05:00`); the file name date is also the viewer's local date.
+  The admin-only "Assigned agent" column holds the profile name (email when the name is empty), blank for unassigned leads.
+**Why:** The spec's reasons are examples; an empty phone and oversized values would otherwise be rejected by the database mid-batch. Invalid
+rows are data the admin needs back just as much as skipped ones ("Never drop data silently"). ISO dates with an offset stay unambiguous
+in spreadsheets while matching the times the viewer sees in the app.
+
+## D30. Review round 2: identically labelled numbers agree across screens
+**Spec:** §8 Admin dashboard, Reports, Agents drill-down and Follow-ups tabs; §7d Phone Numbers; §9 import; §10 export; §11 touch targets.
+**Built (these supersede the named parts of D27-D29; everything else in them stands):**
+- **Agent drill-down timezone.** `/admin/agents/[id]` computes Today / 7 days / 30 days in the **target agent's** timezone, not the
+  viewing admin's (supersedes that part of D28). The agents list, the admin dashboard and the agent's own dashboard already used the
+  agent's day, so a single click used to change the same agent's numbers while both screens said "Today".
+- **"Clients" has one meaning: leads currently assigned with status CLIENT.** The admin dashboard tile shows that number and puts
+  unassigned client leads on a sub-line ("2 unassigned") instead of folding them in. `admin_team_totals` gained `clients_assigned`
+  and `clients_unassigned` (`clients_total` stays), and `admin_report_agents` now also lists ADMIN profiles that currently hold CLIENT
+  leads, so the Reports total equals the dashboard's assigned count (supersedes the row-set sentence in D27).
+- **Team talk time floors like its rows.** `admin_team_totals` gained `talk_seconds_today`, and the dashboard tile (now labelled
+  "Talk time") renders `formatTalkTime`, the helper the per-agent rows use. It previously rounded, so with the seeded data the rows
+  read 22m + 10m + 0m + 0m under a tile reading 33, and any agent under a minute counted 0 in the rows and 1 in the tile.
+- **The Voicemails badge counts the rows its tab lists.** `follow_up_tab_counts` gained `voicemails_total`, read from
+  `list_voicemails` itself so the two can never drift; unheard still drives the red styling, the sr-only text ("12 voicemails,
+  1 unheard") and the nav badge. The badge used to show unheard only, so it read 0 over a tab still holding every voicemail.
+- **A number held by a disabled agent is visible.** `admin_phone_number_rows` gained `assigned_active` (the function is dropped and
+  recreated, since a new column changes the return type) and the Phone Numbers page marks the assignee "Disabled agent - number
+  unused". The assignment itself is still kept, so reactivating the agent restores their number (D27 unchanged).
+- **The import result CSV can be imported again.** `buildSkippedRowsCsv` takes the mapping and passes the mapped phone column as a
+  `phoneColumns` exception, and the import strips one leading apostrophe that escapes a formula trigger (`'+1...` -> `+1...`), so the
+  "download the rows, fix them, import that file again" loop the wizard prescribes round-trips. Previously every E.164 phone came
+  back as "Unusable phone" (supersedes that part of D29). An ordinary leading apostrophe ("'Tis Pizza") is untouched.
+- **A malformed CSV is refused, not silently truncated.** `parseImportCsv` inspects papaparse's `errors` and refuses a file with an
+  unclosed quote, naming the row. Ragged rows still import (D29 keeps cells beyond the header count).
+- **Admin profile lookups are paged.** The export's owner lookup and the leads/pipeline agent filter read `profiles` in explicit
+  `.range()` pages; an unpaginated PostgREST response is capped at db-max-rows with no indication, which past 1000 profiles labelled
+  real leads "Unknown user" in the export and dropped agents out of the filter.
+- **A partial bulk reassign says so.** When a later `reassign_leads` chunk fails, the error now states how many leads were already
+  moved ("500 of 600 leads were reassigned before this failed"), because the earlier chunks have committed.
+- **Touch targets.** Menu items, select options, the import Skip / Import anyway pair, the reassign status checkboxes and the
+  activity range tabs moved from 44px (`min-h-11`) to 48px (`min-h-12`), per SPEC 11. Table headers are not touch targets and stay.
+**Why:** Two screens showing different numbers under the same word is a correctness bug in a sales tool: the admin cannot tell which
+one is true, and neither screen explains the difference. Each change picks the definition the shared stat definitions already give
+("clients per agent = leads currently assigned with status CLIENT", "admin per-agent rows use each agent's own timezone") and makes
+every surface use it, rather than relabelling one screen. The import fixes serve SPEC 9's "Never drop data silently": a row the app
+itself wrote out must come back in, and a file the parser could not read must be refused instead of quietly losing its tail.

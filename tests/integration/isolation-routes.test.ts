@@ -120,7 +120,24 @@ describe('route-level agent isolation', () => {
     await expectUnclaimed(callId);
   });
 
-  it.todo("Agent A cannot export B's leads through GET /api/leads/export (only own rows, no assigned agent column) (stage 9)");
+  it("Agent A cannot export B's leads through GET /api/leads/export (only own rows, no assigned agent column)", async () => {
+    const { handleLeadsExport } = await import('@/server/http/leads-export');
+    const own = await createLead({ assigned_to: agentA.user.id });
+    const queries = ['', `?agent=${agentB.user.id}`, '?unassigned=1', `?agent=${agentB.user.id}&unassigned=1`, `?q=${encodeURIComponent(leadB.business_name)}`];
+    for (const query of queries) {
+      const res = await handleLeadsExport(browserRequest(`/api/leads/export${query}`, { method: 'GET', token: a.accessToken }));
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text.split('\r\n')[0]).not.toContain('Assigned agent');
+      expect(text).not.toContain(leadB.business_name);
+      expect(text).not.toContain(leadB.phone);
+      expect(text).not.toContain(agentB.user.email);
+      if (!query.includes('q=')) expect(text).toContain(own.business_name);
+    }
+    const bExport = await (await handleLeadsExport(browserRequest('/api/leads/export', { method: 'GET', token: b.accessToken }))).text();
+    expect(bExport).toContain(leadB.business_name);
+    expect(bExport).not.toContain(own.business_name);
+  });
 
   it('a disabled agent with a still-valid session cannot get a Twilio token from POST /api/voice/token', async () => {
     const disabled = await createAgent();

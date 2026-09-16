@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 const APP_PORT = 3170;
 const baseURL = `http://localhost:${APP_PORT}`;
 const isCI = Boolean(process.env.CI);
+const desktopViewport = { width: 1280, height: 800 };
 
 export default defineConfig({
   testDir: './e2e',
@@ -39,9 +40,22 @@ export default defineConfig({
       },
     },
     {
+      // Desktop by default; pipeline-followups.spec.ts switches one describe block to a phone viewport
+      // with test.use, because that flow has to work both ways.
       name: 'desktop',
-      testMatch: /(desktop-.*|isolation)\.spec\.ts$/,
-      use: { viewport: { width: 1280, height: 800 } },
+      testMatch: /(desktop-.*|isolation|admin-agents|export|pipeline-followups|settings-call-mode)\.spec\.ts$/,
+      use: { viewport: desktopViewport },
+    },
+    {
+      // The import spec inserts 92 leads into the shared database, which would break every spec that
+      // asserts a seeded total (isolation's "45 leads in total", the agent export). Depending on the
+      // other projects makes it run last whatever the file order. It never retries: a second attempt
+      // would import into the database the first attempt already changed.
+      name: 'import',
+      testMatch: /admin-import\.spec\.ts$/,
+      dependencies: ['mobile', 'desktop'],
+      retries: 0,
+      use: { viewport: desktopViewport },
     },
   ],
   webServer: {

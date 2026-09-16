@@ -359,6 +359,9 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 | `unheard_voicemail_count() → int` | definer | authenticated | Scoped count. |
 | `reassign_leads(p_lead_ids uuid[], p_to_user_id uuid) → int` | definer | admin | `p_to_user_id` must be an active AGENT or ADMIN, or null (= unassign). Updates `assigned_to`; the `leads_move_open_follow_ups` trigger moves open follow-ups to the new owner (when non-null). Calls are untouched. Returns the updated count. |
 | `search_leads(p_query text default null, p_statuses lead_status[] default null, p_source text default null, p_assigned_to uuid default null, p_unassigned boolean default false, p_sort text default 'created_at', p_dir text default 'desc', p_limit int default 25, p_offset int default 0) → table(id, created_at, business_name, contact_name, phone, email, website, city, state, country, source, status, assigned_to, last_contacted_at, next_follow_up_at, call_count, total_count bigint)` | **invoker** | authenticated | RLS scopes rows. Non-admins also get an explicit `assigned_to = auth.uid()`, and `p_assigned_to`/`p_unassigned` are ignored. Query matches ILIKE on business/contact/email/website/city, or phone digits substring when the query is phone-like (only digits, spaces and `+-().`) with ≥3 digits (D17). Sort whitelist: `business_name, last_contacted_at, next_follow_up_at, call_count, created_at` (nulls last). `p_limit` is clamped to 1..100. |
+| `pipeline_column(p_statuses lead_status[], p_limit int default 20, p_offset int default 0, p_assigned_to uuid default null, p_unassigned boolean default false) → table(id, business_name, contact_name, phone, status, assigned_to, next_follow_up_at, updated_at, call_count, total_count bigint)` | **invoker** | authenticated | Stage 8 (`20260915000800_pipeline.sql`). Same scoping as `search_leads`: RLS plus an explicit `assigned_to = auth.uid()` for non-admins, and `p_assigned_to`/`p_unassigned` are ignored for them. Null or empty `p_statuses` → no rows. Order `next_follow_up_at asc nulls last, updated_at desc, id asc`; `p_limit` clamped to 1..100. Used by `src/server/services/pipeline.ts` (one call per column; see the pipeline DEVIATIONS entry). |
+| `list_follow_ups(p_tab text, p_limit int default 25, p_offset int default 0) → table(follow_up_id, lead_id, business_name, contact_name, phone, lead_status, due_at, completed_at, note, owner_name, total_count bigint)` | **invoker** | authenticated | Stage 7 (`20260915000700_follow_ups.sql`). RLS scopes rows; non-admins also get explicit `f.user_id = auth.uid() and l.assigned_to = auth.uid()`. Tabs: `overdue` (open, `due_at < now()`, oldest first), `today` (open, `now() <= due_at <` end of today in the **caller's** profile timezone, soonest first), `upcoming` (open, `due_at >=` end of today, soonest first), `completed` (`completed_at is not null`, newest completion first); ties by `id`. The tab is trimmed and lower-cased; any other value (including null) → `22023`. `owner_name` (`profiles.name`, else email) is filled for admins only and is null for agents, whose branch never reads profiles. Inactive or missing caller → no rows. `p_limit` clamped to 1..100, `p_offset` to ≥ 0. `src/server/services/follow-ups.ts` wraps it (`listFollowUps`, 25 per page); `completeFollowUp` and `rescheduleFollowUp[To]` are user-session updates `where completed_at is null` (0 rows → `not_found`), and reschedule choices are resolved in the caller's profile timezone (D26). |
+| `follow_up_tab_counts() → jsonb` | **invoker** | authenticated | Stage 7. `{overdue, today, upcoming, completed, voicemails_unheard}` with the same scoping and boundaries as `list_follow_ups`; `voicemails_unheard = unheard_voicemail_count()`. All zeros for an inactive or missing caller. |
 | `list_lead_sources() → setof text` | invoker | authenticated | Distinct non-null sources visible to the caller. |
 | `touch_device_presence() → void` | definer | authenticated | `device_seen_at = now()` for the active caller. |
 | `consume_rate_limit(p_bucket text) → boolean` | definer | authenticated | Keyed on `auth.uid()`; inactive or missing caller → `42501`. Only `voice_token` is accepted (else `22023`). Delegates to `apply_rate_limit`. |
@@ -367,26 +370,111 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 | `apply_call_status(p_call_sid text, p_status text, p_duration int default null) → boolean` | definer | service_role only | Idempotent. Finds the row by `provider_call_sid`. Terminal statuses (completed/busy/no-answer/failed/canceled) are never replaced by non-terminal ones, and a terminal status only changes if the duration is being filled. `duration_seconds = greatest(existing, p_duration)`. |
 | `record_voicemail(p_call_sid text, p_recording_sid text, p_duration int) → boolean` | definer | service_role only | Atomic: sets the recording where `voicemail_recording_sid is null`. On first set, if the lead has an owner, inserts follow-up (owner, `due_at = now()`, note 'Voicemail received'). Returns whether it was newly set. |
 
-Later stages add (same conventions): dashboard/report RPCs (`get_my_dashboard()`,
-`admin_team_overview()`, `admin_agent_rows()`, `admin_report_agents(p_from, p_to)`,
+Stage 6 dashboard RPCs (`20260915000600_dashboards.sql`, all SECURITY DEFINER, `search_path=''`, executable by
+authenticated + service_role only). Shared stat definitions: stats belong to `calls.user_id`; dial = OUTBOUND and
+(`outcome is not null or provider_call_sid is not null`); connected = outcome not null and not in
+(NO_ANSWER, VOICEMAIL, WRONG_NUMBER), any direction; interested/appointments = that outcome, any direction; talk seconds =
+`sum(coalesce(duration_seconds,0))` over both directions; "today" = `[local midnight, next local midnight)` of
+`calls.created_at` in that user's `profiles.timezone`.
+
+| RPC | who | behavior |
+|---|---|---|
+| `get_my_dashboard() → jsonb` | active caller (else `42501`) | `{timezone, daily_call_target, dials_today, remaining, target_hit, connected_today, interested_today, appointments_today, talk_seconds_today, follow_ups_due, unheard_voicemails}` for `auth.uid()` only. `remaining = greatest(target - dials, 0)`; `target_hit = target > 0 and dials >= target` (a zero target is never "hit"). `follow_ups_due` = the caller's open follow-ups on leads assigned to the caller with `due_at <` end of today. `unheard_voicemails = unheard_voicemail_count()` (so an admin caller gets the admin scope). Never team data. |
+| `admin_agent_rows() → table(user_id, name, email, role, active, in_app_calling_enabled, timezone, daily_call_target, leads_assigned bigint, dials_today bigint, connected_today bigint, interested_today bigint, appointments_today bigint, talk_seconds_today bigint, assigned_numbers text[])` | admin (else `42501`) | One row per AGENT and ADMIN profile, active or not, each "today" in that user's own timezone. `assigned_numbers` = active `phone_numbers.e164` assigned to the user, sorted (`{}` when none). Ordered `active desc, lower(name), email`. |
+| `admin_team_totals() → jsonb` | admin (else `42501`) | `{leads_total, leads_unassigned, clients_total (status CLIENT), disabled_agents_with_leads (inactive profiles with ≥1 assigned lead), leads_on_disabled_agents, calls_today, connected_today, interested_today, appointments_today, talk_minutes_today}`. Today totals are sums of `admin_agent_rows()` (calls with a null `user_id` count for nobody); `talk_minutes_today = round(sum(talk_seconds_today) / 60)`. |
+
+Services: `src/server/services/dashboard.ts` `getAgentDashboard(ctx)` (`get_my_dashboard` + `nextLead(ctx, [])`),
+`getAdminDashboard(ctx)` (`requireAdmin`; `admin_team_totals` + `admin_agent_rows`), plus `getMyDashboardStats`,
+`getTeamTotals` and `listAgentStatsRows` (camelCase `AgentStatsRow`) for other pages. The admin dashboard lists every AGENT row
+and ADMIN rows only when they have leads or activity today; each row links to `/admin/agents/<user_id>`.
+
+Later stages add (same conventions): report RPCs (`admin_report_agents(p_from, p_to)`,
 `admin_report_numbers(p_from, p_to)`), follow-up listing (`list_follow_ups(p_tab, p_limit, p_offset)`),
 duplicate lookup (`find_duplicate_leads(p_phones text[], p_domains text[], p_name_keys text[])`, admin).
 Admin-only RPCs raise `42501` for non-admins, and stats RPCs aggregate by `calls.user_id` (stats stay
 with whoever made the call).
+
+Stage 9 (`20260915000900_import_export.sql`, DEVIATIONS D29). Both SECURITY INVOKER (RLS applies), granted to authenticated and service_role:
+
+| RPC | behavior |
+|---|---|
+| `find_duplicate_leads(p_phones text[], p_domains text[], p_name_keys text[]) → table(lead_id, business_name, city, phone, website_domain, dedupe_name_key)` | Admin only (`42501`, also for disabled admins). Leads whose `phone`, `website_domain` (keys lower-cased/trimmed) or `dedupe_name_key` equals any key; each lead once, `created_at, id` order. Null arrays = empty; blank keys and `'|city'` name keys ignored; more than 1000 entries in any array → `22023`. |
+| `export_leads(p_query, p_statuses, p_source, p_assigned_to, p_unassigned, p_after_created_at, p_after_id, p_limit) → table(id, created_at, business_name, contact_name, phone, email, website, address, city, state, country, status, notes, assigned_to, last_contacted_at, next_follow_up_at, call_count)` | Active caller (else no rows). Same filters as `search_leads` (incl. D17); non-admins get only `assigned_to = auth.uid()` and their `p_assigned_to`/`p_unassigned` are ignored. Keyset paging: rows after `(p_after_created_at, p_after_id)`, `p_limit` clamped 1..1000. |
+
+App side: `src/components/import/import-model.ts` is the pure, isomorphic import model (parse, `checkImportRow`, `buildImportPreview`,
+`buildImportPlan`, `buildImportBatches`, `summarizeImport`, `buildSkippedRowsCsv`) used by both the wizard and the server.
+`src/server/services/import.ts` (`listImportAgents`, `checkImportDuplicates(ctx, {phones, domains, nameKeys})` one ≤1000-key chunk,
+`importLeadsBatch(ctx, {mapping, appendUnmappedToNotes, rows: [{rowIndex, position, cells}] ≤ 500}, BatchAssignment)` → per-row
+`{rowIndex, ok, leadId | reason}`) requires an active admin, validates with Zod (`validation` AppError), re-validates raw cells, checks
+assigned ids are active AGENTs, and inserts with the admin session. Actions in `src/server/actions/import.ts`. Export:
+`GET /api/leads/export?<leads list query>` → `src/server/http/leads-export.ts` `handleLeadsExport(req, { now, pageSize })` →
+`src/server/services/export.ts` `createLeadExport(ctx, filters)`; `getRouteAuth` (cookie or Bearer), 401 without an active session,
+streamed `text/csv; charset=utf-8`, `attachment; filename="funnel-mcqueen-leads-YYYY-MM-DD.csv"`, `Cache-Control: no-store`.
+
+Stage 10b (`20260915001100_numbers_reports.sql`, DEVIATIONS D27). All SECURITY DEFINER, admin-only (`42501`), granted to
+authenticated and service_role, shared stat definitions, attribution by `calls.user_id`:
+
+| RPC | behavior |
+|---|---|
+| `admin_phone_number_rows() → table(id, e164, label, twilio_sid, active, assigned_to, assigned_name, calls_today bigint, last_used_at, created_at)` | Every number. `assigned_name` null for the pool. `calls_today` = calls in both directions on the number since midnight in the **calling admin's** timezone. Ordered active first, then `created_at`. |
+| `admin_report_agents(p_from timestamptz, p_to timestamptz) → table(user_id, name, active, dials, connected, connect_rate numeric, talk_seconds, avg_call_seconds numeric, interested, appointments, clients)` | Half-open `[p_from, p_to)`. Rows: every AGENT profile plus ADMINs with calls in range. `connect_rate` rounded to 4 decimals, `avg_call_seconds` to 2; 0 when no dials / no timed calls. `clients` is current, not range-bound. `p_from`/`p_to` null, `p_from >= p_to`, or a span over 366 days + 1 hour → `22023`. |
+| `admin_report_numbers(p_from, p_to) → table(phone_number_id, e164, label, active, dials, answered, answer_rate numeric)` | Every number. `answered` = its outbound dials with `call_status = 'completed'` and `duration_seconds > 0`. Same range checks. |
+| `admin_report_totals(p_from, p_to) → jsonb {agents, dials, connected, connect_rate, talk_seconds, avg_call_seconds, interested, appointments, clients}` | Sums of `admin_report_agents` rows; rates recomputed from the sums with the same rounding. |
+
+App side: `src/server/services/phone-numbers.ts` (`listPhoneNumbers`, `listAssignableAgents`, `addPhoneNumber(ctx, input, { verifier })`,
+`assignPhoneNumber`, `unassignPhoneNumber`, `deactivatePhoneNumber`, `reactivatePhoneNumber`, `resolveNumberVerifier(env)` →
+`twilio | mock | unavailable`) writes `phone_numbers` with the admin's session (RLS). `src/server/services/reports.ts` `getReport(ctx,
+{ from, to })` takes inclusive `yyyy-MM-dd` dates, converted with `components/admin/reports/date-range.ts` `rangeToInstants` in the admin's
+timezone.
+
+Stage 10a (`20260915001000_admin_agents.sql`, DEVIATIONS D28):
+
+| RPC | who | behavior |
+|---|---|---|
+| `admin_agent_activity(p_user_id uuid, p_from timestamptz, p_to timestamptz) → jsonb` | admin (else `42501`) | `{profile {user_id, name, email, role, active, timezone, daily_call_target, in_app_calling_enabled, created_at, leads_assigned, clients}, from, to, stats {dials, connected, interested, appointments, talk_seconds, calls_with_duration, inbound_calls, total_calls}, outcomes {OUTCOME: count}, recent_calls [≤50 newest {id, created_at, direction, mode, outcome, call_status, duration_seconds, lead_id, business_name}]}`. Calls by `calls.user_id` in half-open `[p_from, p_to)`, shared stat definitions. Unknown user → `P0002`; null bounds, `p_to <= p_from` or a span over 400 days → `22023`. `clients` is current, not range-bound. |
+
+App side: `src/server/services/agents.ts` (`listAgents`, `createAgent(ctx, input, deps)`, `setAgentActive(ctx, id, active, deps)`,
+`setInAppCalling`, `updateAgentProfile`, `countReassignableLeads`, `bulkReassign`, `reassignSelected`, `getAgentActivity(ctx, id, range)`
+with `range ∈ today | 7d | 30d` in the admin's timezone). `deps.authAdmin` (service role) is used only for `auth.admin.createUser` and
+`auth.admin.updateUserById({ ban_duration })`; every profile/lead read and write uses the admin's session. `src/server/services/settings.ts`
+(`getSettingsPageData`, `updateOwnName`, `changePassword`, `requestEmailChange`, `getCompanyDefaults`, `updateCompanySettings`,
+`updateAgentTarget`). Dialer context additions: `deviceReady`, `setInputDevice(id)`, `setOutputDevice(id)`, `testSpeaker()` (each resolves
+false without a loaded driver that supports it); the chosen devices live in localStorage `fmq.audioInput` / `fmq.audioOutput` and are
+re-applied whenever the in-app device becomes ready.
 
 ### 4.8 Migration files (ownership slots)
 ```
 supabase/migrations/20260915000100_core_schema.sql     stage 1
 supabase/migrations/20260915000200_rls.sql             stage 1
 supabase/migrations/20260915000300_core_rpcs.sql       stage 1
-supabase/migrations/20260915000400_twilio.sql          stages 4-5
+supabase/migrations/20260915000400_review_fixes.sql    stages 2-5 (latest log_call / mark_voicemail_heard bodies)
 supabase/migrations/20260915000600_dashboards.sql      stage 6
 supabase/migrations/20260915000700_follow_ups.sql      stage 7
 supabase/migrations/20260915000800_pipeline.sql        stage 8
 supabase/migrations/20260915000900_import_export.sql   stage 9
-supabase/migrations/20260915001000_admin.sql           stage 10
+supabase/migrations/20260915001000_admin_agents.sql    stage 10a (agents drill-down)
+supabase/migrations/20260915001100_numbers_reports.sql stage 10b (phone numbers, reports)
+supabase/migrations/20260915001200_review_fixes_2.sql  stages 6-10 review fixes (round 2)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
+Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`
+asserts that `get_my_dashboard`, `admin_agent_rows`, `admin_agent_activity` and `admin_report_agents` return identical dials,
+connected, interested, appointments and talk seconds for the same agent and local day (New York, Los Angeles, Auckland), that
+`admin_report_numbers` counts the same dials, and that both team totals equal the sums of their rows. Talk time is displayed by one
+helper, `components/common/format.ts` `formatTalkTime` ("45s", "12m", "1h 05m"). The admin dashboard's team tiles are built by
+`teamTotalsItems` (`components/dashboard/format.ts`) and use that same helper, so the team tile floors exactly like the per-agent
+rows beneath it; Reports still shows whole talk minutes (`talkMinutes`).
+
+Migration `20260915001200_review_fixes_2.sql` replaces four functions so identically labelled numbers agree across screens:
+`admin_team_totals` adds `clients_assigned`, `clients_unassigned` and `talk_seconds_today`; `admin_report_agents` also lists ADMIN
+profiles that currently hold CLIENT leads (so the report "Clients" total equals the dashboard's assigned count);
+`follow_up_tab_counts` adds `voicemails_total`, taken from `list_voicemails` itself so the Voicemails badge always equals the rows
+that tab lists; and `admin_phone_number_rows` is dropped and recreated with `assigned_active`, so a number held by a disabled agent
+is visible as parked. "Clients" means **leads currently assigned with status CLIENT** on every surface; the dashboard shows
+unassigned client leads as a sub-line rather than folding them into that number. The agent drill-down
+(`getAgentActivity`) computes its range in the **target agent's** timezone, matching `admin_agent_rows` and `get_my_dashboard`.
+Admin-only profile lookups (`createLeadExport`, `listAgentsForFilter`) read `profiles` in explicit `.range()` pages, because an
+unpaginated PostgREST response is silently capped at db-max-rows.
 
 ---
 
@@ -661,5 +749,17 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
 - Fictional phones only: `+1 NXX 555-0100…0199`. Seed Twilio numbers: `+14155550150` (Alex),
   `+14155550151` (Blair), `+14155550152` (pool).
 - Twilio webhook tests sign with `twilio.getExpectedTwilioSignature(testToken, url, params)`.
-- Playwright: `channel: 'chrome'`, projects `mobile` (iPhone-sized viewport + iOS UA → tel:) and
-  `desktop`, with `DIALER_DRIVER=mock`.
+- Playwright: `channel: 'chrome'`, projects `mobile` (iPhone-sized viewport + iOS UA → tel:), `desktop`
+  and `import`, with `DIALER_DRIVER=mock`.
+  - Every spec shares one seeded database (`workers: 1`), so each spec owns a seeded user and only
+    writes to that user's rows: Casey (mobile core loop, sign-out), Blair (desktop core loop), Alex
+    (isolation, export, call mode, and the pipeline/follow-up writes), the admin (agents, import).
+  - `import` runs `admin-import.spec.ts` alone. It inserts 92 leads, which would break every spec that
+    asserts a seeded total (isolation's "45 leads in total", the agent export), so it declares
+    `dependencies: ['mobile', 'desktop']` to run last whatever the file order, and `retries: 0`
+    because a second attempt would import into the database the first attempt already changed.
+  - A spec that creates rows which outlive it (a new agent) uses a unique email, so re-running the
+    suite against a fresh seed never collides. Specs assert only what they own, never global counts
+    they do not control.
+  - `pipeline-followups.spec.ts` runs in `desktop` and switches one `describe` to a phone viewport with
+    `test.use`, because that flow has to work with both a drag and the "Move to…" menu.

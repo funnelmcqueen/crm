@@ -58,9 +58,37 @@ const MATRIX: Record<string, Access> = {
   touch_device_presence: 'api',
   consume_rate_limit: 'api',
   get_company_name: 'public_api',
+  // stage 6 (dashboards)
+  get_my_dashboard: 'api',
+  admin_agent_rows: 'api',
+  admin_team_totals: 'api',
+  // stage 7 (follow-ups)
+  list_follow_ups: 'api',
+  follow_up_tab_counts: 'api',
+  // stage 8 (pipeline)
+  pipeline_column: 'api',
+  // stage 9 (import/export)
+  find_duplicate_leads: 'api',
+  export_leads: 'api',
+  // stage 10 (agents, numbers, reports)
+  admin_agent_activity: 'api',
+  admin_phone_number_rows: 'api',
+  admin_report_agents: 'api',
+  admin_report_numbers: 'api',
+  admin_report_totals: 'api',
 };
 
-const INVOKER = new Set(['is_privileged_role', 'outcome_to_status', 'search_leads', 'list_lead_sources']);
+const INVOKER = new Set([
+  'is_privileged_role',
+  'outcome_to_status',
+  'search_leads',
+  'list_lead_sources',
+  'list_follow_ups',
+  'follow_up_tab_counts',
+  'pipeline_column',
+  'find_duplicate_leads',
+  'export_leads',
+]);
 
 interface FnAcl {
   proname: string;
@@ -187,6 +215,19 @@ describe('function EXECUTE matrix (calls)', () => {
     `select public.consume_rate_limit('voice_token')`,
     `select public.is_admin()`,
     `select public.can_access_lead(gen_random_uuid())`,
+    `select public.get_my_dashboard()`,
+    `select * from public.admin_agent_rows()`,
+    `select public.admin_team_totals()`,
+    `select * from public.list_follow_ups('today')`,
+    `select public.follow_up_tab_counts()`,
+    `select * from public.pipeline_column(array['NEW']::public.lead_status[])`,
+    `select * from public.find_duplicate_leads('{}'::text[], '{}'::text[], '{}'::text[])`,
+    `select * from public.export_leads()`,
+    `select public.admin_agent_activity(gen_random_uuid(), now() - interval '1 day', now())`,
+    `select * from public.admin_phone_number_rows()`,
+    `select * from public.admin_report_agents(now() - interval '1 day', now())`,
+    `select * from public.admin_report_numbers(now() - interval '1 day', now())`,
+    `select public.admin_report_totals(now() - interval '1 day', now())`,
   ];
   const SERVICE_CALLS = [
     `select * from public.claim_caller_id(gen_random_uuid())`,
@@ -220,6 +261,18 @@ describe('function EXECUTE matrix (calls)', () => {
   it('admin-only RPCs reject agents with 42501', async () => {
     const err = await pgError(userRows(db, u.agent, `select public.reassign_leads(array[gen_random_uuid()], $1::uuid)`, [u.agent]));
     expect(err.code).toBe('42501');
+    for (const sql of [
+      `select * from public.admin_agent_rows()`,
+      `select public.admin_team_totals()`,
+      `select * from public.find_duplicate_leads('{}'::text[], '{}'::text[], '{}'::text[])`,
+      `select public.admin_agent_activity(gen_random_uuid(), now() - interval '1 day', now())`,
+      `select * from public.admin_phone_number_rows()`,
+      `select * from public.admin_report_agents(now() - interval '1 day', now())`,
+      `select * from public.admin_report_numbers(now() - interval '1 day', now())`,
+      `select public.admin_report_totals(now() - interval '1 day', now())`,
+    ]) {
+      expect((await pgError(userRows(db, u.agent, sql))).code, sql).toBe('42501');
+    }
   });
 
   it('service_role may call the webhook functions', async () => {

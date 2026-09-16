@@ -57,7 +57,7 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
           <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="min-h-11">
+        <DropdownMenuItem asChild className="min-h-12">
           <Link href="/settings">
             <Settings aria-hidden />
             Settings
@@ -66,7 +66,7 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
         <DropdownMenuItem
           variant="destructive"
           disabled={signingOut}
-          className="min-h-11"
+          className="min-h-12"
           onSelect={() => {
             startSignOut(async () => {
               // A tapped phone call is this user's data; the next person on a shared device must not find it.

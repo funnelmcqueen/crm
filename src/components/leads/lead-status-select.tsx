@@ -66,7 +66,7 @@ export function LeadStatusSelect({ leadId, status, isAdmin }: LeadStatusSelectPr
         </SelectTrigger>
         <SelectContent position="popper" align="start" className="max-h-80">
           {LEAD_STATUSES.map((value) => (
-            <SelectItem key={value} value={value} className="min-h-11">
+            <SelectItem key={value} value={value} className="min-h-12">
               {STATUS_LABELS[value]}
             </SelectItem>
           ))}
