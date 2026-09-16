@@ -1,6 +1,7 @@
 import { PhoneOff } from "lucide-react";
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { dailyGoal, goalFraction } from "@/lib/domain/daily-goal";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import { cn } from "@/lib/utils";
 import type { AgentRow } from "@/server/services/agents";
@@ -54,13 +55,21 @@ function InAppOffNote() {
   );
 }
 
-/** "37 / 50", gold once the target is hit. */
+/** "37 / 50", gold once the target is reached; "37 calls · no target" for a target of 0 (dailyGoal, D43). */
 function CallsVsTarget({ dials, target }: { dials: number; target: number }) {
-  const hit = target > 0 && dials >= target;
+  const goal = dailyGoal(dials, target);
+  if (!goal.hasTarget) {
+    return (
+      <span className="whitespace-nowrap tabular-nums">
+        <span className="font-extrabold">{goalFraction(goal)}</span>
+        <span className="text-muted-foreground"> · no target</span>
+      </span>
+    );
+  }
   return (
     <span className="whitespace-nowrap tabular-nums">
-      <span className={cn("font-extrabold", hit && "text-gold")}>{formatCount(dials)}</span>
-      <span className="text-muted-foreground"> / {formatCount(target)}</span>
+      <span className={cn("font-extrabold", goal.reached && "text-gold")}>{formatCount(goal.dials)}</span>
+      <span className="text-muted-foreground"> / {formatCount(goal.target)}</span>
     </span>
   );
 }

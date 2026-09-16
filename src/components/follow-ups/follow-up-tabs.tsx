@@ -14,7 +14,9 @@ export interface FollowUpTabsProps {
  * made the badge read 0 over a tab still holding every voicemail.
  */
 function countFor(tab: FollowUpTab, counts: FollowUpCounts): number {
-  return tab === "voicemails" ? counts.voicemailsTotal : counts[tab];
+  if (tab === "voicemails") return counts.voicemailsTotal;
+  if (tab === "skipped") return counts.skipped;
+  return counts[tab];
 }
 
 /**

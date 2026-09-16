@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import type { LeadListRow } from "@/server/services/leads";
+import { LeadSelectCheckbox, LeadSelectPageCheckbox, useLeadSelectionContext } from "./bulk/selection-context";
 import { FollowUpCell, locationLabel } from "./lead-list-cells";
 
 export interface LeadsTableProps {
@@ -18,12 +19,16 @@ export interface LeadsTableProps {
   agentNames: Record<string, string> | null;
 }
 
-/** Desktop (md+) leads table. Each row opens the lead; the business name is the keyboard target. */
+/**
+ * Desktop (md+) leads table. Each row opens the lead; the business name is the keyboard target. The first column
+ * selects rows for bulk actions (docs/DEVIATIONS.md D41); clicks in that cell never open the lead.
+ */
 export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
   const router = useRouter();
+  const { ids: selected } = useLeadSelectionContext();
 
   function openRow(event: MouseEvent<HTMLTableRowElement>, id: string) {
-    if (event.defaultPrevented || (event.target as HTMLElement).closest("a, button")) return;
+    if (event.defaultPrevented || (event.target as HTMLElement).closest("a, button, [data-select-cell]")) return;
     if (event.metaKey || event.ctrlKey) {
       window.open(`/leads/${id}`, "_blank", "noopener");
       return;
@@ -36,7 +41,10 @@ export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="h-11 pl-4">Business</TableHead>
+            <TableHead className="h-11 w-10 pr-0 pl-4" data-select-cell>
+              <LeadSelectPageCheckbox />
+            </TableHead>
+            <TableHead className="h-11 pl-3">Business</TableHead>
             <TableHead>Phone</TableHead>
             {/* SPEC 8 lists location among the desktop columns with no width condition. */}
             <TableHead>Location</TableHead>
@@ -52,9 +60,13 @@ export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
             <TableRow
               key={row.id}
               onClick={(event) => openRow(event, row.id)}
+              data-state={selected.has(row.id) ? "selected" : undefined}
               className="h-14 cursor-pointer transition-colors duration-100"
             >
-              <TableCell className="max-w-72 pl-4">
+              <TableCell className="w-10 pr-0 pl-4" data-select-cell>
+                <LeadSelectCheckbox leadId={row.id} businessName={row.businessName} />
+              </TableCell>
+              <TableCell className="max-w-64 pl-3">
                 <Link
                   href={`/leads/${row.id}`}
                   className="block truncate font-bold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50"

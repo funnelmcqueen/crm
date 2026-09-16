@@ -141,6 +141,54 @@ export type Database = {
           },
         ]
       }
+      lead_skips: {
+        Row: {
+          created_at: string
+          id: string
+          lead_id: string
+          note: string | null
+          reason: string | null
+          resolution: string | null
+          resolved_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_id: string
+          note?: string | null
+          reason?: string | null
+          resolution?: string | null
+          resolved_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_id?: string
+          note?: string | null
+          reason?: string | null
+          resolution?: string | null
+          resolved_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_skips_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_skips_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           address: string | null
@@ -477,6 +525,63 @@ export type Database = {
         }
         Returns: boolean
       }
+      bulk_assign_leads: {
+        Args: {
+          p_expected_assigned_to?: string
+          p_lead_ids: string[]
+          p_match_expected?: boolean
+          p_to_user_id: string
+        }
+        Returns: {
+          lead_id: string
+          previous_assigned_to: string
+          result: string
+        }[]
+      }
+      bulk_complete_follow_ups: {
+        Args: {
+          p_lead_ids: string[]
+        }
+        Returns: number
+      }
+      bulk_delete_leads: {
+        Args: {
+          p_lead_ids: string[]
+        }
+        Returns: number
+      }
+      bulk_schedule_follow_ups: {
+        Args: {
+          p_due_at: string
+          p_lead_ids: string[]
+          p_note?: string
+          p_set_note?: boolean
+        }
+        Returns: {
+          follow_up_id: string
+          lead_id: string
+          result: string
+        }[]
+      }
+      bulk_set_lead_source: {
+        Args: {
+          p_lead_ids: string[]
+          p_source: string
+        }
+        Returns: number
+      }
+      bulk_set_lead_status: {
+        Args: {
+          p_expected_status?: Database["public"]["Enums"]["lead_status"]
+          p_lead_ids: string[]
+          p_status: Database["public"]["Enums"]["lead_status"]
+        }
+        Returns: {
+          lead_id: string
+          previous_status: Database["public"]["Enums"]["lead_status"]
+          result: string
+        }[]
+      }
       can_access_lead: {
         Args: {
           p_lead_id: string
@@ -514,6 +619,33 @@ export type Database = {
           p_source?: string
           p_statuses?: Database["public"]["Enums"]["lead_status"][]
           p_unassigned?: boolean
+        }
+        Returns: {
+          address: string
+          assigned_to: string
+          business_name: string
+          call_count: number
+          city: string
+          contact_name: string
+          country: string
+          created_at: string
+          email: string
+          id: string
+          last_contacted_at: string
+          next_follow_up_at: string
+          notes: string
+          phone: string
+          state: string
+          status: Database["public"]["Enums"]["lead_status"]
+          website: string
+        }[]
+      }
+      export_selected_leads: {
+        Args: {
+          p_after_created_at?: string
+          p_after_id?: string
+          p_lead_ids: string[]
+          p_limit?: number
         }
         Returns: {
           address: string
@@ -577,6 +709,13 @@ export type Database = {
           notes: string
           outcome: Database["public"]["Enums"]["call_outcome"]
           voicemail_duration_seconds: number
+        }[]
+      }
+      get_my_call_days: {
+        Args: never
+        Returns: {
+          day: string
+          dials: number
         }[]
       }
       get_my_dashboard: {
@@ -650,6 +789,27 @@ export type Database = {
         Args: never
         Returns: string[]
       }
+      list_skipped_leads: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: {
+          assigned_to: string
+          business_name: string
+          contact_name: string
+          lead_id: string
+          lead_status: Database["public"]["Enums"]["lead_status"]
+          next_follow_up_at: string
+          note: string
+          owner_name: string
+          phone: string
+          reason: string
+          skip_id: string
+          skipped_at: string
+          total_count: number
+        }[]
+      }
       list_voicemails: {
         Args: {
           p_limit?: number
@@ -685,6 +845,10 @@ export type Database = {
         Args: {
           p_call_id: string
         }
+        Returns: boolean
+      }
+      my_caller_id_available: {
+        Args: never
         Returns: boolean
       }
       outcome_to_status: {
@@ -730,11 +894,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      resume_skipped_lead: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: number
+      }
       revoke_user_sessions: {
         Args: {
           p_user_id: string
         }
         Returns: number
+      }
+      search_lead_ids: {
+        Args: {
+          p_assigned_to?: string
+          p_limit?: number
+          p_query?: string
+          p_source?: string
+          p_statuses?: Database["public"]["Enums"]["lead_status"][]
+          p_unassigned?: boolean
+        }
+        Returns: {
+          id: string
+          total_count: number
+        }[]
       }
       search_leads: {
         Args: {
@@ -767,6 +951,14 @@ export type Database = {
           total_count: number
           website: string
         }[]
+      }
+      skip_lead: {
+        Args: {
+          p_lead_id: string
+          p_note?: string
+          p_reason?: string
+        }
+        Returns: string
       }
       touch_device_presence: {
         Args: never

@@ -58,28 +58,38 @@ are unsure about.
 
 **Agent**
 
-- Dashboard: calls today against the daily target, connected / interested / appointments, talk
-  time, follow-ups due, unheard voicemails, and a NEXT LEAD card with a big CALL button. "Today" is
-  the agent's own timezone. No team data anywhere.
+- Today: one next best action (start or continue the call queue with a big CALL button, overdue
+  follow-ups, or skipped leads), progress toward the agent's own daily goal with supportive pace copy,
+  calls on each of the last 7 days, calls / connected / connect rate / interested / appointments /
+  talk time, and a heads-up when calling isn't set up. "Today" is the agent's own timezone. No team
+  data and no comparisons anywhere.
 - My Leads: server-paginated list (25/page) with debounced search across business, contact, phone
-  digits, email, website and city; status and source filters; sort; all kept in the URL.
+  digits, email, website and city; status and source filters; sort; all kept in the URL. Select
+  leads (kept while paging, "select all matching") to set status, schedule or clear follow-ups and
+  export in one go, with Undo for status changes.
+- Skip with a reason: a skipped lead waits in Follow-ups › Skipped instead of coming back to the call
+  queue, until it is resumed, called, rescheduled or changes status.
 - Lead detail: call button (sticky at the bottom on mobile), status, notes, follow-up picker, and
   the full call history with a voicemail player.
 - Calling: in-app through Twilio on desktop, the native dialer on iPhone, with an in-call bar
   (timer, mute, DTMF keypad, hang up). Incoming callbacks ring wherever the agent is in the app.
 - Outcome logging in one or two taps, with the status mapping applied server-side in a single
   transaction, then Save & Next.
-- Pipeline: drag or "Move to…" between columns, per-column pagination, touch-friendly.
-- Follow-ups: Overdue / Today / Upcoming / Completed / Voicemails, with Call, Complete and
+- Pipeline: drag or "Move to…" between columns, per-column pagination, a stage bar with counts to
+  jump between stages, touch-friendly.
+- Follow-ups: Overdue / Today / Upcoming / Completed / Voicemails / Skipped, with Call, Complete and
   Reschedule quick picks resolved in the agent's timezone.
 - Export their own leads to CSV; edit their own name, password and call-mode preference; pick a
   microphone and speaker.
 
 **Admin** — everything above across the whole team, plus:
 
-- Team dashboard: totals and per-agent rows (calls today vs target), each linking to a drill-down
-  of that agent's leads, calls and stats.
-- All Leads, including unassigned; create, reassign and hard-delete leads.
+- Team dashboard: what needs attention (unassigned leads, missing phone numbers, skipped leads),
+  totals and per-agent rows (calls today vs target), each linking to a drill-down of that agent's
+  leads, calls and stats.
+- All Leads, including unassigned; create, reassign and hard-delete leads. Bulk actions on a
+  selection: assign or unassign (with Undo), status, follow-ups, source, export and delete (with a
+  confirmation stating the count). Unassigned leads are one click away from being assigned.
 - Agents: create (one-time password shown once), disable (also banned in Supabase Auth) and
   reactivate, toggle in-app calling, set targets and timezones, bulk-reassign, and a banner when
   leads are still held by disabled agents. **Disable** is reversible and keeps everything. **Delete**
@@ -136,7 +146,7 @@ prints a ready-to-paste env block:
 ```
 [localbase] applied bootstrap.sql
 [localbase] applied migration 20260915000100_core_schema.sql
-... (14 migrations)
+... (17 migrations)
 [localbase] listening on http://127.0.0.1:54321
 
 localbase is running (data: .../.localbase/data)
@@ -643,11 +653,12 @@ matched lead to its owner, an unmatched caller on an assigned number to that age
 else to voicemail with a follow-up created.
 
 **Playwright** runs against Chrome (`channel: 'chrome'`, no browser download) with the mock dialer,
-starting its own in-memory seeded localbase on 54370 and `next dev` on 3170. Four projects: `mobile`
+starting its own in-memory seeded localbase on 54370 and `next dev` on 3170. Five projects: `mobile`
 (iPhone viewport and UA, so the dialer resolves to `tel:`), `desktop` (in-call bar → hang up →
 outcome sheet → Save & Next), `journey` (the voicemail callback flow, which depends on `desktop` so
-it runs after it), and an `import` project that runs last because it inserts 97 leads into the
-shared database. `tests/unit/docs/docs-drift.test.ts` checks this paragraph against
+it runs after it), an `import` project that runs after those because it inserts 97 leads into the
+shared database, and `workspace` (bulk lead actions and the Skipped queue), which runs last on the
+imported leads. `tests/unit/docs/docs-drift.test.ts` checks this paragraph against
 `playwright.config.ts` and `e2e/admin-import.spec.ts`, so it cannot quietly fall behind again.
 
 **Bundle check:**

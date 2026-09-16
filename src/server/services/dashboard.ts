@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { Database } from "@/lib/database.types";
 import { requireActive, requireAdmin, type RequestContext } from "@/server/context";
 import { AppError, mapPostgrestError } from "@/server/errors";
+import type { CallDay } from "@/lib/domain/daily-goal";
 import { nextLead, type NextLead } from "@/server/services/next-lead";
+import { countSkippedLeads } from "@/server/services/skipped-leads";
 
 export type UserRole = Database["public"]["Enums"]["user_role"];
 
@@ -27,6 +29,18 @@ export interface MyDashboardStats {
 export interface AgentDashboard {
   stats: MyDashboardStats;
   nextLead: NextLead | null;
+  today: AgentToday;
+}
+
+/** What the Today workspace needs beyond the stats (DEVIATIONS D43). All of it is the caller's own. */
+export interface AgentToday {
+  /** The last 7 local days, oldest first, today last. */
+  callDays: CallDay[];
+  /** An in-app call made now would get a caller ID (own active number or an active pool number). */
+  callerIdAvailable: boolean;
+  overdueFollowUps: number;
+  skipped: number;
+  leadsAssigned: number;
 }
 
 export interface TeamTotals {
@@ -69,6 +83,14 @@ export interface AgentStatsRow {
 export interface AdminDashboard {
   totals: TeamTotals;
   agents: AgentStatsRow[];
+  attention: AdminAttention;
+}
+
+/** Operational items the admin should act on, shown above the team numbers. */
+export interface AdminAttention {
+  activePhoneNumbers: number;
+  /** Open skips across the team. */
+  skipped: number;
 }
 
 const count = z.coerce.number().int().nonnegative();
@@ -151,11 +173,35 @@ export async function getMyDashboardStats(ctx: RequestContext): Promise<MyDashbo
   return parseRpc(myDashboardSchema, data);
 }
 
-/** Agent dashboard: own stats plus the Next Lead suggestion. */
+const callDaysSchema = z.array(z.object({ day: z.string().min(1), dials: count }));
+const tabCountsSchema = z.object({ overdue: count }).passthrough();
+
+/** Agent dashboard: own stats, the Next Lead suggestion and the Today workspace data. */
 export async function getAgentDashboard(ctx: RequestContext): Promise<AgentDashboard> {
   const active = requireActive(ctx);
-  const [stats, lead] = await Promise.all([getMyDashboardStats(active), nextLead(active, [])]);
-  return { stats, nextLead: lead };
+  const [stats, lead, callDays, callerId, tabCounts, skipped, leads] = await Promise.all([
+    getMyDashboardStats(active),
+    nextLead(active, []),
+    active.supabase.rpc("get_my_call_days"),
+    active.supabase.rpc("my_caller_id_available"),
+    active.supabase.rpc("follow_up_tab_counts"),
+    countSkippedLeads(active),
+    active.supabase.from("leads").select("id", { count: "exact", head: true }).eq("assigned_to", active.userId),
+  ]);
+  for (const result of [callDays, callerId, tabCounts, leads]) {
+    if (result.error) throw mapPostgrestError(result.error);
+  }
+  return {
+    stats,
+    nextLead: lead,
+    today: {
+      callDays: parseRpc(callDaysSchema, callDays.data).map((row) => ({ day: row.day.slice(0, 10), dials: row.dials })),
+      callerIdAvailable: callerId.data === true,
+      overdueFollowUps: parseRpc(tabCountsSchema, tabCounts.data).overdue,
+      skipped,
+      leadsAssigned: leads.count ?? 0,
+    },
+  };
 }
 
 /**
@@ -195,6 +241,12 @@ export async function getTeamTotals(ctx: RequestContext): Promise<TeamTotals> {
 
 export async function getAdminDashboard(ctx: RequestContext): Promise<AdminDashboard> {
   const admin = requireAdmin(ctx);
-  const [totals, agents] = await Promise.all([getTeamTotals(admin), listAgentStatsRows(admin)]);
-  return { totals, agents };
+  const [totals, agents, numbers, skipped] = await Promise.all([
+    getTeamTotals(admin),
+    listAgentStatsRows(admin),
+    admin.supabase.from("phone_numbers").select("id", { count: "exact", head: true }).eq("active", true),
+    countSkippedLeads(admin),
+  ]);
+  if (numbers.error) throw mapPostgrestError(numbers.error);
+  return { totals, agents, attention: { activePhoneNumbers: numbers.count ?? 0, skipped } };
 }

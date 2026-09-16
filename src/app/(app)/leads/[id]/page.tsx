@@ -12,10 +12,12 @@ import { CopyPhoneButton } from "@/components/leads/copy-phone-button";
 import { FollowUpPicker } from "@/components/leads/follow-up-picker";
 import { LeadNotesForm } from "@/components/leads/lead-notes-form";
 import { LeadStatusSelect } from "@/components/leads/lead-status-select";
+import { OpenSkipNotice, SkipHistory } from "@/components/leads/lead-skips";
 import type { DialableLead } from "@/lib/dialer/types";
 import { websiteHref } from "@/lib/domain/website";
 import { requireUserPage } from "@/server/context";
 import { getLeadDetail, listAgentsForFilter } from "@/server/services/leads";
+import { getLeadSkipHistory } from "@/server/services/skipped-leads";
 
 export const metadata: Metadata = {
   title: "Lead",
@@ -43,7 +45,11 @@ export default async function LeadDetailPage({
 
   const { lead, history } = detail;
   const isAdmin = ctx.profile.role === "ADMIN";
-  const agents = isAdmin ? (await listAgentsForFilter(ctx)).filter((agent) => agent.active) : [];
+  const [agents, skips] = await Promise.all([
+    isAdmin ? listAgentsForFilter(ctx).then((all) => all.filter((agent) => agent.active)) : Promise.resolve([]),
+    getLeadSkipHistory(ctx, lead.id),
+  ]);
+  const openSkip = skips.find((skip) => skip.resolvedAt === null) ?? null;
   const tz = ctx.profile.timezone;
   const now = currentTime();
   const flow = Array.isArray(query.flow) ? query.flow[0] : query.flow;
@@ -73,7 +79,7 @@ export default async function LeadDetailPage({
         {isAdmin ? "All Leads" : "My Leads"}
       </Link>
 
-      {flow === "next" ? <NextLeadControls leadId={lead.id} /> : null}
+      {flow === "next" ? <NextLeadControls leadId={lead.id} businessName={lead.businessName} /> : null}
 
       <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
@@ -93,6 +99,16 @@ export default async function LeadDetailPage({
           <CallButton lead={dialable} size="lg" className="h-14 min-w-48 text-lg font-extrabold" />
         </div>
       </header>
+
+      {openSkip ? (
+        <OpenSkipNotice
+          leadId={lead.id}
+          skip={openSkip}
+          tz={tz}
+          now={now}
+          forAgent={isAdmin && assignedToId !== ctx.userId ? (detail.admin?.assignedTo?.name ?? null) : null}
+        />
+      ) : null}
 
       {lead.status === "DO_NOT_CONTACT" ? (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
@@ -200,6 +216,18 @@ export default async function LeadDetailPage({
           </div>
           <CallHistory history={history} tz={tz} now={now} isAdmin={isAdmin} canMarkHeard={canMarkHeard} />
         </section>
+
+        {skips.length > 0 ? (
+          <section aria-labelledby="lead-skips" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:col-start-1 md:row-start-3">
+            <div className="flex items-baseline justify-between">
+              {sectionTitle("Skip history", "lead-skips")}
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {skips.length} {skips.length === 1 ? "skip" : "skips"}
+              </span>
+            </div>
+            <SkipHistory entries={skips} tz={tz} now={now} />
+          </section>
+        ) : null}
       </div>
 
       <div className="fixed inset-x-0 bottom-(--bottom-nav-height) z-30 border-t bg-background px-4 py-3 md:hidden">

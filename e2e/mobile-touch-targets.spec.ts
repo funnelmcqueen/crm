@@ -28,7 +28,8 @@ interface HitBox {
  */
 async function hitBoxes(page: Page, selector: string): Promise<HitBox[]> {
   return page.$$eval(selector, (elements) =>
-    elements.map((element) => {
+    // Only controls laid out on this screen: the desktop table's checkboxes are display:none on a phone.
+    elements.filter((element) => element.getClientRects().length > 0).map((element) => {
       const rect = element.getBoundingClientRect();
       let w = rect.width;
       let h = rect.height;
@@ -61,11 +62,12 @@ async function expectAllBigEnough(page: Page, selector: string, label: string): 
 test('checkboxes, radios and switches are all at least 48px on a phone', async ({ page }) => {
   await signIn(page, 'alex');
 
-  // 12 status checkboxes, the densest cluster of small controls in the app.
+  // 12 status checkboxes, the densest cluster of small controls in the app, plus the lead cards' selection
+  // checkboxes (D41) around them.
   await page.goto('/leads');
   await page.getByRole('button', { name: /^Status/ }).click();
-  await expect(page.locator('[data-slot="checkbox"]').first()).toBeVisible();
-  await expectAllBigEnough(page, '[data-slot="checkbox"]', 'status filter checkbox');
+  await expect(page.getByRole('checkbox', { name: 'New', exact: true })).toBeVisible();
+  await expectAllBigEnough(page, '[data-slot="checkbox"]', 'status filter or lead selection checkbox');
   await page.keyboard.press('Escape');
 
   // The three call-mode radios.

@@ -249,6 +249,13 @@ CHECKs: `direction = 'INBOUND' or (user_id is not null and lead_id is not null)`
 `created_at timestamptz not null default now()`. RLS on, **no policies**, all privileges revoked from
 anon/authenticated.
 
+**lead_skips** (addition, D42, `20260915001700_skipped_leads.sql`): `id uuid PK`, `lead_id uuid not null FK leads ON DELETE CASCADE`,
+`user_id uuid not null FK profiles ON DELETE RESTRICT`, `reason text` (null or CALL_LATER, NEEDS_RESEARCH, BAD_DATA, NOT_PRIORITY,
+OTHER), `note text` (≤ 500), `created_at timestamptz not null default now()`, `resolved_at timestamptz`, `resolution text` (RESUMED,
+CALLED, STATUS_CHANGED, FOLLOW_UP, REASSIGNED, SKIPPED_AGAIN; set together with `resolved_at`). Unique open skip per
+`(lead_id, user_id) where resolved_at is null`; indexes `(user_id, created_at) where resolved_at is null`, `(lead_id, created_at)`.
+Policy `lead_skips_select`: admin, or active caller's own skips on leads assigned to them. API roles have SELECT only.
+
 ### 4.3 Indexes
 - leads: `(assigned_to, status)`, `(assigned_to, next_follow_up_at)`, `(assigned_to, last_contacted_at)`,
   `(phone)`, `(website_domain)`, `(dedupe_name_key)`, `(created_at)`; GIN `extensions.gin_trgm_ops` on
@@ -480,6 +487,52 @@ through `deps.authAdmin` a new password and a permanent ban, then `deps.revokeSe
 so the list shows **Delete unfinished** with a **Finish deleting** action. `setAgentActive` answers `not_found` for a deleted agent,
 and if a delete lands while it reactivates, it bans the login again. The drill-down page shows a **Deleted** badge.
 
+Bulk lead actions (`20260915001600_bulk_leads.sql`, DEVIATIONS D41). All SECURITY INVOKER, so RLS and the guards apply; every id
+list is de-duplicated and more than 5000 ids is `22023 too_many_leads`.
+
+| RPC | who | behavior |
+|---|---|---|
+| `search_lead_ids(p_query, p_statuses, p_source, p_assigned_to, p_unassigned, p_limit ≤ 5000) → table(id, total_count)` | active user | Same visibility and filters as `search_leads`, ordered `created_at desc`. |
+| `bulk_set_lead_status(p_lead_ids uuid[], p_status, p_expected_status default null) → table(lead_id, previous_status, result)` | active user | One row per visible lead: `updated`, `unchanged` (same status, or not at `p_expected_status`), `locked` (agent and DO_NOT_CONTACT). |
+| `bulk_assign_leads(p_lead_ids uuid[], p_to_user_id, p_expected_assigned_to default null, p_match_expected default false) → table(lead_id, previous_assigned_to, result)` | admin (42501) | Moves eligible leads with `reassign_leads` (called even when none are eligible, so a bad target is always 22023). |
+| `bulk_schedule_follow_ups(p_lead_ids uuid[], p_due_at, p_note default null, p_set_note default false) → table(lead_id, follow_up_id, result)` | active user | Per lead: reschedule the owner's earliest open follow-up or create one (`rescheduled` / `created`); owner = lead's agent for an admin on an assigned lead, else the caller. Time must be within (now − 1 day, now + 5 years), note ≤ 500, else 22023. |
+| `bulk_complete_follow_ups(p_lead_ids uuid[]) → integer` | active user | Completes every visible open follow-up on the leads. |
+| `bulk_set_lead_source(p_lead_ids uuid[], p_source) → integer` | admin (42501) | Blank clears; ≤ 200 chars. Counts leads that changed. |
+| `bulk_delete_leads(p_lead_ids uuid[]) → integer` | admin (42501) | Hard delete; calls and follow-ups cascade. |
+| `export_selected_leads(p_lead_ids uuid[], p_after_created_at, p_after_id, p_limit ≤ 1000)` | active user | `export_leads` columns and keyset paging, limited to the ids. |
+
+App side: `src/server/services/bulk-leads.ts` (`listMatchingLeadIds`, `bulkUpdateStatus` / `undoBulkStatus`, `bulkAssign` /
+`undoBulkAssign`, `bulkScheduleFollowUp`, `bulkCompleteFollowUps`, `bulkSetSource`, `bulkDelete`), actions in
+`src/server/actions/bulk-leads.ts`, result messages in `src/lib/domain/bulk-leads.ts`. `POST /api/leads/export` takes form field
+`ids` (Origin-checked, `export` rate limit). UI: `src/components/leads/bulk/*` (selection rules in `selection.ts`, a sessionStorage
+store in `selection-store.ts`).
+
+Skipped queue (`20260915001700_skipped_leads.sql`, DEVIATIONS D42):
+
+| RPC | who | behavior |
+|---|---|---|
+| `skip_lead(p_lead_id uuid, p_reason text default null, p_note text default null) → uuid` | active owner of the lead | Closes the caller's open skip on the lead (SKIPPED_AGAIN), inserts a new one. Not the owner or unknown → P0002; bad reason or note → 22023. |
+| `resume_skipped_lead(p_lead_id uuid) → integer` | active user | Closes open skips (RESUMED): the caller's own on their own lead, or every one for an admin. Returns how many. |
+| `list_skipped_leads(p_limit ≤ 100, p_offset) → table(skip_id, lead_id, business_name, contact_name, phone, lead_status, reason, note, skipped_at, next_follow_up_at, assigned_to, owner_name, total_count)` | active user (INVOKER) | Open skips, oldest first; `assigned_to` and `owner_name` only for admins. |
+
+Triggers `leads_resolve_skips` (AFTER UPDATE OF assigned_to, status, last_contacted_at: REASSIGNED for skips of users who no longer own
+the lead; CALLED when `last_contacted_at` changes, else STATUS_CHANGED when status changes) and `follow_ups_resolve_skips` (AFTER INSERT
+OR UPDATE OF due_at of an open follow-up: FOLLOW_UP for that user's skip). `get_next_lead` is unchanged from 001300 except that
+`mine` leaves out leads with an open skip by the caller. App side: `src/server/services/skipped-leads.ts`, the Skipped tab on
+/follow-ups (`FOLLOW_UP_TABS` gains `skipped`, `FollowUpCounts.skipped`), `SkipLeadMenu`, and the skip notice and history on the
+lead page.
+
+Agent Today (`20260915001800_agent_today.sql`, DEVIATIONS D43):
+
+| RPC | who | behavior |
+|---|---|---|
+| `get_my_call_days() → table(day date, dials bigint)` | active user (definer, 42501 otherwise) | The caller's dials on each of their last 7 local days, oldest first, with get_my_dashboard's dial definition. |
+| `my_caller_id_available() → boolean` | active user (definer, 42501 otherwise) | An active number assigned to the caller, or an active pool number, exists. |
+
+`getAgentDashboard` adds `today` (`callDays`, `callerIdAvailable`, `overdueFollowUps` from `follow_up_tab_counts`, `skipped`,
+`leadsAssigned`); `getAdminDashboard` adds `attention` (`activePhoneNumbers`, `skipped`). Goal, pace copy, next best action and
+consistency are pure functions in `src/lib/domain/daily-goal.ts`; `TargetBar` takes a `DailyGoal`.
+
 ### 4.8 Migration files (ownership slots)
 ```
 supabase/migrations/20260915000100_core_schema.sql     stage 1
@@ -496,6 +549,9 @@ supabase/migrations/20260915001200_review_fixes_2.sql  stages 6-10 review fixes 
 supabase/migrations/20260915001300_review_fixes_3.sql  final review round (get_next_lead cost, export limit)
 supabase/migrations/20260915001400_delete_agent.sql    delete agent (D40)
 supabase/migrations/20260915001500_revoke_user_sessions.sql  end a user's Auth sessions without a hosted admin route (D31)
+supabase/migrations/20260915001600_bulk_leads.sql      bulk lead actions (D41)
+supabase/migrations/20260915001700_skipped_leads.sql   Skipped queue (D42)
+supabase/migrations/20260915001800_agent_today.sql     agent Today dashboard (D43)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
 Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`
@@ -718,6 +774,9 @@ Stage 3 module details (`src/lib/dialer`, `src/components/dialer`):
 - The CALL button is always `bg-primary`, big, and sticky at the bottom on mobile lead detail. It is
   disabled for DO_NOT_CONTACT and while another call is active.
 - Status labels/colors come from `lib/domain/statuses.ts` only.
+- Calls against a daily target always derive from `dailyGoal()` (`lib/domain/daily-goal.ts`); a target of 0 is "no target" (D43).
+- A state is never shown by color alone: the indeterminate checkbox shows a dash, the Skipped/attention items carry text, the
+  consistency days show counts (D41, D43).
 
 ---
 
@@ -801,8 +860,8 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
 - Fictional phones only: `+1 NXX 555-0100…0199`. Seed Twilio numbers: `+14155550150` (Alex),
   `+14155550151` (Blair), `+14155550152` (pool).
 - Twilio webhook tests sign with `twilio.getExpectedTwilioSignature(testToken, url, params)`.
-- Playwright: `channel: 'chrome'`, four projects — `mobile` (iPhone-sized viewport + iOS UA → tel:),
-  `desktop`, `journey` (`voicemail-callback.spec.ts`, `dependencies: ['desktop']`) and `import` — with
+- Playwright: `channel: 'chrome'`, five projects — `mobile` (iPhone-sized viewport + iOS UA → tel:),
+  `desktop`, `journey` (`voicemail-callback.spec.ts`, `dependencies: ['desktop']`), `import` and `workspace` — with
   `DIALER_DRIVER=mock`. A spec whose name matches no `testMatch` never runs and Playwright says nothing,
   so add new specs to a project deliberately. `tests/unit/docs/docs-drift.test.ts` fails when this list,
   the README or `docs/PLAN.md` falls behind `playwright.config.ts`.
@@ -813,6 +872,9 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
     asserts a seeded total (isolation's "45 leads in total", the agent export), so it declares
     `dependencies: ['mobile', 'desktop', 'journey']` to run last whatever the file order, and `retries: 0`
     because a second attempt would import into the database the first attempt already changed.
+  - `workspace` runs `workspace-*.spec.ts` after `import` (`dependencies: ['import']`, `retries: 0`): bulk lead actions change
+    only leads the import created (sources "Trade Show" and "LinkedIn" exist only in `samples/leads.csv`), and the Skipped queue
+    spec resumes the lead it skips (Casey).
   - A spec that creates rows which outlive it (a new agent) uses a unique email, so re-running the
     suite against a fresh seed never collides. Specs assert only what they own, never global counts
     they do not control.

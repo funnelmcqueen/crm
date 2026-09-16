@@ -78,6 +78,10 @@ worse than no index.
 | [D37](#d37-the-import-fallback-bisects-instead-of-walking-and-is-capped) | The import fallback bisects instead of walking, and is capped |
 | [D39](#d39-review-round-3-hot-path-cost-the-location-column-and-a-docs-drift-guard) | Review round 3: hot-path cost, the Location column, and a docs drift guard |
 | [D40](#d40-admins-can-delete-agents-who-have-no-leads-or-open-follow-ups) | Admins can delete agents who have no leads or open follow-ups |
+| [D41](#d41-bulk-lead-actions-on-the-leads-list) | Bulk lead actions on the Leads list |
+| [D42](#d42-a-skipped-lead-waits-in-a-skipped-queue) | A skipped lead waits in a Skipped queue instead of coming back |
+| [D43](#d43-the-agent-dashboard-is-a-today-workspace-and-one-goal-module-drives-every-target-display) | The agent dashboard is a Today workspace, and one goal module drives every target display |
+| [D44](#d44-pipeline-stage-navigation-and-bounded-columns) | Pipeline stage navigation and bounded columns |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -633,3 +637,93 @@ them. Nothing in the UI does that; it is recorded here rather than blocked.
 history would silently rewrite past reports, and removing an agent who still holds leads or pending follow-ups would strand that
 work. Requiring the work to be reassigned first leaves nothing orphaned. The Auth user row itself is kept (anonymized and banned)
 because `profiles.id` references it with ON DELETE RESTRICT, which is what protects the call history.
+
+## D41. Bulk lead actions on the Leads list
+**Spec:** §8 describes the Leads list (search, filters, sort, pagination) and single-lead actions on the lead page. It has no
+selection or bulk actions; the only bulk operation is the admin "bulk reassign" of one agent's book (§8 Agents).
+**Built:** Every row and card on All Leads / My Leads has a checkbox, and the table header has a page checkbox that is unchecked,
+checked, or indeterminate (a dash, never color alone). While anything is selected a sticky toolbar shows the count, **Clear
+selection**, **Select all N matching** (the whole filtered result, capped at 5,000), and the actions the caller may take:
+
+| Action | Who | Backed by | Undo |
+|---|---|---|---|
+| Assign to an agent / Unassign | admin | `bulk_assign_leads` → `reassign_leads` (target check, open follow-ups move) | yes |
+| Set status | admin, agent (own leads) | `bulk_set_lead_status` (leads_guard; an agent's Do Not Contact leads are reported as locked, D12) | yes |
+| Follow-up (schedule or reschedule) | admin, agent | `bulk_schedule_follow_ups`: the lead page's picker per lead | no |
+| Clear follow-ups (completes open ones) | admin, agent | `bulk_complete_follow_ups`: the Follow-ups page's Complete | no |
+| Change source | admin | `bulk_set_lead_source` | no |
+| Export CSV | admin, agent | `POST /api/leads/export` → `export_selected_leads` (same columns, rate limit and visibility) | — |
+| Delete | admin | `bulk_delete_leads`: the lead page's hard delete (SPEC 4) | no |
+
+Every function is SECURITY INVOKER, so RLS and the guard triggers scope a bulk action exactly like the single-lead action; the
+admin-only ones also refuse agents with 42501. Results say what changed and why the rest did not ("2 already were To Call; 1
+marked Do Not Contact stays as it is"). Undo reverts only leads that still hold the value the bulk action set, and leaves leads
+whose previous owner can no longer take leads where they are. Delete, clearing follow-ups and an agent marking leads Do Not Contact
+ask for confirmation that states the count and the effect; delete says it cannot be undone.
+
+Selection rules: a selection belongs to the role plus the search and filters. Paging and sorting keep it (it survives a reload of the
+same tab through sessionStorage); a different search or filter is a different result set, so the selection is cleared and the page
+says so. A successful change clears the selection because the list re-renders with the new values; export keeps it. On All Leads an
+admin sees how many leads are unassigned, one click to review them, and there one click to select them all with **Assign** first.
+
+**Not built, because the model has no such thing:** tags, archive, and close/reopen as actions. Closing a lead is a status
+(Not Interested / Do Not Contact), which the status action already covers.
+**Why:** assigning imported leads one page at a time, or changing status lead by lead, was the slowest part of running the CRM.
+Reusing the invoker-rights path means no bulk action can do anything the same user could not do one lead at a time.
+
+## D42. A skipped lead waits in a Skipped queue
+**Spec:** §7g "Include a Skip button that moves on without logging." The skip list lived only in the URL, so a skipped lead came back
+at the next session, and nobody could see what was skipped or why.
+**Built:** `lead_skips` (`20260915001700_skipped_leads.sql`) records who skipped which lead, when, an optional structured reason
+(Better to call later, Needs research first, Details look wrong, Not a priority now, Other with a note) and a note. Skip opens that
+reason menu; the toast offers Undo. While a skip is open, `get_next_lead` leaves the lead out whatever its bucket. A skip closes when
+the lead is called (`last_contacted_at` changes), its status changes, a follow-up is scheduled or rescheduled for the skipper, it is
+reassigned to someone else, or the agent resumes it. Skipping again closes the earlier skip first, so there is at most one open skip per
+lead per user, and closed skips stay as history.
+
+The queue is the **Skipped** tab on Follow-ups, next to Voicemails, oldest skip first, with **Resume calling** (back into the queue,
+opened ready to call), **Follow-up** quick picks, **Status** (including Close as Not Interested), and for admins **Reassign** and
+everyone's skips with the agent's name. The lead page shows an open skip with Resume, and a Skip history. The dashboard counts
+skipped leads and sends the agent there when nothing else is waiting. RLS matches follow-ups: an agent sees their own skips on
+leads assigned to them; an admin sees all. API roles can only read the table; writes go through `skip_lead` (owner only, others get
+not_found) and `resume_skipped_lead`, and the closing triggers. If saving a skip fails, the agent still moves on with the lead left
+out of that session only, as before.
+**Why:** skipping without a trace made leads disappear into the same queue they were skipped from. A reason and a place to come
+back to turn "skip" into a decision that can be reviewed.
+
+## D43. The agent dashboard is a Today workspace, and one goal module drives every target display
+**Spec:** §8 Agent dashboard: calls against target, connected, interested, appointments, talk time, follow-ups due, unheard
+voicemails, and a Next Lead card.
+**Built:** everything the spec lists, arranged around what to do next:
+- **Next best action**, in this order: start or continue the call queue (with the lead, CALL, Open lead and Skip), complete overdue
+  follow-ups the queue cannot offer, review skipped leads, "no leads assigned yet", or "all caught up".
+- **Today's goal**: calls against the agent's own target, percent, calls to go, and copy for no calls yet, making progress, goal
+  reached, and behind pace (only in the afternoon of an assumed 9:00-17:00 day in the agent's timezone, and only when under 60% of
+  an even pace). The copy suggests a per-hour pace; it never compares agents, ranks, or scolds.
+- **Consistency**: "Called on N of the last 7 days" with a per-day count, from `get_my_call_days`, which counts the caller's own dials
+  by `calls.user_id` with get_my_dashboard's definition (RLS on calls follows the lead's current owner, so it would drop calls on
+  reassigned leads). Days, not a streak, so a day off resets nothing.
+- **Your numbers today** adds connect rate (connected over dials, as in Reports; "—" before the first dial).
+- **Calling setup**: a notice before the agent taps CALL when in-app calling is off (calls open the phone app), not connected in this
+  browser, or has no caller ID number (`my_caller_id_available`: yes/no only, the same choice as `claim_caller_id`; agents still read
+  no phone numbers). Nothing changes any calling configuration.
+- Agents never see unassigned leads, so the unassigned-leads prompt is an admin item. The admin dashboard stays team-focused and gains
+  **Needs attention**: unassigned leads (→ Assign), no active phone numbers when the dialer is not phone-only (→ Phone Numbers), and
+  skipped leads waiting (→ Skipped).
+
+`profiles.daily_call_target` was already the only stored target, but three screens derived "remaining" and "hit" separately, and a
+target of 0 read "3 / 0 calls, 0 remaining" without ever counting as reached. `dailyGoal()` (`src/lib/domain/daily-goal.ts`) is now
+the one derivation used by Today, the admin dashboard rows, the Agents list and the progress bar: a target of 0 is "no target".
+**Why:** the old dashboard showed numbers; agents asked what to do next. Keeping the motivation personal and non-comparative matches
+how the product is used for coaching.
+
+## D44. Pipeline stage navigation and bounded columns
+**Spec:** §8 Pipeline: columns, drag to move, "Load more" per column, swipe on mobile with a Move to… fallback.
+**Built:** a stage bar above the board lists every column with its count and marks the ones on screen; choosing a stage scrolls
+its column into view and moves focus to its heading. Previous/next buttons page the board sideways (disabled at either end). From
+768px each column has a bounded height with its cards scrolling inside, so headers and counts stay visible and a long New column
+never pushes the board's sideways scrollbar off the screen; columns are 256px wide below 1280px. Drag and drop, keyboard drags and
+the Move to… menu are unchanged; phones keep the swipeable, full-height columns.
+**Why:** with a few hundred New leads the later stages were off screen and the only way to reach them was a scrollbar below the
+longest column.
+

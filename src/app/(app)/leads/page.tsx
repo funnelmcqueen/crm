@@ -8,10 +8,14 @@ import { LeadCards } from "@/components/leads/lead-cards";
 import { LeadsPagination } from "@/components/leads/leads-pagination";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { LeadsToolbar } from "@/components/leads/leads-toolbar";
+import { BulkActionBar } from "@/components/leads/bulk/bulk-action-bar";
+import { selectionScope } from "@/components/leads/bulk/selection";
+import { LeadSelectionProvider } from "@/components/leads/bulk/selection-context";
+import { UnassignedCallout } from "@/components/leads/bulk/unassigned-callout";
 import { hasActiveFilters, leadListHref, parseLeadListParams } from "@/components/leads/list-params";
 import { Button } from "@/components/ui/button";
 import { requireUserPage } from "@/server/context";
-import { listAgentsForFilter, listLeadSources, listLeads, type AgentOption } from "@/server/services/leads";
+import { countUnassignedLeads, listAgentsForFilter, listLeadSources, listLeads, type AgentOption } from "@/server/services/leads";
 
 export const metadata: Metadata = {
   title: "Leads",
@@ -27,7 +31,7 @@ export default async function LeadsPage({
   const parsed = parseLeadListParams(await searchParams);
   const params = isAdmin ? parsed : { ...parsed, agent: null, unassigned: false };
 
-  const [result, sources, agents] = await Promise.all([
+  const [result, sources, agents, unassigned] = await Promise.all([
     listLeads(ctx, {
       query: params.q,
       statuses: params.statuses,
@@ -40,6 +44,7 @@ export default async function LeadsPage({
     }),
     listLeadSources(ctx),
     isAdmin ? listAgentsForFilter(ctx) : Promise.resolve<AgentOption[]>([]),
+    isAdmin ? countUnassignedLeads(ctx) : Promise.resolve(0),
   ]);
 
   const tz = ctx.profile.timezone;
@@ -47,6 +52,12 @@ export default async function LeadsPage({
   const agentNames = isAdmin ? Object.fromEntries(agents.map((a) => [a.id, a.name])) : null;
   const filtered = hasActiveFilters(params);
   const resetHref = leadListHref({ ...params, q: "", statuses: [], source: null, agent: null, unassigned: false, page: 1 });
+  const unassignedHref = leadListHref({ ...params, q: "", statuses: [], source: null, agent: null, unassigned: true, page: 1 });
+  const showingUnassigned = params.unassigned && params.q === "" && params.statuses.length === 0 && params.source === null;
+  const assignTargets = agents
+    .filter((agent) => agent.active)
+    .map((agent) => ({ id: agent.id, name: agent.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <>
@@ -75,13 +86,33 @@ export default async function LeadsPage({
         isAdmin={isAdmin}
       />
 
-      {result.rows.length > 0 ? (
-        <>
-          <LeadsTable rows={result.rows} tz={tz} now={now} agentNames={agentNames} />
-          <LeadCards rows={result.rows} tz={tz} now={now} agentNames={agentNames} />
-          <LeadsPagination params={params} window={result} />
-        </>
-      ) : result.total > 0 ? (
+      <LeadSelectionProvider
+        scope={selectionScope(ctx.profile.role, params)}
+        pageIds={result.rows.map((row) => row.id)}
+        total={result.total}
+        filters={{
+          query: params.q,
+          statuses: params.statuses,
+          source: params.source,
+          agentId: params.agent,
+          unassigned: params.unassigned,
+        }}
+        isAdmin={isAdmin}
+      >
+        {isAdmin ? (
+          <UnassignedCallout unassigned={unassigned} showingUnassigned={showingUnassigned} unassignedHref={unassignedHref} />
+        ) : null}
+        <BulkActionBar agents={assignTargets} sources={sources} tz={tz} now={now} />
+        {result.rows.length > 0 ? (
+          <>
+            <LeadsTable rows={result.rows} tz={tz} now={now} agentNames={agentNames} />
+            <LeadCards rows={result.rows} tz={tz} now={now} agentNames={agentNames} />
+            <LeadsPagination params={params} window={result} />
+          </>
+        ) : null}
+      </LeadSelectionProvider>
+
+      {result.rows.length > 0 ? null : result.total > 0 ? (
         <EmptyState
           icon={<SearchX />}
           title="Nothing on this page"

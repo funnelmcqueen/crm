@@ -15,7 +15,7 @@ import {
   type DragStartEvent,
   type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -45,6 +45,7 @@ import {
 } from "./board-state";
 import { DraggablePipelineCard, PipelineCardView } from "./pipeline-card";
 import { PipelineColumnView } from "./pipeline-column";
+import { PipelineStageNav } from "./pipeline-stage-nav";
 import { MousePointerSensor, columnKeyboardCoordinates } from "./sensors";
 
 export interface PipelineBoardProps {
@@ -82,6 +83,52 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
   const [liveMessage, setLiveMessage] = useState("");
 
   const dispatch = useCallback((action: BoardAction) => setState((current) => boardReducer(current, action)), []);
+
+  // Stage navigation (DEVIATIONS D44): which columns are on screen, and whether the board can scroll either way.
+  const regionRef = useRef<HTMLDivElement>(null);
+  const [visibleColumns, setVisibleColumns] = useState<ReadonlySet<string>>(() => new Set());
+  const [edges, setEdges] = useState({ back: false, forward: false });
+
+  const measure = useCallback(() => {
+    const region = regionRef.current;
+    if (!region) return;
+    const box = region.getBoundingClientRect();
+    const onScreen = new Set<string>();
+    for (const section of region.querySelectorAll<HTMLElement>("[data-column]")) {
+      const rect = section.getBoundingClientRect();
+      if (rect.right > box.left + 24 && rect.left < box.right - 24) onScreen.add(section.dataset.column ?? "");
+    }
+    setVisibleColumns(onScreen);
+    setEdges({ back: region.scrollLeft > 4, forward: region.scrollLeft + region.clientWidth < region.scrollWidth - 4 });
+  }, []);
+
+  useEffect(() => {
+    const region = regionRef.current;
+    if (!region) return;
+    measure();
+    region.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(region);
+    return () => {
+      region.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [measure, state.order]);
+
+  function jumpToColumn(key: string) {
+    const section = document.getElementById(`pipeline-column-section-${key}`);
+    if (!section) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    section.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest", inline: "start" });
+    section.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+  }
+
+  function scrollBoard(direction: -1 | 1) {
+    const region = regionRef.current;
+    if (!region) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    region.scrollBy({ left: direction * Math.max(region.clientWidth * 0.8, 240), behavior: reduceMotion ? "auto" : "smooth" });
+  }
 
   const sensors = useSensors(
     useSensor(MousePointerSensor, { activationConstraint: { distance: 8 } }),
@@ -174,6 +221,18 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
 
   return (
     <>
+      <PipelineStageNav
+        stages={state.order.flatMap((key) => {
+          const column = pipelineColumnByKey(key);
+          const columnState = state.columns[key];
+          return column && columnState ? [{ column, total: columnState.total }] : [];
+        })}
+        visible={visibleColumns}
+        canScrollBack={edges.back}
+        canScrollForward={edges.forward}
+        onJump={jumpToColumn}
+        onScroll={scrollBoard}
+      />
       <DndContext
         id="pipeline-board"
         sensors={sensors}
@@ -190,6 +249,7 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
         }}
       >
         <div
+          ref={regionRef}
           role="region"
           aria-label="Pipeline columns"
           className={cn(

@@ -141,6 +141,9 @@ describe('foreign keys (SPEC 4: profiles RESTRICT, lead deletion cascades)', () 
       'public.calls.user_id -> public.profiles': 'r',
       'public.follow_ups.lead_id -> public.leads': 'c',
       'public.follow_ups.user_id -> public.profiles': 'r',
+      // Skipped queue (D42): a skip goes with its lead; a user with skips is never deleted.
+      'public.lead_skips.lead_id -> public.leads': 'c',
+      'public.lead_skips.user_id -> public.profiles': 'r',
       'public.leads.assigned_to -> public.profiles': 'r',
       'public.phone_numbers.assigned_to -> public.profiles': 'r',
       'public.profiles.id -> auth.users': 'r',

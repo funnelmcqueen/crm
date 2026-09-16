@@ -67,6 +67,24 @@ const MATRIX: Record<string, Access> = {
   admin_agent_delete_check: 'api',
   admin_delete_agent: 'api',
   revoke_user_sessions: 'service',
+  // bulk lead actions (SECURITY INVOKER: RLS and the guards scope them)
+  search_lead_ids: 'api',
+  bulk_set_lead_status: 'api',
+  bulk_assign_leads: 'api',
+  bulk_schedule_follow_ups: 'api',
+  bulk_complete_follow_ups: 'api',
+  bulk_set_lead_source: 'api',
+  bulk_delete_leads: 'api',
+  export_selected_leads: 'api',
+  // skipped queue
+  skip_lead: 'api',
+  resume_skipped_lead: 'api',
+  list_skipped_leads: 'api',
+  leads_resolve_skips: 'none',
+  follow_ups_resolve_skips: 'none',
+  // agent Today dashboard
+  get_my_call_days: 'api',
+  my_caller_id_available: 'api',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',
@@ -93,6 +111,15 @@ const INVOKER = new Set([
   'pipeline_column',
   'find_duplicate_leads',
   'export_leads',
+  'search_lead_ids',
+  'bulk_set_lead_status',
+  'bulk_assign_leads',
+  'bulk_schedule_follow_ups',
+  'bulk_complete_follow_ups',
+  'bulk_set_lead_source',
+  'bulk_delete_leads',
+  'export_selected_leads',
+  'list_skipped_leads',
 ]);
 
 interface FnAcl {

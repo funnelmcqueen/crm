@@ -151,6 +151,14 @@ export async function listLeads(ctx: RequestContext | null, input: ListLeadsInpu
   };
 }
 
+/** Admin only: leads with no agent, which never reach anyone's call queue. */
+export async function countUnassignedLeads(ctx: RequestContext | null): Promise<number> {
+  const admin = requireAdmin(ctx);
+  const { count, error } = await admin.supabase.from("leads").select("id", { count: "exact", head: true }).is("assigned_to", null);
+  if (error) fail(error);
+  return count ?? 0;
+}
+
 export async function listLeadSources(ctx: RequestContext | null): Promise<string[]> {
   const active = requireActive(ctx);
   const { data, error } = await active.supabase.rpc("list_lead_sources");

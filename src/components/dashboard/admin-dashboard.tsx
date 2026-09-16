@@ -1,13 +1,18 @@
-import { ChevronRight, TriangleAlert } from "lucide-react";
+import { ChevronRight, Phone, SkipForward, TriangleAlert, UserPlus } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
+import type { DialerDriverName } from "@/lib/dialer/types";
+import { dailyGoal, goalFraction } from "@/lib/domain/daily-goal";
 import { cn } from "@/lib/utils";
-import type { AgentStatsRow, TeamTotals } from "@/server/services/dashboard";
+import type { AdminAttention, AgentStatsRow, TeamTotals } from "@/server/services/dashboard";
 import { formatCount, formatTalkTime, teamTotalsItems } from "./format";
 import { TargetBar } from "./target-bar";
 
 export interface AdminDashboardViewProps {
   totals: TeamTotals;
   agents: AgentStatsRow[];
+  attention: AdminAttention;
+  driver: DialerDriverName;
 }
 
 /** Rows shown on the dashboard: every agent, plus admins who have leads or calls today. */
@@ -17,18 +22,15 @@ export function visibleAgentRows(rows: readonly AgentStatsRow[]): AgentStatsRow[
   );
 }
 
-function isHit(row: AgentStatsRow): boolean {
-  return row.dailyCallTarget > 0 && row.dialsToday >= row.dailyCallTarget;
-}
-
 function agentHref(row: AgentStatsRow): string {
   return `/admin/agents/${encodeURIComponent(row.userId)}`;
 }
 
-export function AdminDashboardView({ totals, agents }: AdminDashboardViewProps) {
+export function AdminDashboardView({ totals, agents, attention, driver }: AdminDashboardViewProps) {
   const rows = visibleAgentRows(agents);
   return (
     <div className="flex flex-col gap-4">
+      <AttentionList totals={totals} attention={attention} driver={driver} />
       {totals.disabledAgentsWithLeads > 0 ? <DisabledAgentsBanner totals={totals} /> : null}
       <TeamTotalsRow totals={totals} />
 
@@ -59,6 +61,88 @@ export function AdminDashboardView({ totals, agents }: AdminDashboardViewProps) 
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Team operations that need an admin, most urgent first (DEVIATIONS D43): leads nobody will call, calling that
+ * cannot connect, and skipped leads waiting on a decision. Renders nothing when there is nothing to do.
+ */
+function AttentionList({ totals, attention, driver }: { totals: TeamTotals; attention: AdminAttention; driver: DialerDriverName }) {
+  const items: Array<{ key: string; icon: ReactNode; text: ReactNode; href: string; cta: string; urgent: boolean }> = [];
+  if (totals.leadsUnassigned > 0) {
+    items.push({
+      key: "unassigned",
+      icon: <UserPlus />,
+      text: (
+        <>
+          <span className="font-extrabold tabular-nums">{formatCount(totals.leadsUnassigned)}</span> unassigned{" "}
+          {totals.leadsUnassigned === 1 ? "lead is" : "leads are"} not in anyone&rsquo;s call queue.
+        </>
+      ),
+      href: "/leads?unassigned=1",
+      cta: "Assign leads",
+      urgent: true,
+    });
+  }
+  if (driver !== "tel" && attention.activePhoneNumbers === 0) {
+    items.push({
+      key: "numbers",
+      icon: <Phone />,
+      text: <>No active phone numbers, so in-app calls have no caller ID and cannot connect.</>,
+      href: "/admin/phone-numbers",
+      cta: "Phone numbers",
+      urgent: true,
+    });
+  }
+  if (attention.skipped > 0) {
+    items.push({
+      key: "skipped",
+      icon: <SkipForward />,
+      text: (
+        <>
+          <span className="font-extrabold tabular-nums">{formatCount(attention.skipped)}</span> skipped{" "}
+          {attention.skipped === 1 ? "lead is" : "leads are"} waiting for a decision.
+        </>
+      ),
+      href: "/follow-ups?tab=skipped",
+      cta: "Review skipped",
+      urgent: false,
+    });
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <section aria-labelledby="attention-heading" className="flex flex-col gap-2">
+      <h2 id="attention-heading" className="text-xs font-bold tracking-widest text-muted-foreground uppercase">
+        Needs attention
+      </h2>
+      <ul className="flex flex-col gap-2">
+        {items.map((item) => (
+          <li
+            key={item.key}
+            className={cn(
+              "flex flex-col gap-3 rounded-xl border p-3 text-sm sm:flex-row sm:items-center md:px-4",
+              item.urgent ? "border-primary/40 bg-primary/5" : "bg-card",
+            )}
+          >
+            <span aria-hidden className={cn("hidden shrink-0 sm:block [&_svg]:size-5", item.urgent ? "text-primary" : "text-muted-foreground")}>
+              {item.icon}
+            </span>
+            <p className="min-w-0 flex-1">{item.text}</p>
+            <Link
+              href={item.href}
+              className={cn(
+                "inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl px-4 font-bold outline-none transition-colors duration-150 focus-visible:ring-3 focus-visible:ring-ring/50",
+                item.urgent ? "bg-primary text-primary-foreground hover:bg-primary/85" : "border bg-card hover:bg-accent",
+              )}
+            >
+              {item.cta}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -122,14 +206,22 @@ function ActiveBadge({ active }: { active: boolean }) {
 }
 
 function CallsVsTarget({ row }: { row: AgentStatsRow }) {
-  const hit = isHit(row);
+  const goal = dailyGoal(row.dialsToday, row.dailyCallTarget);
   return (
     <div className="flex min-w-32 flex-col gap-1">
       <span className="tabular-nums">
-        <span className={cn("text-base font-extrabold", hit && "text-gold")}>{formatCount(row.dialsToday)}</span>
-        <span className="text-muted-foreground"> / {formatCount(row.dailyCallTarget)}</span>
+        {goal.hasTarget ? (
+          <>
+            <span className={cn("text-base font-extrabold", goal.reached && "text-gold")}>{formatCount(goal.dials)}</span>
+            <span className="text-muted-foreground"> / {formatCount(goal.target)}</span>
+          </>
+        ) : (
+          <span className="text-base font-extrabold">
+            {goalFraction(goal)} <span className="text-xs font-semibold text-muted-foreground">no target</span>
+          </span>
+        )}
       </span>
-      <TargetBar dials={row.dialsToday} target={row.dailyCallTarget} hit={hit} size="thin" label={`Calls today for ${row.name || row.email}`} />
+      <TargetBar goal={goal} size="thin" label={`Calls today for ${row.name || row.email}`} />
     </div>
   );
 }

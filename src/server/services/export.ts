@@ -56,6 +56,11 @@ export interface LeadExportOptions {
   now?: Date;
   /** Rows fetched per page, 1..1000 (default 1000). */
   pageSize?: number;
+  /**
+   * Export exactly these leads (a Leads page selection, validated by the caller) instead of the filters.
+   * Visibility is unchanged: the caller still only gets leads they may see.
+   */
+  leadIds?: string[];
 }
 
 type ExportArgs = Database["public"]["Functions"]["export_leads"]["Args"];
@@ -125,8 +130,10 @@ export async function createLeadExport(
   }
 
   async function fetchPage(after: ExportRow | null): Promise<ExportRow[]> {
-    const args: ExportArgs = after ? { ...baseArgs, p_after_created_at: after.created_at, p_after_id: after.id } : baseArgs;
-    let query = active.supabase.rpc("export_leads", args);
+    const cursor = after ? { p_after_created_at: after.created_at, p_after_id: after.id } : {};
+    let query = options.leadIds
+      ? active.supabase.rpc("export_selected_leads", { p_lead_ids: options.leadIds, p_limit: pageSize, ...cursor })
+      : active.supabase.rpc("export_leads", { ...baseArgs, ...cursor });
     // RLS and the RPC already scope agents to their own leads; this keeps the route honest on its own.
     if (!isAdmin) query = query.eq("assigned_to", active.userId);
     const { data, error } = await query.order("created_at", { ascending: true }).order("id", { ascending: true });

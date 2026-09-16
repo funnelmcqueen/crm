@@ -34,8 +34,8 @@ function importedLeadCount(): number {
 }
 
 describe('documentation matches the Playwright suite', () => {
-  it('finds four projects, including journey', () => {
-    expect(playwrightProjects()).toEqual(['mobile', 'desktop', 'journey', 'import']);
+  it('finds five projects, including journey and workspace', () => {
+    expect(playwrightProjects()).toEqual(['mobile', 'desktop', 'journey', 'import', 'workspace']);
   });
 
   it.each(DOCS)('%s names every Playwright project', (doc) => {

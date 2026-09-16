@@ -70,6 +70,15 @@ export default defineConfig({
       retries: 0,
       use: { viewport: desktopViewport },
     },
+    {
+      // Bulk lead actions and the Skipped queue change leads, so they run after everything else and only touch
+      // what the import created (sources that exist only in samples/leads.csv) or resume what they skip.
+      name: 'workspace',
+      testMatch: /workspace-.*\.spec\.ts$/,
+      dependencies: ['import'],
+      retries: 0,
+      use: { viewport: desktopViewport },
+    },
   ],
   webServer: {
     command: 'npx tsx scripts/e2e-server.ts',

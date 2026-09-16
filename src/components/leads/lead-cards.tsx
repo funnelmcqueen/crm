@@ -4,6 +4,7 @@ import { DateTime } from "@/components/common/datetime";
 import { StatusBadge } from "@/components/common/status-badge";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import type { LeadListRow } from "@/server/services/leads";
+import { LeadSelectCheckbox } from "./bulk/selection-context";
 import { FollowUpCell, locationLabel } from "./lead-list-cells";
 
 export interface LeadCardsProps {
@@ -14,7 +15,7 @@ export interface LeadCardsProps {
   agentNames: Record<string, string> | null;
 }
 
-/** Mobile (below md) lead cards. The whole card is the link. */
+/** Mobile (below md) lead cards. The card is the link; the checkbox beside it selects the lead for bulk actions. */
 export function LeadCards({ rows, tz, now, agentNames }: LeadCardsProps) {
   return (
     <ul className="flex flex-col gap-2 md:hidden">
@@ -22,10 +23,13 @@ export function LeadCards({ rows, tz, now, agentNames }: LeadCardsProps) {
         const location = locationLabel(row.city, row.state);
         const subtitle = [row.contactName, location].filter(Boolean).join(" · ");
         return (
-          <li key={row.id}>
+          <li key={row.id} className="flex items-stretch gap-1">
+            <div className="flex w-10 shrink-0 items-start justify-center pt-5">
+              <LeadSelectCheckbox leadId={row.id} businessName={row.businessName} />
+            </div>
             <Link
               href={`/leads/${row.id}`}
-              className="flex flex-col gap-2 rounded-xl border bg-card p-4 outline-none transition-colors duration-100 active:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border bg-card p-4 outline-none transition-colors duration-100 active:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

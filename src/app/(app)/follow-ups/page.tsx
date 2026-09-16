@@ -1,4 +1,4 @@
-import { CalendarCheck, CalendarClock, CircleCheck, History, SearchX, Voicemail } from "lucide-react";
+import { CalendarCheck, CalendarClock, CircleCheck, History, SearchX, SkipForward, Voicemail } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -9,10 +9,13 @@ import { FollowUpList } from "@/components/follow-ups/follow-up-list";
 import { FollowUpTabs } from "@/components/follow-ups/follow-up-tabs";
 import { FollowUpsPagination } from "@/components/follow-ups/follow-ups-pagination";
 import { defaultFollowUpTab, followUpsHref, parseFollowUpParams, type FollowUpTab } from "@/components/follow-ups/params";
+import { SkippedLeadList } from "@/components/follow-ups/skipped-list";
 import { VoicemailList } from "@/components/follow-ups/voicemail-list";
 import { Button } from "@/components/ui/button";
 import { requireUserPage } from "@/server/context";
 import { followUpCounts, listFollowUps, listVoicemails } from "@/server/services/follow-ups";
+import { listAgentsForFilter } from "@/server/services/leads";
+import { listSkippedLeads } from "@/server/services/skipped-leads";
 
 export const metadata: Metadata = {
   title: "Follow-ups",
@@ -55,6 +58,14 @@ const EMPTY: Record<FollowUpTab, EmptyCopy> = {
     title: "No voicemails",
     agent: "Voicemails from your leads and your number show up here.",
     admin: "Voicemails from every lead and number show up here.",
+  },
+  skipped: {
+    icon: <SkipForward />,
+    title: "No skipped leads",
+    agent:
+      "When you skip a lead in your call queue, it waits here with your reason instead of coming back on its own. Resume it, schedule a follow-up or change its status when you're ready.",
+    admin:
+      "Leads an agent skips wait here with the reason until they are called, rescheduled, reassigned, change status or are resumed.",
   },
 };
 
@@ -100,7 +111,31 @@ export default async function FollowUpsPage({
   );
 
   let body: ReactNode;
-  if (tab === "voicemails") {
+  if (tab === "skipped") {
+    const [result, agents] = await Promise.all([
+      listSkippedLeads(ctx, params.page),
+      isAdmin ? listAgentsForFilter(ctx) : Promise.resolve([]),
+    ]);
+    body =
+      result.rows.length > 0 ? (
+        <>
+          <SkippedLeadList
+            key={`skipped:${result.page}`}
+            rows={result.rows}
+            tz={tz}
+            now={now}
+            isAdmin={isAdmin}
+            agents={agents.filter((agent) => agent.active).map((agent) => ({ id: agent.id, name: agent.name }))}
+            empty={emptyState}
+          />
+          <FollowUpsPagination tab={tab} window={result} />
+        </>
+      ) : result.total > 0 ? (
+        pastLastPage
+      ) : (
+        emptyState
+      );
+  } else if (tab === "voicemails") {
     const result = await listVoicemails(ctx, { page: params.page });
     body =
       result.rows.length > 0 ? (
@@ -142,7 +177,7 @@ export default async function FollowUpsPage({
         title="Follow-ups"
         description={
           <>
-            {isAdmin ? "Every agent's follow-ups and voicemails." : "Your callbacks and voicemails."} Times in{" "}
+            {isAdmin ? "Every agent's follow-ups, voicemails and skipped leads." : "Your callbacks, voicemails and skipped leads."} Times in{" "}
             <span className="font-semibold text-foreground">{tz.replace(/_/g, " ")}</span>.
           </>
         }

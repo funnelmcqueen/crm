@@ -95,10 +95,10 @@ database did not support.
 
 ## Where it landed
 
-- 14 migrations (000100-001500), the single source of truth for schema, RLS, grants and RPCs.
+- 17 migrations (000100-001800), the single source of truth for schema, RLS, grants and RPCs.
 - `npm run verify` and `npm run test:e2e` are green. Run them for the current counts rather than
-  trusting a number written here: the four Playwright projects are `mobile`, `desktop`, `journey`
-  and `import`, all on the mock dialer. `tests/unit/docs/docs-drift.test.ts` fails if this file, the
+  trusting a number written here: the five Playwright projects are `mobile`, `desktop`, `journey`,
+  `import` and `workspace`, all on the mock dialer. `tests/unit/docs/docs-drift.test.ts` fails if this file, the
   README or the architecture contract falls behind `playwright.config.ts` again.
 - The agent-isolation suite is the release gate, per SPEC 1 and SPEC 17.
 - Every intentional difference from the spec is recorded in `docs/DEVIATIONS.md`, indexed by theme,

@@ -4,8 +4,8 @@ import { z } from "zod";
 export const FOLLOW_UP_LIST_TABS = ["overdue", "today", "upcoming", "completed"] as const;
 export type FollowUpListTab = (typeof FOLLOW_UP_LIST_TABS)[number];
 
-/** Every tab on /follow-ups, in display order. */
-export const FOLLOW_UP_TABS = [...FOLLOW_UP_LIST_TABS, "voicemails"] as const;
+/** Every tab on /follow-ups, in display order. Skipped is the Skipped queue (DEVIATIONS D42). */
+export const FOLLOW_UP_TABS = [...FOLLOW_UP_LIST_TABS, "voicemails", "skipped"] as const;
 export type FollowUpTab = (typeof FOLLOW_UP_TABS)[number];
 
 export const FOLLOW_UP_TAB_LABELS: Readonly<Record<FollowUpTab, string>> = {
@@ -14,6 +14,7 @@ export const FOLLOW_UP_TAB_LABELS: Readonly<Record<FollowUpTab, string>> = {
   upcoming: "Upcoming",
   completed: "Completed",
   voicemails: "Voicemails",
+  skipped: "Skipped",
 };
 
 export const FOLLOW_UPS_PAGE_SIZE = 25;

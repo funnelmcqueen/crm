@@ -6,6 +6,7 @@ import type { LeadStatus } from "@/lib/domain/statuses";
 import { followUpQuickPicks, tryZonedLocalInputToUtc } from "@/lib/domain/time";
 import { requireActive, type RequestContext } from "@/server/context";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
+import { countSkippedLeads } from "@/server/services/skipped-leads";
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
@@ -113,6 +114,8 @@ export interface FollowUpCounts {
   voicemailsTotal: number;
   /** The subset that has not been heard: drives the alert styling and the nav badge. */
   voicemailsUnheard: number;
+  /** Open skips in the Skipped queue (own for an agent, the team's for an admin). */
+  skipped: number;
 }
 
 const count = z.number().int().nonnegative();
@@ -128,7 +131,7 @@ const countsSchema = z.object({
 /** Tab badge counts, scoped exactly like the lists. */
 export async function followUpCounts(ctx: RequestContext | null): Promise<FollowUpCounts> {
   const active = requireActive(ctx);
-  const { data, error } = await active.supabase.rpc("follow_up_tab_counts");
+  const [{ data, error }, skipped] = await Promise.all([active.supabase.rpc("follow_up_tab_counts"), countSkippedLeads(active)]);
   if (error) fail(error);
   const parsed = countsSchema.safeParse(data);
   if (!parsed.success) throw new AppError("internal", undefined, { cause: parsed.error });
@@ -139,6 +142,7 @@ export async function followUpCounts(ctx: RequestContext | null): Promise<Follow
     completed: parsed.data.completed,
     voicemailsTotal: parsed.data.voicemails_total,
     voicemailsUnheard: parsed.data.voicemails_unheard,
+    skipped,
   };
 }
 

@@ -1,22 +1,24 @@
 "use client";
 
 // Rendered on the lead detail page when it was opened from the Next Lead flow (?flow=next).
-import { SkipForward } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { NEXT_LEAD_REASON_LABELS, appendSkip, isNextLeadReason, nextLeadHref, parseSkipParam } from "@/lib/dialer/skip-list";
 import { useDialer } from "./dialer-context";
+import { SkipLeadMenu } from "./skip-lead-menu";
 
 export interface NextLeadControlsProps {
   leadId: string;
+  businessName: string;
 }
 
-function Controls({ leadId }: NextLeadControlsProps) {
-  const router = useRouter();
+function Controls({ leadId, businessName }: NextLeadControlsProps) {
   const searchParams = useSearchParams();
   const dialer = useDialer();
   const reason = searchParams.get("reason");
   const busy = dialer !== null && dialer.state.kind !== "idle";
+  // A saved skip keeps the lead out of get_next_lead, so the session skip list only carries earlier fallbacks.
+  const sessionSkips = parseSkipParam(searchParams.get("skip"));
 
   return (
     <div className="flex items-center justify-between gap-3">
@@ -27,23 +29,21 @@ function Controls({ leadId }: NextLeadControlsProps) {
       ) : (
         <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Next lead</span>
       )}
-      <button
-        type="button"
+      <SkipLeadMenu
+        leadId={leadId}
+        businessName={businessName}
         disabled={busy}
-        onClick={() => router.push(nextLeadHref(appendSkip(parseSkipParam(searchParams.get("skip")), leadId)))}
-        className="inline-flex min-h-12 items-center gap-2 rounded-xl border bg-card px-5 text-base font-bold outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 [&_svg]:size-5"
-      >
-        <SkipForward aria-hidden />
-        Skip
-      </button>
+        nextHref={nextLeadHref(sessionSkips)}
+        fallbackHref={nextLeadHref(appendSkip(sessionSkips, leadId))}
+      />
     </div>
   );
 }
 
-export function NextLeadControls({ leadId }: NextLeadControlsProps) {
+export function NextLeadControls({ leadId, businessName }: NextLeadControlsProps) {
   return (
     <Suspense fallback={null}>
-      <Controls leadId={leadId} />
+      <Controls leadId={leadId} businessName={businessName} />
     </Suspense>
   );
 }

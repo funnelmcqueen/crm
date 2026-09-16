@@ -195,6 +195,7 @@ describe('followUpCounts', () => {
       completed: 1,
       voicemailsTotal: 3,
       voicemailsUnheard: 2,
+      skipped: 0,
     });
     expect(await followUpCounts(ctxB)).toEqual({
       overdue: 1,
@@ -203,6 +204,7 @@ describe('followUpCounts', () => {
       completed: 1,
       voicemailsTotal: 1,
       voicemailsUnheard: 1,
+      skipped: 0,
     });
     const admin = await followUpCounts(ctxAdmin);
     expect(admin.overdue).toBeGreaterThanOrEqual(3);
@@ -260,6 +262,7 @@ describe('completeFollowUp', () => {
       completed: 0,
       voicemailsTotal: 0,
       voicemailsUnheard: 0,
+      skipped: 0,
     });
     await expect(completeFollowUp(ctxGone, open.id)).rejects.toMatchObject({ code: 'not_found' });
     expect((await followUpRow(open.id))?.completed_at).toBeNull();
