@@ -32,7 +32,8 @@ export function VoicemailList({ rows, tz, now }: VoicemailListProps) {
               {row.leadId ? (
                 <Link
                   href={`/leads/${row.leadId}`}
-                  className="block truncate text-base font-bold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50"
+                  // -my-3/py-3 lifts a 24px-tall link to a 48px touch target without changing the row height.
+                  className="-my-3 block truncate py-3 text-base font-bold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   {row.businessName ?? "Lead"}
                 </Link>

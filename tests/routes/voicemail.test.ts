@@ -181,3 +181,33 @@ describe('GET /api/voicemail/[callId] in mock / unconfigured mode', () => {
     expect(await raw(await get(voicemailB.id, a.accessToken, fakeRest(), {}, env))).toEqual(NOT_FOUND);
   });
 });
+
+// The tone is a development convenience, and it must never stand in for a real recording. D24 refuses
+// DIALER_DRIVER=mock in production precisely so the app cannot fake calls or voicemail audio, but the
+// media path had no production equivalent: an unconfigured production deployment (the documented
+// fallback — unset DIALER_DRIVER resolves to `tel` in production) served a generated 440 Hz beep for
+// every seeded and real voicemail alike, with nothing in the UI to say so. An agent would play the
+// "voicemail", hear a beep, move on, and log_call would then mark that lead's voicemails handled — so a
+// real customer message is never heard and is silently marked as dealt with.
+describe('GET /api/voicemail/[callId] in production without Twilio', () => {
+  const productionUnconfigured = () => routeEnv({ ...UNCONFIGURED, NODE_ENV: 'production' });
+
+  it('refuses with 503 rather than serving synthetic audio', async () => {
+    const fake = fakeRest();
+    const res = await get(voicemailA.id, a.accessToken, fake, {}, productionUnconfigured());
+    expect(res.status).toBe(503);
+    expect(res.headers.get('content-type')).not.toMatch(/^audio\//);
+    expect(await res.json()).toEqual({ error: 'unavailable' });
+    expect(fake.recordings).toEqual([]);
+  });
+
+  it('answers a Range request the same way, with no partial tone', async () => {
+    const res = await get(voicemailA.id, a.accessToken, fakeRest(), { Range: 'bytes=0-43' }, productionUnconfigured());
+    expect(res.status).toBe(503);
+    expect(res.headers.get('content-type')).not.toMatch(/^audio\//);
+  });
+
+  it("still hides another agent's voicemail behind the same 404", async () => {
+    expect(await raw(await get(voicemailB.id, a.accessToken, fakeRest(), {}, productionUnconfigured()))).toEqual(NOT_FOUND);
+  });
+});

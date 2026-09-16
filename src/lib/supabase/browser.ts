@@ -1,6 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { sessionCookieOptions } from "@/lib/supabase/cookie-options";
 import { isUnsafePublicSupabaseKey } from "@/lib/supabase/public-key";
 
 let browserClient: SupabaseClient<Database> | undefined;
@@ -16,6 +17,7 @@ export function createBrowserSupabase(): SupabaseClient<Database> {
   if (isUnsafePublicSupabaseKey(anonKey)) {
     throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY must be the anon or publishable key.");
   }
-  browserClient = createBrowserClient<Database>(url, anonKey);
+  // The session cookie is written here, from JavaScript, so its attributes are set here too.
+  browserClient = createBrowserClient<Database>(url, anonKey, { cookieOptions: sessionCookieOptions() });
   return browserClient;
 }

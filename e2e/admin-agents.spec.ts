@@ -39,6 +39,9 @@ test('admin creates an agent, the agent signs in, is disabled, and is reactivate
   try {
     const agentPage = await agentContext.newPage();
     await signInWith(agentPage, email, password);
+    // Kept so the reactivation step below can try to replay this exact session (D31).
+    const sessionCookies = await agentContext.cookies();
+    expect(sessionCookies.length).toBeGreaterThan(0);
     await agentPage.goto('/leads');
     await expect(agentPage.getByRole('heading', { level: 1, name: 'My Leads' })).toBeVisible();
     await expect(agentPage.locator('main')).toContainText('0 leads assigned to you');
@@ -82,8 +85,17 @@ test('admin creates an agent, the agent signs in, is disabled, and is reactivate
     await expect(reactivateDialog).toBeHidden();
     await expect(page.getByText(`${name} was reactivated`)).toBeVisible();
 
-    // Lifting the ban makes the agent's old cookie valid again, and src/proxy.ts then sends /login
-    // straight on to /dashboard. Drop it so this is a real check of their credentials.
+    // Disabling ended the sessions the agent already held, so lifting the ban does not revive them
+    // (D31). Replaying the exact cookies from before the disable lands on the login form: without
+    // that, src/proxy.ts would accept the old session and send it straight on to /dashboard.
+    await agentContext.clearCookies();
+    await agentContext.addCookies(sessionCookies);
+    await agentPage.goto('/dashboard');
+    await expect(agentPage).toHaveURL(/\/login(\?|$)/);
+    await expect(agentPage.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await expect(agentPage.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
+
+    // Signing in again does work, so the account itself is usable.
     await agentContext.clearCookies();
     await signInWith(agentPage, email, password);
     await agentPage.goto('/leads');

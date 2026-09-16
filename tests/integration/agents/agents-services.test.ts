@@ -11,6 +11,7 @@ import {
   getAgentActivity,
   listAgents,
   reassignSelected,
+  revokeAuthSessionsAt,
   setAgentActive,
   setInAppCalling,
   updateAgentProfile,
@@ -18,6 +19,7 @@ import {
 } from '@/server/services/agents';
 import { clientWithAccessToken, serviceClient, signInAs, trySignIn } from '../../helpers/clients';
 import { contextForUser } from '../../helpers/context';
+import { testStack } from '../../helpers/env';
 import {
   createCall,
   createFollowUp,
@@ -28,7 +30,14 @@ import {
   type FixtureUser,
 } from '../../helpers/fixtures';
 
-const deps: Partial<AgentServiceDeps> = { authAdmin: () => serviceClient() };
+// The app's defaults read the Supabase service role from the server env; tests point both at the test stack.
+const deps: Partial<AgentServiceDeps> = {
+  authAdmin: () => serviceClient(),
+  revokeSessions: (userId) => {
+    const stack = testStack();
+    return revokeAuthSessionsAt(stack.url, stack.serviceRoleKey, userId);
+  },
+};
 
 async function expectAppError(promise: Promise<unknown>, code: AppError['code']): Promise<AppError> {
   const error = await promise.then(
@@ -181,13 +190,13 @@ describe('setAgentActive', () => {
       }) as never;
       return client;
     };
-    const error = await expectAppError(setAgentActive(adminCtx, agent.id, false, { authAdmin: failingAuth }), 'unavailable');
+    const error = await expectAppError(setAgentActive(adminCtx, agent.id, false, { ...deps, authAdmin: failingAuth }), 'unavailable');
     expect(error.message).toContain('stays active');
     expect((await profileRow(agent.id)).active).toBe(true);
     await expect(signInAs(agent.email, agent.password)).resolves.toBeTruthy();
 
     await setAgentActive(adminCtx, agent.id, false, deps);
-    const reactivate = await expectAppError(setAgentActive(adminCtx, agent.id, true, { authAdmin: failingAuth }), 'unavailable');
+    const reactivate = await expectAppError(setAgentActive(adminCtx, agent.id, true, { ...deps, authAdmin: failingAuth }), 'unavailable');
     expect(reactivate.message).toContain('stays disabled');
     expect((await profileRow(agent.id)).active).toBe(false);
     expect((await trySignIn(agent.email, agent.password)).user).toBeNull();
@@ -210,8 +219,8 @@ describe('setAgentActive', () => {
       authCalls += 1;
       return serviceClient();
     };
-    await expectAppError(setAgentActive(adminCtx, '00000000-0000-4000-8000-000000000000', false, { authAdmin: counting }), 'not_found');
-    await expectAppError(setAgentActive(adminCtx, 'nope', false, { authAdmin: counting }), 'not_found');
+    await expectAppError(setAgentActive(adminCtx, '00000000-0000-4000-8000-000000000000', false, { ...deps, authAdmin: counting }), 'not_found');
+    await expectAppError(setAgentActive(adminCtx, 'nope', false, { ...deps, authAdmin: counting }), 'not_found');
     expect(authCalls).toBe(0);
   });
 });

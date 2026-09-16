@@ -60,6 +60,23 @@ export const logCallInputSchema = z
 
 export type LogCallInput = z.infer<typeof logCallInputSchema>;
 
+/** The fields that name a row. A bad value in one of them is an id problem, not a form problem. */
+const LOG_CALL_ID_FIELDS: ReadonlySet<string> = new Set(["leadId", "callId", "clientRequestId"]);
+
+/**
+ * "Unauthorized equals nonexistent" (ARCHITECTURE rule 4) covers malformed ids too (D19): a leadId or
+ * callId that is not a uuid must answer exactly like one that is foreign or missing, so the shape of an
+ * id the caller submitted never becomes a separate signal. Everything else — a missing follow-up time,
+ * an out-of-range duration, an unknown outcome, and the cross-field rules in `superRefine` (`custom`) —
+ * stays `validation`, because those are the caller's own form errors and describe nothing about our rows.
+ */
+function logCallInputError(error: z.ZodError): AppError {
+  const onlyMalformedIds = error.issues.every(
+    (issue) => issue.code !== "custom" && issue.path.length === 1 && typeof issue.path[0] === "string" && LOG_CALL_ID_FIELDS.has(issue.path[0]),
+  );
+  return onlyMalformedIds ? new AppError("not_found") : toAppError(error);
+}
+
 export interface LogCallResult {
   callId: string;
   leadId: string | null;
@@ -84,7 +101,7 @@ const logCallResultSchema = z.object({
 export async function logCall(ctx: RequestContext, input: unknown): Promise<LogCallResult> {
   const { supabase } = requireActive(ctx);
   const parsedInput = logCallInputSchema.safeParse(input);
-  if (!parsedInput.success) throw toAppError(parsedInput.error);
+  if (!parsedInput.success) throw logCallInputError(parsedInput.error);
   const values = parsedInput.data;
 
   const args: Database["public"]["Functions"]["log_call"]["Args"] = { p_outcome: values.outcome };

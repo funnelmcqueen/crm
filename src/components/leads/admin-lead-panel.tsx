@@ -272,7 +272,7 @@ function EditLeadDialog({ leadId, details }: { leadId: string; details: LeadDeta
                     required={field.required}
                     value={form[field.key]}
                     onChange={(event) => setForm((prev) => ({ ...prev, [field.key]: event.target.value }))}
-                    className="h-12 text-base md:text-sm"
+                    className="h-12 text-base lg:text-sm"
                   />
                 </div>
               );

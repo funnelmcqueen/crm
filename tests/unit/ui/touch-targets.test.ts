@@ -60,3 +60,40 @@ describe('interactive controls are at least 48px tall', () => {
     expect(offenders(/\bh-11\b/, (text) => /TableHead/.test(text))).toEqual([]);
   });
 });
+
+const uiSource = (file: string) => readFileSync(path.join(COMPONENTS, 'ui', file), 'utf8');
+
+/**
+ * The checkbox, radio and switch are 16px (and the small switch 14px) boxes that rely on an absolutely
+ * positioned `::after` for their real hit area. `after:-inset-x-3 after:-inset-y-2` adds only 24px of
+ * width and 16px of height, which Chrome laid out as 40x32 for every checkbox and radio and 56x34 for
+ * the switch: under SPEC 11's 48px on every phone width. Measured with a Playwright probe across the
+ * status filter (12 checkboxes), the reassign dialog (12), the import assign step (3 radios + 3
+ * checkboxes), the call-mode radios (3), "Show closed" and the leads "Unassigned" toggle.
+ *
+ * These assert the geometry that replaced it, because the rule is arithmetic a reviewer cannot eyeball:
+ * a 16px box needs 16px added on every side to reach 48.
+ */
+describe('checkbox, radio and switch hit areas reach 48px', () => {
+  it('no primitive still uses the 40x32 inset pair', () => {
+    for (const file of ['checkbox.tsx', 'radio-group.tsx', 'switch.tsx']) {
+      expect(uiSource(file), file).not.toContain('after:-inset-x-3 after:-inset-y-2');
+    }
+  });
+
+  it('the 16px checkbox and radio expand by 16px on every side', () => {
+    expect(uiSource('checkbox.tsx')).toContain('after:absolute after:-inset-4');
+    expect(uiSource('radio-group.tsx')).toContain('after:absolute after:-inset-4');
+  });
+
+  it('the switch expands enough that even its 14px small size clears 48px', () => {
+    // 14 + 17 + 17 = 48, so `sm` passes too; the default 18.4px size lands at 52.4.
+    expect(uiSource('switch.tsx')).toContain('after:absolute after:-inset-x-4 after:-inset-y-[17px]');
+  });
+
+  it('the dialog close button is 48px, like the sheet already was', () => {
+    const dialog = uiSource('dialog.tsx');
+    expect(dialog).not.toContain('size="icon-sm"');
+    expect(dialog).toContain('className="absolute top-2 right-2 size-12"');
+  });
+});

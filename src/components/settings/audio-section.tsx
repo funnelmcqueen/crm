@@ -234,7 +234,7 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
         <Label htmlFor="settings-microphone">Microphone</Label>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Select value={selectedInput} onValueChange={(id) => void chooseInput(id)} disabled={inputs.length === 0}>
-            <SelectTrigger id="settings-microphone" className="w-full min-w-0 px-3 text-base data-[size=default]:h-12 sm:flex-1 md:text-sm">
+            <SelectTrigger id="settings-microphone" className="w-full min-w-0 px-3 text-base data-[size=default]:h-12 sm:flex-1 lg:text-sm">
               <SelectValue placeholder={inputs.length === 0 ? "Test the microphone to list devices" : "Choose a microphone"} />
             </SelectTrigger>
             <SelectContent position="popper" align="start" className="max-h-80">
@@ -283,7 +283,7 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
         <div className="flex flex-col gap-2 sm:flex-row">
           {outputSupported ? (
             <Select value={selectedOutput} onValueChange={(id) => void chooseOutput(id)} disabled={outputs.length === 0}>
-              <SelectTrigger id="settings-speaker" className="w-full min-w-0 px-3 text-base data-[size=default]:h-12 sm:flex-1 md:text-sm">
+              <SelectTrigger id="settings-speaker" className="w-full min-w-0 px-3 text-base data-[size=default]:h-12 sm:flex-1 lg:text-sm">
                 <SelectValue placeholder={outputs.length === 0 ? "Test the microphone to list devices" : "Choose a speaker"} />
               </SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-80">

@@ -3,6 +3,81 @@
 Every intentional difference from the spec, with the reason. Append; never delete history.
 Format: `## D<n>. Title`, then **Spec**, **Built**, **Why**.
 
+Nothing here is ever rewritten or removed. When a later entry changes an earlier one, the earlier
+entry keeps its original wording and carries a marker pointing at the entry that changed it, so the
+record of what was decided when stays readable. Markers used:
+
+- **`> SUPERSEDED BY D30`** — the sentence or bullet immediately below no longer describes the code.
+  Read D30 for what is true now; the surrounding entry still stands.
+- **amends / supersedes** in a title or body — that entry narrows or replaces part of an earlier one
+  (D12 amends D11, D22 amends D6, D23 amends D15, D30 amends parts of D27-D29).
+
+## Index
+
+Grouped by theme, not by number; the entries themselves stay in numeric order below. **When you
+append an entry, add a row here too** — an index that silently stops at the last person's work is
+worse than no index.
+
+**Environment and platform** — how this runs, not what it does
+
+| | |
+|---|---|
+| [D1](#d1-tests-run-against-localbase-instead-of-supabase-start) | Tests run against "localbase" (PGlite + a PostgREST/GoTrue subset) instead of `supabase start` |
+| [D2](#d2-proxyts-instead-of-middlewarets) | `proxy.ts` instead of `middleware.ts` (the Next.js 16 name for the same feature) |
+| [D24](#d24-dialer_drivermock-is-refused-in-production) | `DIALER_DRIVER=mock` is refused in production |
+| [D35](#d35-an-invalid-environment-stops-the-server-and-browser-post-routes-answer-503) | An invalid environment stops the server; browser POST routes answer 503 |
+| [D38](#d38-checkbundle-fails-when-it-has-nothing-to-search-for) | `check:bundle` fails when it has nothing to search for |
+
+**Emulator-only** — differs on localbase, identical on real Supabase
+
+| | |
+|---|---|
+| [D10](#d10-localbase-applies-email-changes-immediately-localbase-only) | localbase applies email changes immediately (no SMTP in the Docker-free stack) |
+| [D1](#d1-tests-run-against-localbase-instead-of-supabase-start) | (also) no embedded selects; the app uses RPCs, `security_invoker` views or two queries |
+
+**Security** — isolation, least privilege, and closing oracles
+
+| | |
+|---|---|
+| [D3](#d3-sensitive-calls-columns-hidden-by-column-grants) | Sensitive `calls` columns hidden by column grants, not just row policies |
+| [D8](#d8-log_call-refuses-new-tel-calls-on-do_not_contact-leads) | `log_call` refuses new TEL calls on DO_NOT_CONTACT leads |
+| [D9](#d9-csv-formula-injection-prefixing-is-stricter-than-listed) | CSV formula-injection prefixing is stricter than the spec lists |
+| [D11](#d11-do_not_contact-is-sticky-when-an-outcome-is-logged) | DO_NOT_CONTACT is sticky when an outcome is logged |
+| [D12](#d12-only-an-admin-re-opens-a-do_not_contact-lead-amends-d11) | Only an admin re-opens a DO_NOT_CONTACT lead (amends D11) |
+| [D13](#d13-the-voicemail-route-reads-the-recording-sid-with-the-service-role) | The voicemail route reads the recording SID with the service role |
+| [D14](#d14-rate-limit-policy-is-fixed-in-the-database-outbound-call-creation-limits-itself) | Rate-limit policy is fixed in the database; outbound call creation limits itself |
+| [D15](#d15-a-new-in-app-call-replaces-un-started-ones-a-logged-call-no-longer-blocks) | A new in-app call replaces un-started ones; a logged call no longer blocks |
+| [D16](#d16-log_call-stores-the-tel-client-id-as-an-idempotency-key-not-as-the-row-id) | `log_call` stores the TEL client id as an idempotency key, not as the row id |
+| [D19](#d19-browser-post-routes-check-origin-malformed-call-ids-are-404) | Browser POST routes check `Origin`; malformed ids are 404, not 400 |
+| [D20](#d20-only-a-voicemails-owner-marks-it-heard) | Only a voicemail's owner marks it heard |
+| [D23](#d23-the-outbound-webhook-checks-the-agents-other-live-calls-with-twilio-amends-d15) | The outbound webhook checks the agent's other live calls with Twilio (amends D15) |
+| [D31](#d31-disabling-an-agent-ends-their-auth-sessions-through-an-endpoint-auth-js-does-not-wrap) | Disabling an agent ends their Auth sessions, not just their ability to sign in |
+| [D32](#d32-a-malformed-id-is-not_found-everywhere-log_call-included) | A malformed id is `not_found` everywhere, `log_call` included (completes D19) |
+| [D33](#d33-voicemail-audio-is-never-synthesized-in-production) | Voicemail audio is never synthesized in production |
+| [D34](#d34-the-session-cookie-is-secure-in-production) | The session cookie is `Secure` in production |
+| [D36](#d36-an-export-rate-limit-bucket) | An `export` rate-limit bucket (extends D14) |
+
+**Product decisions** — behavior the spec left open, or that had to change to stay coherent
+
+| | |
+|---|---|
+| [D4](#d4-schema-additions) | Schema additions (`device_seen_at`, `remote_e164`, `dedupe_name_key`, `rate_limit_hits`) |
+| [D5](#d5-leadsnext_follow_up_at-is-always-derived) | `leads.next_follow_up_at` is always derived from the earliest open follow-up |
+| [D6](#d6-log_call-also-closes-out-due-work-on-the-lead) | `log_call` also closes out due work on the lead |
+| [D7](#d7-inbound-calls-to-numbers-arrive-at-the-twiml-app-voice-url) | Inbound calls arrive at the TwiML App Voice URL and delegate to the inbound handler |
+| [D17](#d17-search-matches-phone-digits-only-for-phone-like-queries) | Search matches phone digits only for phone-like queries |
+| [D18](#d18-inbound-routing-ignores-deactivated-numbers-inbound-call-status-comes-from-the-dial-action) | Inbound routing ignores deactivated numbers; inbound status comes from the Dial action |
+| [D21](#d21-log_call-bounds-the-follow-up-time) | `log_call` bounds the follow-up time |
+| [D22](#d22-log_call-completes-follow-ups-due-before-the-end-of-the-owners-day-amends-d6) | `log_call` completes follow-ups due before the end of the owner's day (amends D6) |
+| [D25](#d25-pipeline-column-order-same-column-drops-and-do-not-contact-moves) | Pipeline column order, same-column drops, and Do Not Contact moves |
+| [D26](#d26-follow-up-tabs-use-the-viewers-own-day-completed-follow-ups-stay-with-their-user) | Follow-up tabs use the viewer's own day; completed follow-ups stay with their user |
+| [D27](#d27-reports-and-phone-numbers-which-rows-what-counts-and-mock-number-verification) | Reports and phone numbers: which rows, what counts, mock number verification — *parts superseded by D30* |
+| [D28](#d28-agents-admin-and-settings-drill-down-scope-disable-order-one-time-passwords-audio-choices) | Agents admin and Settings: drill-down scope, disable order, one-time passwords, audio — *parts superseded by D30* |
+| [D29](#d29-csv-import-validation-extras-and-csv-export-format) | CSV import validation extras and CSV export format — *parts superseded by D30* |
+| [D30](#d30-review-round-2-identically-labelled-numbers-agree-across-screens) | Review round 2: identically labelled numbers agree across screens |
+| [D37](#d37-the-import-fallback-bisects-instead-of-walking-and-is-capped) | The import fallback bisects instead of walking, and is capped |
+| [D39](#d39-review-round-3-hot-path-cost-the-location-column-and-a-docs-drift-guard) | Review round 3: hot-path cost, the Location column, and a docs drift guard |
+
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
 **Built:** The same `supabase/migrations` run in PGlite (Postgres 18 WASM), behind a PostgREST/GoTrue-compatible
@@ -219,7 +294,11 @@ the previous agent's activity; the follow_ups RLS policy (user and lead owner mu
 ## D27. Reports and phone numbers: which rows, what counts, and mock number verification
 **Spec:** §8 Reports: per agent (dials, connect rate, talk minutes, avg call length, interested, appointments, clients), per number
 (dials, answer rate), team totals, date range picker. §7d adding a number looks it up in the Twilio account and sets its voice handler.
+**Status:** stands, except where marked below. D30 (review round 2) changed the report row set and how "Clients" is counted.
+
 **Built:**
+> **SUPERSEDED BY D30** (row set only): `admin_report_agents` now *also* lists ADMIN profiles that currently hold CLIENT leads, so the
+> Reports "Clients" total equals the admin dashboard's assigned count. The rest of this bullet is unchanged.
 - Per-agent rows (`admin_report_agents`) list every AGENT profile, disabled ones included, plus ADMIN profiles only when they made calls
   in the range. Team totals (`admin_report_totals`) are sums of those rows, with connect rate and average call length recomputed from
   the sums. Admin-only unmatched voicemails (`user_id` null) are in no row and no total.
@@ -240,9 +319,14 @@ calls visible after they leave. Local development has no Twilio account, and a p
 ## D28. Agents admin and Settings: drill-down scope, disable order, one-time passwords, audio choices
 **Spec:** §8 Agents (admin): list, create, disable/reactivate, in-app calling toggle, bulk reassign, view activity. §5 "On disable, also
 ban the user in Supabase Auth". §8 Settings: profile, password, daily target, call mode, audio; admin company settings and agent targets.
+**Status:** stands, except where marked below. D30 (review round 2) changed the drill-down's timezone.
+
 **Built:**
 - `/admin/agents` lists AGENT profiles only (active first). Reassign targets are every active AGENT or ADMIN plus Unassigned. A banner
   lists disabled users (any role) that still have leads, with a Reassign action per user.
+> **SUPERSEDED BY D30** (timezone only): the drill-down's Today / 7 days / 30 days are computed in the **target agent's** timezone, not
+> the viewing admin's, so one click no longer changes the same agent's numbers while both screens say "Today". Everything else in the
+> bullet below — which ids 404, the half-open range, the 400-day cap, the meaning of "Clients", inbound calls in talk time — is unchanged.
 - `/admin/agents/[id]` exists only for AGENT profiles; admins, unknown and malformed ids get the regular 404. Ranges are Today, 7 days
   and 30 days as whole local calendar days (including today) in the **viewing admin's** timezone, served by
   `admin_agent_activity(p_user_id, p_from, p_to)` (half-open, at most 400 days). "Clients" is leads currently assigned with status
@@ -268,12 +352,17 @@ server-side setting would be wrong on the agent's other devices.
 ## D29. CSV import validation extras and CSV export format
 **Spec:** §9 preview shows the reason for each invalid row ("missing business name, unusable phone"); the result has a downloadable CSV
 of skipped and failed rows. §10 export fields; formula-injection prefixing.
+**Status:** stands, except where marked below. D30 (review round 2) made the result CSV re-importable and made a malformed file an error.
+
 **Built:**
 - Import invalid reasons are "Missing business name", "Missing phone" (phone column mapped but empty), "Unusable phone", plus length
   limits checked on both sides (business/contact name 200, raw phone 100, email 320, website 2048, address 300, city 200, state/country 100,
   source 200, notes 10,000, any cell 100,000). A too-long row is invalid instead of failing its whole batch.
 - Files are limited to 200 columns besides the 10 MB / 50,000-row limits. Cells beyond the header count are kept (appended to notes as
   "Extra columns" when that toggle is on) and appear in the result CSV as "extra columns".
+> **SUPERSEDED BY D30** (round-trip only): the result CSV as described below did not re-import, because formula-injection escaping turned
+> every E.164 phone back into "Unusable phone". `buildSkippedRowsCsv` now takes the mapping and exempts the mapped phone column, and the
+> import strips one leading escaping apostrophe. What the file *contains* is unchanged.
 - The downloadable result CSV holds skipped, **invalid** and failed rows (every row that was not inserted), with the original columns and a
   `reason` column (`import reason` if the file already has `reason`). Counts inserted + skipped + invalid + failed always equal the file row
   count (`summarizeImport` throws otherwise); a planned row with no server result counts as failed.
@@ -324,3 +413,177 @@ one is true, and neither screen explains the difference. Each change picks the d
 ("clients per agent = leads currently assigned with status CLIENT", "admin per-agent rows use each agent's own timezone") and makes
 every surface use it, rather than relabelling one screen. The import fixes serve SPEC 9's "Never drop data silently": a row the app
 itself wrote out must come back in, and a file the parser could not read must be refused instead of quietly losing its tail.
+
+## D31. Disabling an agent ends their Auth sessions, through an endpoint auth-js does not wrap
+**Spec:** §5 "Inactive users get zero rows on every table even with a valid JWT. On disable, also ban the user in
+Supabase Auth." §13 "A disabled agent with a still-valid token gets zero rows and cannot get a Twilio token."
+**Built:** `setAgentActive` now also revokes the account's Supabase Auth sessions, on both transitions:
+- **Disable:** `profiles.active = false` (admin session) → Auth ban → revoke sessions. The ban stops new sign-ins and
+  refreshes; revoking also invalidates the access token the agent's browser is holding, because GoTrue's `/auth/v1/user`
+  (what `getUser()` calls in `src/proxy.ts` and `src/server/context.ts`) rejects a token whose `session_id` no longer exists.
+- **Reactivate:** revoke sessions *first*, while the ban is still in place, then `active = true`, then lift the ban. So a
+  cookie or refresh token issued before the disable can never be replayed; the agent signs in again.
+The ban alone was not enough. `banned_until` blocks the refresh grant only while it lasts, so lifting it made every
+pre-disable refresh token valid again, and `src/proxy.ts` then sent that session straight on to `/dashboard` without
+re-authenticating. `tests/integration/agents/session-revocation.test.ts` is the proof: sign in, disable, both halves of
+the session stop working, reactivate, the old refresh token *still* fails, a fresh sign-in works.
+
+`@supabase/auth-js` (2.116.0) exposes no admin method for this: `auth.admin.signOut(jwt, scope)` signs out the holder of a
+user access token, which an admin server disabling someone else's account never has, and `auth.admin.deleteUser` would
+destroy the account and its history. So `revokeAuthSessionsAt` (`src/server/services/agents.ts`) calls the GoTrue admin
+session route directly with the service-role key: `DELETE /auth/v1/admin/users/<id>/sessions`. localbase implements it in
+`localbase/auth.ts` (service role only; deletes `localbase.sessions` for the user, which cascades to their refresh tokens;
+404 `user_not_found` for an unknown or malformed id, which the caller treats as "nothing to revoke").
+
+Failure handling, because silently not revoking is the bug this exists to fix: an Auth server that does not implement the
+route answers 404 *without* a `user_not_found` code and that is reported, not passed over. A failed revoke on **reactivate**
+aborts before the ban is lifted (the agent stays disabled, message "Their earlier sessions could not be ended…"); on
+**disable** the flag and the ban are already written, so the agent is cut off either way and the admin is told to retry
+("The agent was disabled, but their open sessions could not be ended."). Both are idempotent, so the retry is the fix.
+
+**Residual, and true of Supabase generally:** PostgREST validates only a JWT's signature and expiry, so a *stolen* access
+token can still read for up to its remaining hour even after revocation. Every app path calls `getUser()` first, which is
+what revocation kills, and `is_active_user()` gives a disabled profile zero rows regardless.
+
+**Why:** "Inactive users get zero rows even with a valid JWT" was satisfied only while the ban lasted. Reactivating an agent
+silently resurrected every session that existed before they were disabled — including one an attacker had kept — and the
+proxy's optimistic redirect sent it to `/dashboard`. A ban is a sign-in control; ending the session is the access control.
+
+**Also in this change (test-only, no behavior):** `playwright.config.ts` gains a fourth project, `journey`, which runs
+`e2e/voicemail-callback.spec.ts` after the `desktop` project. Logging that callback completes its lead's follow-ups (D22),
+and `pipeline-followups.spec.ts` asserts that same follow-up is still open, so the ordering has to be declared rather than
+left to file order. `import` now depends on `['mobile', 'desktop', 'journey']` so it still runs last, and it imports the
+five duplicate rows instead of skipping them, which makes the seeded total 45 + 97. `docs/ARCHITECTURE.md` §10 still lists
+the projects as "`mobile`, `desktop` and `import`" and needs that sentence updated; this file is the record until it is.
+*(That sentence, and the matching ones in the README and `docs/PLAN.md`, were corrected in D39, which also added a test so the
+three cannot drift from `playwright.config.ts` again.)*
+
+## D32. A malformed id is `not_found` everywhere, `log_call` included
+**Spec:** §1 "return 404 for unauthorized IDs, same as nonexistent". D19 already extends that to malformed ids ("A JSON body that
+fails the schema, such as a malformed `leadId`, gets the same 404").
+**Built:** `logCall` (`src/server/services/calls.ts`) was the one agent-facing service that answered a malformed id with
+`validation` — `logCallInputSchema` declares `leadId: z.uuid({ error: "Invalid lead." })` and the body mapped the ZodError
+straight through. It now routes those failures through `logCallInputError`: when **every** failing issue is a format issue on
+`leadId`, `callId` or `clientRequestId`, the error is `AppError('not_found')` with the standard "Not found." message, identical to
+a foreign or nonexistent id. Everything else stays `validation`: a missing `followUpAt`, a duration outside 0..86400, notes over
+5000 characters, an unknown outcome, and the cross-field `superRefine` rules (`callId` together with `clientRequestId`, or
+`leadId: null` with no `callId`) — those describe the caller's own form, not our rows.
+**Why:** the property isolation depends on already held — a foreign id and a nonexistent one were byte-for-byte identical at both
+the service and the RPC layer — so this was never an enumeration hole. What it was is an inconsistent contract: the same mistake
+answered `validation` through the `logCall` action and 404 through `/api/calls/outbound`, which D19 already normalized. A client
+that switches on `error.code` cannot rely on a rule with one exception, and the exception is the kind of thing that grows back.
+`tests/integration/calls/calls-services.test.ts` now pins the three-way equivalence (foreign / nonexistent / malformed) for both
+the lead form and the call form, so it cannot.
+
+## D33. Voicemail audio is never synthesized in production
+**Spec:** §5 voicemail with playback in the lead's history; §6 the mock driver is for local dev and tests.
+**Built:** `handleVoicemail` serves the generated tone (`voicemail-tone.ts`, 8 kHz mono, 1.5 s) only when
+`NODE_ENV !== 'production'`. A production deployment with Twilio not configured answers 503 `{ error: 'unavailable' }`, logs
+`voicemail_unconfigured`, and the `<audio>` element shows its error state instead of playing a beep. Production **with** Twilio
+configured is unchanged, and an inaccessible voicemail is still the same 404 in every mode.
+**Why:** D24 refuses `DIALER_DRIVER=mock` in production precisely so the app can never fake calls or voicemail audio, but that
+guard covered only the dialer. The media path had no production equivalent, and the README documents the unconfigured production
+path as supported (unset `DIALER_DRIVER` resolves to `tel` there). So a real deployment could answer every voicemail with a
+440 Hz tone, with nothing in the UI to say so — and because `log_call` sets `handled_at = now()` on a lead's unhandled voicemails
+once the agent logs the call, a genuine customer message would be silently marked as dealt with, unheard. Fabricated data that
+looks like real data is worse than an error, so the route now errors.
+
+## D34. The session cookie is `Secure` in production
+**Spec:** §2 Supabase Auth with RLS; §12 security checklist.
+**Built:** `src/lib/supabase/cookie-options.ts` exports `sessionCookieOptions()`, which returns `{ secure: true }` when
+`NODE_ENV === 'production'` and `{ secure: false }` otherwise. All four clients that own the session cookie pass it as
+`cookieOptions`: the browser client (`lib/supabase/browser.ts`, which is what actually writes the cookie at sign-in), the Server
+Component client, the route-handler client and `proxy.ts`.
+**Why:** `@supabase/ssr` never sets `Secure` — its `DEFAULT_COOKIE_OPTIONS` is `path`, `sameSite`, `httpOnly` and `maxAge` only —
+so the cookie, a base64 blob holding both the access token and the refresh token, was attached to any plaintext `http://` request
+for the domain: a stray link, a non-preloaded subdomain, an attacker forcing http on first contact. The refresh token outlives the
+access token, so that is the expensive half to lose. It stays off outside production because development and the Playwright suite
+run on `http://localhost`. `httpOnly` is not available to us at all: `createBrowserSupabase` has to read the cookie from
+JavaScript, which is inherent to `@supabase/ssr`'s design, and 400-day `maxAge` is left as the library sets it.
+
+## D35. An invalid environment stops the server, and browser POST routes answer 503
+**Spec:** §12 secrets in env vars only, with a `.env.example`; D24's rationale that a bad environment must fail loudly.
+**Built:** two halves of the same problem.
+- **Startup.** `src/instrumentation.ts` exports `register()`, Next's boot hook, which calls `getServerEnv()`. `register` runs once
+  and must finish before the server accepts requests, so an invalid environment now aborts startup and prints which variables are
+  wrong (names and rules only, never values). `src/server/env.ts` stays lazy — importing it still never throws, which is what
+  keeps build-time imports safe — so this hook is what makes the promise real. Throwing from the hook turned out **not** to be
+  enough, which was measured rather than assumed: Next 16 logs "an error occurred while loading instrumentation hook" and then
+  keeps the process up, answering every request with a 500. So `register` exits the process as well (the exit is injected, so the
+  unit test can assert the abort without ending the test runner). Verified against a real production build: with
+  `DIALER_DRIVER=mock` the process exits and nothing ever listens on the port; with a valid environment `/login` returns 200.
+  `next build` does not call the hook, so an invalid environment fails the deploy at boot, not the build.
+- **Routes.** `handleVoiceToken`, `handleVoicePresence` and `handleCallsOutbound` resolve the environment through `resolveEnv`,
+  inside their error handling, and answer 503 `{ error: 'unavailable' }`. `runTwilioWebhook` already did exactly this and was the
+  precedent.
+**Why:** README and `.env.example` both claimed that `DIALER_DRIVER=mock` with `NODE_ENV=production` stops the server. It did not.
+`next start` printed "Ready", served `/login` with a 200 and redirected `/dashboard` normally; only the routes calling
+`getServerEnv()` failed, with `POST /api/voice/token` returning an unhandled 500. A deployment came up green, passed any health
+check that hits a page, and broke later and partially on the calling path — the exact silent degradation D24 was written to
+prevent. The route half mattered on its own: because the throw preceded `isAllowedOrigin`, a cross-origin request also got a 500,
+so the documented CSRF check never ran. No data was exposed either way (the request dies before any query), but a 500 carries no
+code the client can act on and contradicts the response contract in ARCHITECTURE §7.
+
+## D36. An `export` rate-limit bucket
+**Spec:** §12 "Rate limit on the token endpoint and outbound call creation" — the export is not on that list.
+**Built:** `apply_rate_limit` gains an `export` bucket (30 per 10 minutes, per user) and `consume_rate_limit` accepts it;
+`handleLeadsExport` consumes one before streaming and answers 429 `{ error: 'rate_limited' }` when the bucket is spent.
+`outbound_call` is still refused by `consume_rate_limit`, because `create_outbound_call` enforces it internally (D14).
+**Why:** this is more than the spec asks for, so it is recorded here. `/api/leads/export` had no limit and pages through
+`export_leads` at up to 1000 rows a page with no cap on pages, so an authenticated agent — or a stolen session — could loop it and
+walk their whole book on every pass, and an admin's export covers every lead in the system. It leaks nothing (RLS and the route's
+explicit `assigned_to` filter hold), so this is a cost and availability control, not an isolation one. The policy lives in SQL with
+the others so it holds across serverless instances and no caller argument can shrink the window. Sign-in throttling is left to
+GoTrue, which applies its own. The limit is set well above real use: the export integration suite makes 16 exports as one agent.
+
+## D37. The import fallback bisects instead of walking, and is capped
+**Spec:** §9 "Never drop data silently"; import in batches with a per-row result.
+**Built:** when the bulk insert of a batch fails for a reason that is not an auth error, `importLeadsBatch` now isolates the bad
+rows by halving the batch (`insertPendingByBisect`) rather than retrying all of them one at a time, and spends at most
+`MAX_IMPORT_FALLBACK_REQUESTS` (64) round trips. Rows the fallback never reaches are returned as `BATCH_FAILED_REASON`, which the
+wizard already treats as retryable. Auth errors still abort immediately, and per-row outcomes are unchanged for every row that is
+actually attempted.
+**Why:** the fallback was linear, so one row the database rejected (a dedupe collision, or a phone that passes the app's
+normalization but trips the `leads` CHECK constraint) turned a single insert into up to `IMPORT_BATCH_SIZE` (500) sequential
+PostgREST round trips inside one server action — 10-20 seconds at a realistic 20-40ms each, enough to exceed a serverless function
+timeout. An action killed mid-loop reports the whole batch as failed even though many rows committed, which is the "silently
+wrong" outcome SPEC 9 is written against. Bisecting costs O(log n) for the realistic case; the cap bounds the pathological one,
+where every row fails and a pure bisect would cost more round trips than the walk it replaced.
+
+## D38. `check:bundle` fails when it has nothing to search for
+**Spec:** §12 "Grep the production build to confirm no Supabase service-role key or Twilio secret in client bundles".
+**Built:** `scripts/check-bundle-secrets.ts` returns exit code 3 when the environment defines none of the secrets the build would
+have used, instead of printing "(none)" and exiting 0. `--allow-missing-secrets` accepts that deliberately. A real leak is still
+1 and a missing build is still 2, and the leak check runs first, so a service-role JWT is always reported as a leak whatever the
+environment holds.
+**Why:** the same command exited 0 whether it had searched for three secrets or for nothing, and the two runs were
+indistinguishable by exit code. On this Docker-free machine, and on any fresh clone (`.env.local` is gitignored), the empty
+environment is the *normal* case, so `npm run build && npm run check:bundle` could record a passing secret check that never looked
+for a Twilio secret. The README warned about this in prose; prose does not fail a pipeline.
+
+## D39. Review round 3: hot-path cost, the Location column, and a docs drift guard
+**Spec:** §8 Leads list columns; §17 the definition of done.
+**Built:** three fixes with no behavior change between them.
+- **`get_next_lead` is set-based.** `supabase/migrations/20260915001300_review_fixes_3.sql` recomputes the two lookups — oldest
+  unhandled voicemail, earliest open follow-up — as one grouped pass per child table over the caller's candidate leads, joined
+  back on, instead of two correlated scalar subqueries attached to every assigned lead before any filtering or the `LIMIT 1`. A
+  partial index `calls_open_voicemail_lead_idx` supports it. Same rows, same order, same reason codes: `tests/db/next-lead.test.ts`
+  is unchanged and still passes. Measured on 3,000 leads / 6,000 calls in PGlite: ~100ms before, ~11ms after, against a 3ms
+  control. These are relative numbers on a WASM build, not hosted-Postgres absolutes.
+- **Location is a real desktop column.** `leads-table.tsx` had it behind `hidden min-[1440px]:table-cell`, so the field SPEC 8
+  lists was absent at 1280px — the width this suite's own `desktop` project uses. The gate is gone, the duplicate location line
+  under the business name with it.
+- **The docs cannot drift from the suite.** `tests/unit/docs/docs-drift.test.ts` reads `playwright.config.ts` and
+  `e2e/admin-import.spec.ts` and fails when the README, `docs/ARCHITECTURE.md` §10 or `docs/PLAN.md` names fewer projects than
+  exist, miscounts them, or cites the wrong number of imported leads. That closes the note left at the end of D31.
+- **A wall-clock flake in the number-report test.** `tests/db/numbers-reports.test.ts` guarded its timezone fixture with
+  `expect(count(nyWindow)).not.toBe(count(kiWindow))`. The two windows are 24 hours offset by 18, so they overlap by six, and
+  their counts coincide for six hours out of every twenty-four — measured at 48 of 192 quarter-hours across a 48-hour sweep. The
+  suite passed at 05:57 and failed at 06:26 on the same code, because New York crossed local midnight in between. The guard now
+  compares the selected sets rather than their sizes, which is both deterministic and what it meant to assert: equal counts never
+  proved the two days selected the same calls. Product behavior and the two assertions either side of it are unchanged.
+**Why:** `get_next_lead` runs on every agent dashboard render and every Save & Next, so it sets the felt latency of the core loop,
+and its cost grew with leads-per-agent — the one query in the app where that is true. The Location gap was invisible on a large
+monitor and present on an ordinary laptop, which is how it survived review. And the stale project list was not merely untidy: a
+contributor reading the binding contract would have named a new spec so it matched no `testMatch`, and Playwright reports nothing
+about a project that matched no files, so the spec would simply never have run.

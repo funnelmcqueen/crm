@@ -7,6 +7,7 @@ const ALEX_TZ = 'America/New_York';
 
 const DRAGGED_LEAD = 'Harbor Point Plumbing'; // seeded NEW
 const MENU_MOVED_LEAD = 'Empire Roofing & Gutters'; // seeded TO_CALL
+const KEYBOARD_MOVED_LEAD = 'Steinway Auto Care'; // seeded NO_ANSWER, so its card sits in To Call
 const COMPLETED_FOLLOW_UP = 'Beacon Hill Law Group'; // seeded follow-up, due at seed time
 const RESCHEDULED_FOLLOW_UP = 'Liberty Pest Control'; // seeded follow-up, one day overdue
 
@@ -91,6 +92,43 @@ test.describe('pipeline', () => {
     await page.reload();
     await expect(cardIn(page, 'TO_CALL', DRAGGED_LEAD)).toBeVisible();
     await expect(cardIn(page, 'NEW', DRAGGED_LEAD)).toHaveCount(0);
+  });
+
+  test('desktop: a keyboard drag moves a card to the next column', async ({ page }) => {
+    await signIn(page, 'alex');
+    await page.goto('/pipeline');
+    await expect(page.getByRole('heading', { level: 1, name: 'Pipeline' })).toBeVisible();
+
+    await expect(cardIn(page, 'TO_CALL', KEYBOARD_MOVED_LEAD)).toBeVisible();
+    await expect(cardIn(page, 'CONNECTED', KEYBOARD_MOVED_LEAD)).toHaveCount(0);
+
+    // dnd-kit's KeyboardSensor, which is the only way to move a card without a pointer: focus the drag
+    // handle, Space to pick the card up, the arrow keys to walk it across columns, Space to drop it.
+    //
+    // Each step waits for the announcement dnd-kit makes for screen readers rather than for a timeout.
+    // That is also the only honest way to drive it: an arrow key sent before the pick-up has been
+    // committed is swallowed, and the card is then dropped back on the column it started in.
+    const overColumn = (label: string) => page.getByText(`${KEYBOARD_MOVED_LEAD} is over ${label}.`);
+    const handle = page.getByRole('button', { name: `Drag ${KEYBOARD_MOVED_LEAD}` });
+    await handle.scrollIntoViewIfNeeded();
+    await handle.focus();
+    await expect(handle).toBeFocused();
+
+    await page.keyboard.press('Space');
+    await expect(overColumn('To Call')).toBeAttached();
+    await page.keyboard.press('ArrowRight');
+    await expect(overColumn('Connected')).toBeAttached();
+    await page.keyboard.press('Space');
+
+    await expect(cardIn(page, 'CONNECTED', KEYBOARD_MOVED_LEAD)).toBeVisible();
+    await expect(cardIn(page, 'TO_CALL', KEYBOARD_MOVED_LEAD)).toHaveCount(0);
+    // The board tells a screen reader what happened, which is the whole point of a keyboard drag.
+    await expect(page.getByText(`${KEYBOARD_MOVED_LEAD} moved to Connected.`)).toBeAttached();
+
+    // The status really changed, rather than the card only moving on screen.
+    await page.reload();
+    await expect(cardIn(page, 'CONNECTED', KEYBOARD_MOVED_LEAD)).toBeVisible();
+    await expect(cardIn(page, 'TO_CALL', KEYBOARD_MOVED_LEAD)).toHaveCount(0);
   });
 
   test.describe('on a phone', () => {

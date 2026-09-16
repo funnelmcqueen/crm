@@ -136,6 +136,11 @@ e2e/                     Playwright specs (mock dialer)
 
 `src/server/env.ts` exports `getServerEnv()`, which parses lazily and caches (so importing never
 throws at build time). `DIALER_DRIVER` reaches the client only as a prop from the `(app)` layout.
+Because parsing is lazy, `src/instrumentation.ts` calls it from Next's `register()` hook, which runs
+once and must finish before the server accepts requests: an invalid environment therefore aborts
+startup instead of surfacing later as a failing route (D35). Throwing from the hook is not enough on
+its own — Next logs the failed hook and keeps the process up, answering every request with a 500 —
+so `register` also exits the process. `next build` never calls the hook, so builds are unaffected.
 
 localbase uses the Supabase CLI's default JWT secret `super-secret-jwt-token-with-at-least-32-characters-long`
 and generates anon/service keys with payload `{"iss":"supabase-demo","role":"anon"|"service_role","exp":1983812996}`
@@ -350,7 +355,7 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 | RPC | security | who | behavior |
 |---|---|---|---|
 | `log_call(p_outcome call_outcome, p_lead_id uuid default null, p_call_id uuid default null, p_notes text default null, p_follow_up_at timestamptz default null, p_follow_up_note text default null, p_duration_seconds int default null) → jsonb` | definer | authenticated | One transaction. Caller must be active. `p_call_id` first names a row the caller may log: any row for an admin, else `user_id = auth.uid()` with the row's lead assigned to the caller (or no lead). Failing that, it is looked up as the caller's TEL idempotency key on `p_lead_id` (`client_request_id`). A row the caller may not log is handled exactly like an unknown id, so known ids reveal nothing (D16). A found row's lead must match `p_lead_id` (if given), else `not_found`. If the row has no outcome yet, `call_count += 1`, else no increment (re-log only updates outcome/notes). `p_duration_seconds` (0..86400, else `22023`) applies only to TEL rows, and only if `duration_seconds` is null. In-app durations come from Twilio. If no row exists: `p_lead_id` is required and must be accessible, then insert a `TEL` OUTBOUND row with a server-generated id and `client_request_id = p_call_id` (unique per user and lead, making TEL logging idempotent; a retry sends the same `p_lead_id` or the returned `call_id`), `call_count += 1`. For lead rows: `last_contacted_at = now()`, `status = outcome_to_status()`, unhandled voicemails on that lead get `handled_at = now()`, and on the first log of that call row only (never on a retry) open follow-ups due before the end of today (lead owner's timezone, else the caller's; D22) get completed and, if `p_follow_up_at` is set (must be within `now() - 1 minute` .. `now() + 1825 days`, else `22023`; D21), a follow-up is inserted for `coalesce(lead.assigned_to, auth.uid())`. `FOLLOW_UP` requires `p_follow_up_at` (22023). `WRONG_NUMBER` prefixes notes once (see "Call notes" above). A **new** TEL row on a DO_NOT_CONTACT lead raises `do_not_contact` (DEVIATIONS D8); logging an existing row still works. Returns `{call_id, lead_id, status, call_count, next_follow_up_at}` (lead fields null for an unmatched inbound call). |
-| `get_next_lead(p_exclude_ids uuid[] default '{}') → table(lead_id, business_name, contact_name, phone, status, city, state, last_contacted_at, next_follow_up_at, call_count, reason text)` | definer | authenticated | Caller's own assigned leads only. Excludes CLIENT/NOT_INTERESTED/DO_NOT_CONTACT and `p_exclude_ids`. Excludes leads with `last_contacted_at > now() - 4h` unless they have an open follow-up due (`due_at <= now()`) or an unheard voicemail. Buckets in order, reason codes: `VOICEMAIL` (unheard voicemail, oldest voicemail first) → `OVERDUE` (open follow-up `due_at < now()`, oldest first) → `DUE_TODAY` (open follow-up due later today in caller's timezone, soonest first) → `NEW` (status NEW/TO_CALL, oldest created first) → `RETRY` (NO_ANSWER/VOICEMAIL, `last_contacted_at asc nulls first`, then `call_count asc`). Leads matching no bucket are not suggested. Returns 0 or 1 row. |
+| `get_next_lead(p_exclude_ids uuid[] default '{}') → table(lead_id, business_name, contact_name, phone, status, city, state, last_contacted_at, next_follow_up_at, call_count, reason text)` | definer | authenticated | Caller's own assigned leads only. Excludes CLIENT/NOT_INTERESTED/DO_NOT_CONTACT and `p_exclude_ids`. Excludes leads with `last_contacted_at > now() - 4h` unless they have an open follow-up due (`due_at <= now()`) or an unheard voicemail. Buckets in order, reason codes: `VOICEMAIL` (unheard voicemail, oldest voicemail first) → `OVERDUE` (open follow-up `due_at < now()`, oldest first) → `DUE_TODAY` (open follow-up due later today in caller's timezone, soonest first) → `NEW` (status NEW/TO_CALL, oldest created first) → `RETRY` (NO_ANSWER/VOICEMAIL, `last_contacted_at asc nulls first`, then `call_count asc`). Leads matching no bucket are not suggested. Returns 0 or 1 row. The voicemail and follow-up lookups are computed set-based (one grouped pass per child table over the caller's candidate leads, joined back on), never as correlated subqueries per assigned lead — this is the hot path and its cost must not grow with leads-per-agent (D39). |
 | `create_outbound_call(p_lead_id uuid) → uuid` | definer | authenticated | Active caller with `in_app_calling_enabled`, else forbidden. Lead must be accessible (admin: any lead), else `not_found`. DO_NOT_CONTACT → `do_not_contact`. Deletes the caller's un-started pre-created rows (OUTBOUND/IN_APP with no provider SID, no status and no outcome), so each agent has at most one dialable row (D15). If the caller has an unlogged call (`outcome is null`) with `call_status in ('queued','ringing','in-progress')` created in the last 2h → `call_in_progress`. Applies the `outbound_call` rate limit (12/min) itself → `P0001 rate_limited` (D14). Inserts OUTBOUND/IN_APP row with `user_id = auth.uid()` and `remote_e164 = lead.phone`. |
 | `get_lead_call_history(p_lead_id uuid) → table(id, created_at, direction, mode, call_status, outcome, notes, duration_seconds, has_voicemail boolean, voicemail_duration_seconds, handled_at, is_mine boolean, caller_name text, caller_id_e164 text)` | definer | authenticated | Empty set if `not can_access_lead`. `caller_name`/`caller_id_e164` are non-null **only for admins**. Newest first. |
 | `get_voicemail_recording(p_call_id uuid, p_user_id uuid) → text` | definer | **service_role only** | Recording SID if the active user `p_user_id` may access that call (admin, lead assigned to them, or `lead_id is null and user_id = p_user_id`), else null. Refuses API-role JWT claims. Called only by `/api/voicemail/[callId]` with the `getUser()` id (D13). |
@@ -364,8 +369,8 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 | `follow_up_tab_counts() → jsonb` | **invoker** | authenticated | Stage 7. `{overdue, today, upcoming, completed, voicemails_unheard}` with the same scoping and boundaries as `list_follow_ups`; `voicemails_unheard = unheard_voicemail_count()`. All zeros for an inactive or missing caller. |
 | `list_lead_sources() → setof text` | invoker | authenticated | Distinct non-null sources visible to the caller. |
 | `touch_device_presence() → void` | definer | authenticated | `device_seen_at = now()` for the active caller. |
-| `consume_rate_limit(p_bucket text) → boolean` | definer | authenticated | Keyed on `auth.uid()`; inactive or missing caller → `42501`. Only `voice_token` is accepted (else `22023`). Delegates to `apply_rate_limit`. |
-| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min; unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
+| `consume_rate_limit(p_bucket text) → boolean` | definer | authenticated | Keyed on `auth.uid()`; inactive or missing caller → `42501`. Only `voice_token` and `export` are accepted (else `22023`; `outbound_call` is enforced inside `create_outbound_call` and is still refused here). Delegates to `apply_rate_limit`. |
+| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min, `export` 30 per 10 min (D36); unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
 | `claim_caller_id(p_user_id uuid) → table(phone_number_id uuid, e164 text)` | definer | **service_role only** | Least recently used active number assigned to the user, else least recently used active pool number (`last_used_at nulls first, created_at`), locking the assigned number with `for no key update` (without SKIP LOCKED, so the KEY SHARE lock of a concurrent calls insert never causes a pool fallback) and pool numbers with `for no key update skip locked`. Sets `last_used_at = now()`. |
 | `apply_call_status(p_call_sid text, p_status text, p_duration int default null) → boolean` | definer | service_role only | Idempotent. Finds the row by `provider_call_sid`. Terminal statuses (completed/busy/no-answer/failed/canceled) are never replaced by non-terminal ones, and a terminal status only changes if the duration is being filled. `duration_seconds = greatest(existing, p_duration)`. |
 | `record_voicemail(p_call_sid text, p_recording_sid text, p_duration int) → boolean` | definer | service_role only | Atomic: sets the recording where `voicemail_recording_sid is null`. On first set, if the lead has an owner, inserts follow-up (owner, `due_at = now()`, note 'Voicemail received'). Returns whether it was newly set. |
@@ -455,6 +460,7 @@ supabase/migrations/20260915000900_import_export.sql   stage 9
 supabase/migrations/20260915001000_admin_agents.sql    stage 10a (agents drill-down)
 supabase/migrations/20260915001100_numbers_reports.sql stage 10b (phone numbers, reports)
 supabase/migrations/20260915001200_review_fixes_2.sql  stages 6-10 review fixes (round 2)
+supabase/migrations/20260915001300_review_fixes_3.sql  final review round (get_next_lead cost, export limit)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
 Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`
@@ -491,6 +497,12 @@ export function requireAdmin(ctx): RequestContext   // throws AppError('forbidde
 ```
 - The user is identified via `supabase.auth.getUser()` (server-validated), and the profile is read with
   the same session. An inactive profile or a missing row counts as unauthorized.
+- Every Supabase client that owns the session cookie (`server.ts`, `request.ts`, `proxy.ts` and the browser
+  client) passes `cookieOptions: sessionCookieOptions()` from `src/lib/supabase/cookie-options.ts`, which
+  sets `secure` in production. `@supabase/ssr` sets no `Secure` flag of its own (D34).
+- A malformed id is `not_found`, never `validation`, wherever a service takes one: `parseId` in
+  `services/leads.ts` and `services/follow-ups.ts`, `parseCallId` in `services/calls.ts`, the uuid check in
+  `pipeline.ts`, and `logCall`'s own id fields (D32). Only genuine form errors are `validation`.
 - `AppError` codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `validation` (400),
   `conflict` (409), `rate_limited` (429), `unavailable` (503), `internal` (500, unmapped errors).
   Route handlers that browsers call with cookies use `getRouteAuth(req) → { ctx, applyCookies }`. `mapPostgrestError(err)` maps P0002→not_found,
@@ -627,7 +639,10 @@ Stage 3 module details (`src/lib/dialer`, `src/components/dialer`):
 - `/recording-status`: `record_voicemail(CallSid, RecordingSid, RecordingDuration)`.
 - `/voicemail-complete`: `<Say>Thank you. Goodbye.</Say><Hangup/>`.
 - `/api/voice/token`: requires an active session with in-app calling enabled. Rate limit with `consume_rate_limit('voice_token')` (20/10min, fixed in SQL).
-  Returns 503 if Twilio isn't configured. AccessToken `{identity: userId, ttl: 3600}` + VoiceGrant
+  Returns 503 if Twilio isn't configured.
+- All three browser POST routes resolve `getServerEnv()` **inside** their error handling, like `runTwilioWebhook` does: an invalid
+  server environment answers 503 `{ error: 'unavailable' }`, never an unhandled 500 that skips the Origin check (D35).
+- `/api/leads/export`: consumes `consume_rate_limit('export')` (30/10min) before streaming, → 429 `{ error: 'rate_limited' }` (D36). AccessToken `{identity: userId, ttl: 3600}` + VoiceGrant
   `{outgoingApplicationSid, incomingAllow: true}` → `{ token, identity, ttl }`.
 - `/api/calls/outbound`: Zod `{leadId: uuid}`, then `create_outbound_call`, which enforces the `outbound_call` 12/min limit
   itself (`P0001 rate_limited` → 429). The route does not consume a separate hit.
@@ -646,8 +661,10 @@ Stage 3 module details (`src/lib/dialer`, `src/components/dialer`):
   `{ error: 'forbidden' }` when an `Origin` header is present and is neither `APP_BASE_URL`'s origin nor the request's own origin.
 - `/api/calls/outbound` bodies: an empty or non-JSON body → 400 `{ error: 'validation' }`. A JSON body that fails the schema (for example a
   malformed `leadId`) → 404 `{ error: 'not_found' }`, identical to an inaccessible id. Conflicts → 409 `{ error: 'conflict', reason }`.
-- `/api/voicemail/[callId]` streams from Twilio when Twilio is configured and `DIALER_DRIVER` is not `mock`. Otherwise it streams the WAV tone
-  (8 kHz mono, 1.5 s, single `Range` supported). A stored SID must match `^RE[0-9a-fA-F]{32}$`, else 404.
+- `/api/voicemail/[callId]` streams from Twilio when Twilio is configured and `DIALER_DRIVER` is not `mock`. Outside production it
+  otherwise streams the WAV tone (8 kHz mono, 1.5 s, single `Range` supported). **In production the tone is never served**: an
+  unconfigured production deployment answers 503 `{ error: 'unavailable' }`, so fabricated audio can never stand in for a real
+  recording (D33). A stored SID must match `^RE[0-9a-fA-F]{32}$`, else 404.
 
 ---
 
@@ -749,14 +766,17 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
 - Fictional phones only: `+1 NXX 555-0100…0199`. Seed Twilio numbers: `+14155550150` (Alex),
   `+14155550151` (Blair), `+14155550152` (pool).
 - Twilio webhook tests sign with `twilio.getExpectedTwilioSignature(testToken, url, params)`.
-- Playwright: `channel: 'chrome'`, projects `mobile` (iPhone-sized viewport + iOS UA → tel:), `desktop`
-  and `import`, with `DIALER_DRIVER=mock`.
+- Playwright: `channel: 'chrome'`, four projects — `mobile` (iPhone-sized viewport + iOS UA → tel:),
+  `desktop`, `journey` (`voicemail-callback.spec.ts`, `dependencies: ['desktop']`) and `import` — with
+  `DIALER_DRIVER=mock`. A spec whose name matches no `testMatch` never runs and Playwright says nothing,
+  so add new specs to a project deliberately. `tests/unit/docs/docs-drift.test.ts` fails when this list,
+  the README or `docs/PLAN.md` falls behind `playwright.config.ts`.
   - Every spec shares one seeded database (`workers: 1`), so each spec owns a seeded user and only
     writes to that user's rows: Casey (mobile core loop, sign-out), Blair (desktop core loop), Alex
     (isolation, export, call mode, and the pipeline/follow-up writes), the admin (agents, import).
-  - `import` runs `admin-import.spec.ts` alone. It inserts 92 leads, which would break every spec that
+  - `import` runs `admin-import.spec.ts` alone. It inserts 97 leads, which would break every spec that
     asserts a seeded total (isolation's "45 leads in total", the agent export), so it declares
-    `dependencies: ['mobile', 'desktop']` to run last whatever the file order, and `retries: 0`
+    `dependencies: ['mobile', 'desktop', 'journey']` to run last whatever the file order, and `retries: 0`
     because a second attempt would import into the database the first attempt already changed.
   - A spec that creates rows which outlive it (a new agent) uses a unique email, so re-running the
     suite against a fresh seed never collides. Specs assert only what they own, never global counts

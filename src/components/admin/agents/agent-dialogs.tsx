@@ -39,7 +39,7 @@ import {
 import type { CreateAgentResult } from "@/server/services/agents";
 import { formatCount } from "./format";
 
-const INPUT_CLASS = "h-12 text-base md:text-sm";
+const INPUT_CLASS = "h-12 text-base lg:text-sm";
 
 function FormError({ message }: { message: string | null }) {
   return (
@@ -495,7 +495,7 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="reassign-to">Move to</Label>
             <Select value={target} onValueChange={setTarget} disabled={pending}>
-              <SelectTrigger id="reassign-to" className="w-full px-3 text-base data-[size=default]:h-12 md:text-sm">
+              <SelectTrigger id="reassign-to" className="w-full px-3 text-base data-[size=default]:h-12 lg:text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-80">

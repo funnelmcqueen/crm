@@ -11,7 +11,7 @@ import { updateAgentTargetAction, updateCompanySettingsAction } from "@/server/a
 import type { AgentTargetRow, CompanySettings } from "@/server/services/settings";
 import { TimeZoneSelect } from "./time-zone-select";
 
-const INPUT_CLASS = "h-12 text-base md:text-sm";
+const INPUT_CLASS = "h-12 text-base lg:text-sm";
 const MAX_GREETING = 500;
 
 function parseTarget(value: string): number | null {
@@ -125,7 +125,7 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
           aria-invalid={tooLong || undefined}
           value={form.greeting}
           onChange={(e) => setForm((prev) => ({ ...prev, greeting: e.target.value }))}
-          className="min-h-28 text-base md:text-sm"
+          className="min-h-28 text-base lg:text-sm"
         />
         <p id="company-greeting-help" className="text-xs text-muted-foreground">
           Read to callers before the beep when nobody answers.
@@ -197,7 +197,7 @@ function AgentTargetRowForm({ row }: { row: AgentTargetRow }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           aria-invalid={parsed === null || undefined}
-          className="h-12 w-24 text-right text-base font-extrabold tabular-nums md:text-sm"
+          className="h-12 w-24 text-right text-base font-extrabold tabular-nums lg:text-sm"
         />
         <Button type="submit" variant={dirty ? "default" : "outline"} className="h-12 w-20 font-bold" disabled={pending || !dirty}>
           {pending ? "…" : "Save"}

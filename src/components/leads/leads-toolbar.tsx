@@ -124,7 +124,7 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
           value={query}
           maxLength={MAX_QUERY_LENGTH}
           onChange={(event) => setQuery(event.target.value)}
-          className="h-12 pl-11 text-base md:text-sm"
+          className="h-12 pl-11 text-base lg:text-sm"
         />
       </div>
 

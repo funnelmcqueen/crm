@@ -222,10 +222,17 @@ describe('admin_phone_number_rows', () => {
     const other = await createPhoneNumberRow(db);
     await createCallRow(db, { lead_id: lead.id, user_id: agent, phone_number_id: other.id, created_at: new Date(now) });
 
-    const expected = (start: number, end: number) => instants.filter((t) => t >= start && t < end).length;
+    const within = (start: number, end: number) => instants.filter((t) => t >= start && t < end);
+    const expected = (start: number, end: number) => within(start, end).length;
     expect((await rowsFor(u.admin)).find((r) => r.id === number.id)?.calls_today).toBe(expected(nyStart, nyEnd));
     expect((await rowsFor(u.tokyoAdmin)).find((r) => r.id === number.id)?.calls_today).toBe(expected(kiStart, kiEnd));
-    expect(expected(nyStart, nyEnd)).not.toBe(expected(kiStart, kiEnd));
+    // The two days must really select different calls, or the two assertions above would also pass for
+    // a function that ignored the caller's timezone entirely. Compare the selected *sets*, not their
+    // sizes: the windows are 24h offset by 18h, so they overlap by 6h and their counts coincide for six
+    // hours out of every twenty-four (measured: 48 of 192 quarter-hours across a 48h sweep). Comparing
+    // counts therefore failed this test whenever the suite happened to run inside that window, which is
+    // also why equal counts would not have proved the rows were the same anyway.
+    expect(within(nyStart, nyEnd)).not.toEqual(within(kiStart, kiEnd));
   });
 });
 

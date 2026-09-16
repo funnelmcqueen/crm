@@ -66,7 +66,7 @@ export function LeadNotesForm({ leadId, notes }: LeadNotesFormProps) {
         placeholder="Gatekeeper name, best time to call, objections…"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "lead-notes-error" : undefined}
-        className="min-h-32 text-base md:text-sm"
+        className="min-h-32 text-base lg:text-sm"
       />
       <div className="flex items-center justify-between gap-3">
         <p id="lead-notes-error" aria-live="polite" className="text-xs text-destructive">

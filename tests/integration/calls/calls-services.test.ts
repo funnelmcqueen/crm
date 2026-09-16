@@ -132,7 +132,8 @@ describe("logCall", () => {
     await expect(logCall(a, { ...base, outcome: "CALLED_BACK" })).rejects.toMatchObject({ code: "validation" });
     await expect(logCall(a, { ...base, outcome: "CONNECTED", durationSeconds: 86_401 })).rejects.toMatchObject({ code: "validation" });
     await expect(logCall(a, { ...base, outcome: "CONNECTED", notes: "x".repeat(5001) })).rejects.toMatchObject({ code: "validation" });
-    await expect(logCall(a, { ...base, outcome: "CONNECTED", leadId: "not-a-uuid" })).rejects.toMatchObject({ code: "validation" });
+    // A malformed id is not a validation error: it is not_found, like every other id the caller
+    // cannot use. See "answers a malformed id exactly like a foreign or nonexistent one" below.
     await expect(logCall(a, { outcome: "CONNECTED", leadId: null })).rejects.toMatchObject({ code: "validation" });
     await expect(logCall(a, { ...base, outcome: "CONNECTED", callId: randomUUID() })).rejects.toMatchObject({ code: "validation" });
     await expect(logCall(a, { ...base, outcome: "CONNECTED", extra: true })).rejects.toMatchObject({ code: "validation" });
@@ -176,6 +177,35 @@ describe("logCall", () => {
     expect(await callsForLead(bLead.id)).toHaveLength(1);
     expect((await callsForLead(bLead.id))[0].outcome).toBeNull();
     expect(await callsForLead(aLead.id)).toHaveLength(0);
+  });
+
+  it("answers a malformed id exactly like a foreign or nonexistent one (ARCHITECTURE rule 4, D19)", async () => {
+    const bCall = await createCall({ lead_id: bLead.id, user_id: userB.id, direction: "OUTBOUND", mode: "TEL" });
+
+    // Three ways of naming a lead the caller may not log against, and three of naming a call row.
+    // All six must be indistinguishable: foreign, nonexistent and malformed alike.
+    const inputs: unknown[] = [
+      { outcome: "CONNECTED", leadId: bLead.id, clientRequestId: randomUUID() },
+      { outcome: "CONNECTED", leadId: randomUUID(), clientRequestId: randomUUID() },
+      { outcome: "CONNECTED", leadId: "not-a-uuid", clientRequestId: randomUUID() },
+      { outcome: "CONNECTED", leadId: null, callId: bCall.id },
+      { outcome: "CONNECTED", leadId: null, callId: randomUUID() },
+      { outcome: "CONNECTED", leadId: null, callId: "not-a-uuid" },
+    ];
+
+    const errors: Array<{ code: string; message: string }> = [];
+    for (const input of inputs) {
+      const settled = await Promise.allSettled([logCall(a, input)]);
+      expect(settled[0].status, JSON.stringify(input)).toBe("rejected");
+      const reason = (settled[0] as PromiseRejectedResult).reason as { code: string; message: string };
+      errors.push({ code: reason.code, message: reason.message });
+    }
+
+    expect(errors).toEqual(Array.from({ length: inputs.length }, () => ({ code: "not_found", message: "Not found." })));
+    // A malformed idempotency key is the caller's own value, but it still must not answer differently.
+    await expect(
+      logCall(a, { outcome: "CONNECTED", leadId: randomUUID(), clientRequestId: "not-a-uuid" }),
+    ).rejects.toMatchObject({ code: "not_found", message: "Not found." });
   });
 
   it("logs an answered unknown-caller inbound call without a lead", async () => {

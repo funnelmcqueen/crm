@@ -15,7 +15,7 @@ export interface TimeZoneSelectProps {
 export function TimeZoneSelect({ id, value, onChange, disabled, className }: TimeZoneSelectProps) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger id={id} className={cn("w-full px-3 text-base data-[size=default]:h-12 md:text-sm", className)}>
+      <SelectTrigger id={id} className={cn("w-full px-3 text-base data-[size=default]:h-12 lg:text-sm", className)}>
         <SelectValue placeholder="Choose a time zone" />
       </SelectTrigger>
       <SelectContent position="popper" align="start" className="max-h-80">

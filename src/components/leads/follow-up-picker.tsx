@@ -112,7 +112,7 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
               value={custom}
               min={utcToZonedLocalInput(now, tz)}
               onChange={(event) => setCustom(event.target.value)}
-              className="h-12 flex-1 text-base md:text-sm"
+              className="h-12 flex-1 text-base lg:text-sm"
             />
             <Button type="button" disabled={pending || custom === ""} className="h-12 font-bold" onClick={saveCustom}>
               Set
@@ -131,7 +131,7 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
           maxLength={MAX_NOTE}
           onChange={(event) => setNote(event.target.value)}
           placeholder="What to follow up on"
-          className="h-12 text-base md:text-sm"
+          className="h-12 text-base lg:text-sm"
         />
       </div>
 

@@ -4,6 +4,7 @@ import type { Database, Json } from "@/lib/database.types";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
 import { endOfDayInTz, isValidTimeZone, startOfDayInTz } from "@/lib/domain/time";
 import { requireAdmin, type RequestContext } from "@/server/context";
+import { getServerEnv } from "@/server/env";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
 import { createAdminClient } from "@/server/supabase/admin";
 
@@ -31,11 +32,14 @@ export interface AgentServiceDeps {
   authAdmin(): SupabaseClient<Database>;
   /** One-time password generator (injectable for tests). */
   generatePassword(): string;
+  /** Ends every Supabase Auth session of a user (see `revokeAuthSessionsAt`). Throws on failure. */
+  revokeSessions(userId: string): Promise<void>;
 }
 
 const defaultDeps: AgentServiceDeps = {
   authAdmin: createAdminClient,
   generatePassword: generateStrongPassword,
+  revokeSessions: revokeAuthSessions,
 };
 
 function resolveDeps(deps?: Partial<AgentServiceDeps>): AgentServiceDeps {
@@ -53,6 +57,48 @@ function parseUserId(id: unknown): string {
   const parsed = uuidSchema.safeParse(typeof id === "string" ? id.trim().toLowerCase() : id);
   if (!parsed.success) throw new AppError("not_found");
   return parsed.data;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Auth session revocation
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Ends every Supabase Auth session of one user: the session rows and the refresh tokens hanging off
+ * them. After this, that user's outstanding access token is no longer accepted by `/auth/v1/user`
+ * (which is what `getUser()` in `src/proxy.ts` and `src/server/context.ts` call), and their refresh
+ * token can no longer mint a new one.
+ *
+ * `@supabase/auth-js` (2.116.0) has no admin method for this. `auth.admin.signOut(jwt, scope)` signs
+ * out the holder of a *user* access token, which an admin server disabling someone else's account
+ * never has, and `auth.admin.deleteUser` would destroy the account and its history. A ban alone is
+ * not enough either: it blocks sign-in and refresh only while it lasts, so lifting it on reactivation
+ * makes every pre-disable cookie and refresh token valid again. So the GoTrue admin session endpoint
+ * is called directly with the service-role key. localbase implements it in `localbase/auth.ts`.
+ * See docs/DEVIATIONS.md D31.
+ *
+ * A deployment whose Auth server does not implement the route answers 404 *without* a
+ * `user_not_found` code, and that is reported as a failure rather than passed over: quietly not
+ * revoking is exactly the bug this exists to fix.
+ */
+export async function revokeAuthSessionsAt(supabaseUrl: string, serviceRoleKey: string, userId: string): Promise<void> {
+  const base = supabaseUrl.replace(/\/+$/, "");
+  const response = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(userId)}/sessions`, {
+    method: "DELETE",
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+    cache: "no-store",
+  });
+  if (response.ok) return;
+  const body = await response.text().catch(() => "");
+  // An account that no longer exists in Auth holds no sessions either.
+  if (response.status === 404 && body.includes("user_not_found")) return;
+  throw new Error(`revoking Auth sessions failed with HTTP ${response.status}`);
+}
+
+/** `revokeAuthSessionsAt` pointed at this deployment's Supabase. Read lazily, like `createAdminClient`. */
+export async function revokeAuthSessions(userId: string): Promise<void> {
+  const env = getServerEnv();
+  await revokeAuthSessionsAt(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, userId);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -285,8 +331,13 @@ export interface SetAgentActiveResult {
 }
 
 /**
- * Disables or reactivates a user: profiles.active with the admin's session, then the Auth ban. If the ban call
- * fails, the profile flag is rolled back so the two never disagree.
+ * Disables or reactivates a user: `profiles.active` with the admin's session, then the Auth ban. If the
+ * ban call fails, the profile flag is rolled back so the two never disagree.
+ *
+ * Both directions also end the account's existing Auth sessions (D31). On reactivate that happens
+ * *first*, while the ban is still in place, so a cookie or refresh token from before the disable can
+ * never be replayed; the agent has to sign in again. On disable it happens after the ban, so the
+ * access token the agent's browser is holding right now stops being accepted too.
  */
 export async function setAgentActive(
   ctx: RequestContext | null,
@@ -300,9 +351,23 @@ export async function setAgentActive(
   if (id === admin.userId) {
     throw new AppError("forbidden", "You can't disable or reactivate your own account.");
   }
-  const { authAdmin } = resolveDeps(deps);
+  const { authAdmin, revokeSessions } = resolveDeps(deps);
 
   const current = await readProfileFlags(admin, id);
+
+  // Reactivating: end the old sessions while sign-in is still blocked. Doing it afterwards would leave
+  // a window in which the agent's pre-disable cookie walks straight back into /dashboard.
+  if (next) {
+    try {
+      await revokeSessions(id);
+    } catch (error) {
+      throw new AppError(
+        "unavailable",
+        "Their earlier sessions could not be ended, so the agent stays disabled. Try again.",
+        { cause: error },
+      );
+    }
+  }
 
   if (current.active !== next) {
     const updated = await admin.supabase.from("profiles").update({ active: next }).eq("id", id).select("id");
@@ -340,6 +405,21 @@ export async function setAgentActive(
         : "Sign-in could not be blocked, so the agent stays active. Try again.",
       { cause: banError },
     );
+  }
+
+  // Disabling: the ban stops new sign-ins and refreshes; this also ends the sessions the agent's
+  // browser is holding, so their current access token is rejected as well. The flag and the ban are
+  // already written, so the agent is cut off either way — the admin is told to retry, which is safe.
+  if (!next) {
+    try {
+      await revokeSessions(id);
+    } catch (error) {
+      throw new AppError(
+        "unavailable",
+        "The agent was disabled, but their open sessions could not be ended. Try again.",
+        { cause: error },
+      );
+    }
   }
 
   return { userId: id, active: next };

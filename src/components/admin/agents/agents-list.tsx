@@ -125,7 +125,7 @@ export function AgentCards({ agents, reassignTargets }: AgentsListProps) {
           <div className="flex items-start justify-between gap-3">
             <Link
               href={`/admin/agents/${agent.userId}`}
-              className="min-w-0 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="flex min-h-12 min-w-0 flex-col justify-center rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <p className="truncate text-base font-bold">{agent.name}</p>
               <p className="truncate text-sm text-muted-foreground">{agent.email}</p>

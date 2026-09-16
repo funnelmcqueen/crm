@@ -140,7 +140,10 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
           <li key={row.id} className="flex flex-col gap-3 rounded-xl border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <Link href={`/leads/${row.leadId}`} className={`${LINK_CLASS} text-base`}>
+                {/* -my-3/py-3: the name is the card's only link, and at 24px tall it was well under the
+                    48px touch target. The padding grows the hit area; the negative margin keeps the card
+                    exactly as tall as before. */}
+                <Link href={`/leads/${row.leadId}`} className={`${LINK_CLASS} -my-3 py-3 text-base`}>
                   {row.businessName}
                 </Link>
                 <p className="truncate text-sm text-muted-foreground tabular-nums">

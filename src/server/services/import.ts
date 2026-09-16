@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   assigneeForPosition,
   checkImportRow,
+  BATCH_FAILED_REASON,
   IMPORT_BATCH_SIZE,
   MAX_CELL_LENGTH,
   MAX_HEADER_LENGTH,
@@ -152,6 +153,57 @@ export interface ImportBatchResult {
 const INVALID_AGENTS_MESSAGE = "Assign leads to active agents only. Reload the agent list and try again.";
 const ROW_FAILED_REASON = "The database rejected this row.";
 
+/**
+ * Round trips the row-by-row fallback may spend before it gives up and reports the rest as retryable.
+ * The fallback used to be linear, so one row the database rejected turned a single insert into up to
+ * IMPORT_BATCH_SIZE (500) sequential requests inside one server action — 10-20 seconds at a realistic
+ * 20-40ms each, enough to exceed a serverless function timeout and have the action killed mid-loop,
+ * reporting the whole batch as failed even though many rows had committed.
+ */
+export const MAX_IMPORT_FALLBACK_REQUESTS = 64;
+
+type PendingRow = { rowIndex: number; record: TablesInsert<"leads"> };
+
+/**
+ * Isolates the rows the database rejected by halving, not by walking: a single bad row costs O(log n)
+ * round trips instead of O(n), and the rows around it still commit in bulk. The whole batch has already
+ * failed once by the time this runs, so it starts from that batch's halves.
+ */
+async function insertPendingByBisect(admin: RequestContext, pending: readonly PendingRow[], results: BatchRowResult[]): Promise<void> {
+  const stack: PendingRow[][] = [];
+  const pushHalves = (slice: readonly PendingRow[]): void => {
+    const middle = Math.floor(slice.length / 2);
+    // Pushed largest-last so the halves are attempted in row order.
+    stack.push(slice.slice(middle), slice.slice(0, middle));
+  };
+  pushHalves(pending);
+
+  let requests = 0;
+  while (stack.length > 0) {
+    const slice = stack.pop();
+    if (!slice || slice.length === 0) continue;
+    if (requests >= MAX_IMPORT_FALLBACK_REQUESTS) {
+      // Bounded work beats a perfect diagnosis: these rows are reported as retryable, which is what the
+      // wizard's "download the rows, fix them, import that file again" loop already handles.
+      for (const item of slice) results.push({ rowIndex: item.rowIndex, ok: false, reason: BATCH_FAILED_REASON });
+      continue;
+    }
+
+    requests += 1;
+    const { error } = await admin.supabase.from("leads").insert(slice.map((item) => item.record));
+    if (!error) {
+      for (const item of slice) results.push({ rowIndex: item.rowIndex, ok: true, leadId: item.record.id as string });
+      continue;
+    }
+    if (isAuthError(error.code)) throw mapPostgrestError(error);
+    if (slice.length === 1) {
+      results.push({ rowIndex: slice[0].rowIndex, ok: false, reason: ROW_FAILED_REASON });
+      continue;
+    }
+    pushHalves(slice);
+  }
+}
+
 function agentIdsOf(assignment: BatchAssignment): string[] {
   if (assignment.mode === "agent") return [assignment.agentId];
   if (assignment.mode === "split") return assignment.agentIds;
@@ -230,15 +282,7 @@ export async function importLeadsBatch(ctx: RequestContext | null, batchInput: u
     } else if (isAuthError(error.code)) {
       throw mapPostgrestError(error);
     } else {
-      for (const item of pending) {
-        const single = await admin.supabase.from("leads").insert(item.record);
-        if (single.error && isAuthError(single.error.code)) throw mapPostgrestError(single.error);
-        results.push(
-          single.error
-            ? { rowIndex: item.rowIndex, ok: false, reason: ROW_FAILED_REASON }
-            : { rowIndex: item.rowIndex, ok: true, leadId: item.record.id as string },
-        );
-      }
+      await insertPendingByBisect(admin, pending, results);
     }
   }
 

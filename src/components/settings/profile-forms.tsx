@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { changePasswordAction, requestEmailChangeAction, updateOwnNameAction } from "@/server/actions/settings";
 
-const INPUT_CLASS = "h-12 text-base md:text-sm";
+const INPUT_CLASS = "h-12 text-base lg:text-sm";
 const MIN_PASSWORD = 10;
 
 function Message({ tone, children }: { tone: "error" | "info"; children: string | null }) {

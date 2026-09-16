@@ -99,7 +99,7 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
             value={from}
             max={to || undefined}
             onChange={(event) => setFrom(event.target.value)}
-            className="h-12 text-base tabular-nums md:text-sm"
+            className="h-12 text-base tabular-nums lg:text-sm"
           />
         </div>
         <div className="flex min-w-36 flex-1 flex-col gap-1.5 sm:flex-none">
@@ -113,7 +113,7 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
             value={to}
             min={from || undefined}
             onChange={(event) => setTo(event.target.value)}
-            className="h-12 text-base tabular-nums md:text-sm"
+            className="h-12 text-base tabular-nums lg:text-sm"
           />
         </div>
         <Button

@@ -161,7 +161,7 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
               required
               onChange={(event) => setCustom(event.target.value)}
               aria-invalid={error ? true : undefined}
-              className="h-12 text-base md:text-sm"
+              className="h-12 text-base lg:text-sm"
             />
             <p aria-live="polite" className="min-h-4 text-xs text-destructive">
               {error ?? ""}

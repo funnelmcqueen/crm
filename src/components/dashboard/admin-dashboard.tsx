@@ -39,7 +39,9 @@ export function AdminDashboardView({ totals, agents }: AdminDashboardViewProps) 
           </h2>
           <Link
             href="/admin/agents"
-            className="inline-flex min-h-12 items-center rounded-lg px-2 text-sm font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-8"
+            // No md:min-h-8 here: 768px is a tablet, which is touch, so shrinking this to 32px there broke
+            // the 48px rule on exactly the devices that need it.
+            className="inline-flex min-h-12 items-center rounded-lg px-2 text-sm font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             Manage agents
           </Link>
@@ -132,9 +134,16 @@ function CallsVsTarget({ row }: { row: AgentStatsRow }) {
   );
 }
 
+/**
+ * `relative` on the scroll container is load-bearing. This is the one table built from a raw <table>
+ * rather than the Table primitive (whose container already carries it), and the header's `sr-only`
+ * "Open" span is absolutely positioned. With no positioned ancestor that span resolved against the page
+ * and laid the document out 907px wide inside a 768px viewport, so the whole page scrolled sideways
+ * instead of the table scrolling inside its card. Same trap as follow-up-tabs.tsx and pipeline-board.tsx.
+ */
 function AgentTable({ rows }: { rows: AgentStatsRow[] }) {
   return (
-    <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
+    <div className="relative hidden overflow-x-auto rounded-xl border bg-card md:block">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-xs text-muted-foreground">

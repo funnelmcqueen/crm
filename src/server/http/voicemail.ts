@@ -50,8 +50,19 @@ export async function handleVoicemail(req: Request, callId: string, deps: Partia
   if (typeof recordingSid !== "string" || !isRecordingSid(recordingSid)) return applyCookies(httpError("not_found"));
 
   const range = req.headers.get("range");
-  if (!isTwilioConfigured(env) || getDialerDriver(env) === "mock") {
+  const twilioConfigured = isTwilioConfigured(env);
+  // The generated tone is a development convenience and must never stand in for a real recording.
+  // D24 refuses DIALER_DRIVER=mock in production so the app cannot fake calls; this is the same rule
+  // for the media path. An unconfigured production deployment (the documented fallback: unset
+  // DIALER_DRIVER resolves to `tel` there) would otherwise answer every voicemail with a 440 Hz beep,
+  // with nothing in the player to say so — and log_call marks that lead's voicemails handled once the
+  // agent moves on, so a real message would be silently marked as dealt with, unheard.
+  if (env.NODE_ENV !== "production" && (!twilioConfigured || getDialerDriver(env) === "mock")) {
     return applyCookies(toneResponse(range, AUDIO_HEADERS));
+  }
+  if (!twilioConfigured) {
+    logTwilioWarning("voicemail_unconfigured", { callId });
+    return applyCookies(httpError("unavailable"));
   }
 
   const rest = deps.rest ?? createTwilioRest(env);

@@ -38,7 +38,8 @@ export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
           <TableRow className="hover:bg-transparent">
             <TableHead className="h-11 pl-4">Business</TableHead>
             <TableHead>Phone</TableHead>
-            <TableHead className="hidden min-[1440px]:table-cell">Location</TableHead>
+            {/* SPEC 8 lists location among the desktop columns with no width condition. */}
+            <TableHead>Location</TableHead>
             <TableHead>Status</TableHead>
             {agentNames ? <TableHead>Agent</TableHead> : null}
             <TableHead>Last contacted</TableHead>
@@ -63,14 +64,9 @@ export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
                 {row.contactName ? (
                   <span className="block truncate text-xs text-muted-foreground">{row.contactName}</span>
                 ) : null}
-                {locationLabel(row.city, row.state) ? (
-                  <span className="block truncate text-xs text-muted-foreground min-[1440px]:hidden">
-                    {locationLabel(row.city, row.state)}
-                  </span>
-                ) : null}
               </TableCell>
               <TableCell className="whitespace-nowrap tabular-nums">{formatPhoneDisplay(row.phone)}</TableCell>
-              <TableCell className="hidden max-w-44 truncate text-muted-foreground min-[1440px]:table-cell">
+              <TableCell className="max-w-44 truncate text-muted-foreground">
                 {locationLabel(row.city, row.state) || "—"}
               </TableCell>
               <TableCell>

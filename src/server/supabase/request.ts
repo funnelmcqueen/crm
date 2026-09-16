@@ -2,6 +2,7 @@ import "server-only";
 import { createServerClient, parseCookieHeader, serializeCookieHeader, type CookieOptions } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { sessionCookieOptions } from "@/lib/supabase/cookie-options";
 import { getPublicSupabaseEnv } from "@/server/env";
 
 export interface RequestSupabase {
@@ -65,6 +66,7 @@ export function createRequestSupabase(req: Request): RequestSupabase {
   const pendingCookies: { name: string; value: string; options: CookieOptions }[] = [];
   const pendingHeaders: Record<string, string> = {};
   const supabase = createServerClient<Database>(url, anonKey, {
+    cookieOptions: sessionCookieOptions(),
     cookies: {
       getAll() {
         return parseCookieHeader(req.headers.get("cookie") ?? "").map(({ name, value }) => ({ name, value: value ?? "" }));

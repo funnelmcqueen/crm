@@ -121,7 +121,7 @@ export function AddNumberDialog({ mode }: AddNumberDialogProps) {
               aria-describedby="add-number-e164-hint"
               aria-invalid={normalized !== null && !normalized.ok}
               onChange={(event) => setE164(event.target.value)}
-              className="h-12 text-base tabular-nums md:text-sm"
+              className="h-12 text-base tabular-nums lg:text-sm"
             />
             <p id="add-number-e164-hint" className="min-h-5 text-xs text-muted-foreground tabular-nums">
               {normalized === null
@@ -141,7 +141,7 @@ export function AddNumberDialog({ mode }: AddNumberDialogProps) {
               value={label}
               disabled={disabled}
               onChange={(event) => setLabel(event.target.value)}
-              className="h-12 text-base md:text-sm"
+              className="h-12 text-base lg:text-sm"
             />
           </div>
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getRouteAuth, requireActive } from "@/server/context";
 import { getDialerDriver, getServerEnv, isTwilioConfigured, type ServerEnv } from "@/server/env";
 import { AppError, httpError, mapPostgrestError, toHttpResponse } from "@/server/errors";
+import { logTwilioError } from "@/server/twilio/log";
 import { createVoiceAccessToken } from "@/server/twilio/token";
 import { isAllowedOrigin, jsonResponse, NO_STORE } from "@/server/http/browser";
 
@@ -11,6 +12,24 @@ export interface BrowserRouteDeps {
 }
 
 type Auth = Awaited<ReturnType<typeof getRouteAuth>>;
+
+/**
+ * Reading the environment used to be each handler's first statement, outside the try block, so a
+ * ServerEnv validation error escaped the handler and Next rendered a generic 500: no mapped code for
+ * the client, and the Origin (CSRF) check never ran, because the throw preceded it. `runTwilioWebhook`
+ * is the in-repo precedent for the opposite — it catches the same call and answers with its own
+ * contract. AppError('unavailable') → 503 is what ARCHITECTURE section 7 promises for a dialer route
+ * with no working configuration. Nothing is queried before this, so no data is exposed either way.
+ */
+function resolveEnv(deps: Partial<BrowserRouteDeps>, route: string): { env: ServerEnv } | { response: Response } {
+  if (deps.env) return { env: deps.env };
+  try {
+    return { env: getServerEnv() };
+  } catch (error) {
+    logTwilioError("route_env_invalid", error, { route });
+    return { response: toHttpResponse(new AppError("unavailable")) };
+  }
+}
 
 /** Origin check, then session. Returns a finished response when either fails. */
 async function authenticate(req: Request, env: ServerEnv): Promise<{ response: Response } | { auth: Auth }> {
@@ -24,7 +43,9 @@ async function authenticate(req: Request, env: ServerEnv): Promise<{ response: R
 
 /** POST /api/voice/token → { token, identity, ttl } for the Twilio Voice SDK. */
 export async function handleVoiceToken(req: Request, deps: Partial<BrowserRouteDeps> = {}): Promise<Response> {
-  const env = deps.env ?? getServerEnv();
+  const resolved = resolveEnv(deps, "/api/voice/token");
+  if ("response" in resolved) return resolved.response;
+  const env = resolved.env;
   const result = await authenticate(req, env);
   if ("response" in result) return result.response;
   const { ctx, applyCookies } = result.auth;
@@ -46,7 +67,9 @@ export async function handleVoiceToken(req: Request, deps: Partial<BrowserRouteD
 
 /** POST /api/voice/presence: the registered Device's heartbeat, used for inbound routing. */
 export async function handleVoicePresence(req: Request, deps: Partial<BrowserRouteDeps> = {}): Promise<Response> {
-  const env = deps.env ?? getServerEnv();
+  const resolved = resolveEnv(deps, "/api/voice/presence");
+  if ("response" in resolved) return resolved.response;
+  const env = resolved.env;
   const result = await authenticate(req, env);
   if ("response" in result) return result.response;
   const { ctx, applyCookies } = result.auth;
@@ -67,7 +90,9 @@ const outboundBodySchema = z.object({ leadId: z.uuid() });
  * body whose lead the caller cannot dial is 404 with the same body as a random id.
  */
 export async function handleCallsOutbound(req: Request, deps: Partial<BrowserRouteDeps> = {}): Promise<Response> {
-  const env = deps.env ?? getServerEnv();
+  const resolved = resolveEnv(deps, "/api/calls/outbound");
+  if ("response" in resolved) return resolved.response;
+  const env = resolved.env;
   const result = await authenticate(req, env);
   if ("response" in result) return result.response;
   const { ctx, applyCookies } = result.auth;

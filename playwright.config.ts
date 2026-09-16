@@ -25,6 +25,9 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     actionTimeout: 15_000,
     navigationTimeout: 60_000,
+    // The voicemail journey plays an <audio> element from a script; without this Chrome's autoplay
+    // policy, not the app, would decide whether playback starts.
+    launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
   },
   projects: [
     {
@@ -43,17 +46,27 @@ export default defineConfig({
       // Desktop by default; pipeline-followups.spec.ts switches one describe block to a phone viewport
       // with test.use, because that flow has to work both ways.
       name: 'desktop',
-      testMatch: /(desktop-.*|isolation|admin-agents|export|pipeline-followups|settings-call-mode)\.spec\.ts$/,
+      testMatch:
+        /(admin-(agent-drilldown|agents|bulk-reassign|phone-numbers|reports)|desktop-.*|export|isolation|pipeline-followups|settings-call-mode)\.spec\.ts$/,
       use: { viewport: desktopViewport },
     },
     {
-      // The import spec inserts 92 leads into the shared database, which would break every spec that
+      // Logging the callback in this journey also completes its lead's follow-ups (D22), and
+      // pipeline-followups.spec.ts asserts that same follow-up is still open. Depending on the desktop
+      // project puts this after it whatever the file order, the way `import` does for the whole suite.
+      name: 'journey',
+      testMatch: /voicemail-callback\.spec\.ts$/,
+      dependencies: ['desktop'],
+      use: { viewport: desktopViewport },
+    },
+    {
+      // The import spec inserts 97 leads into the shared database, which would break every spec that
       // asserts a seeded total (isolation's "45 leads in total", the agent export). Depending on the
       // other projects makes it run last whatever the file order. It never retries: a second attempt
       // would import into the database the first attempt already changed.
       name: 'import',
       testMatch: /admin-import\.spec\.ts$/,
-      dependencies: ['mobile', 'desktop'],
+      dependencies: ['mobile', 'desktop', 'journey'],
       retries: 0,
       use: { viewport: desktopViewport },
     },

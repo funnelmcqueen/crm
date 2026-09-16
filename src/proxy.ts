@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
 import { LOGIN_PATH, isAdminPath, isPublicPath, safeNextPath } from "@/lib/supabase/auth-redirect";
+import { sessionCookieOptions } from "@/lib/supabase/cookie-options";
 import { getPublicSupabaseEnv } from "@/server/env";
 
 // Folders starting with "_" are private in the App Router, so no page can ever match this path and
@@ -29,6 +30,7 @@ export async function proxy(request: NextRequest) {
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient<Database>(url, anonKey, {
+    cookieOptions: sessionCookieOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();
