@@ -84,7 +84,7 @@ export async function pgError(promise: Promise<unknown>): Promise<PgErrorInfo> {
 // Arrange helpers (run as postgres)
 // ---------------------------------------------------------------------------------------------
 
-const phones = createPhoneFactory({ random: false });
+const phones = createPhoneFactory();
 let sequence = 0;
 
 export function nextPhone(): string {

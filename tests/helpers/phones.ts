@@ -1,4 +1,7 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { closeSync, mkdirSync, openSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SEED_LEADS, SEED_PHONE_NUMBERS, UNMATCHED_VOICEMAIL } from '../../scripts/lib/seed-data';
 import { normalizePhone } from '../../src/lib/domain/phone';
 
@@ -21,31 +24,61 @@ export const FIXTURE_AREA_CODES: readonly string[] = (() => {
   return codes;
 })();
 
+/** One area code's worth of numbers: 555-0100..0199. */
+const BLOCK_SIZE = 100;
+
+/**
+ * Reserves a block index that no other factory in this test run can hold.
+ *
+ * Partitioning by worker keeps concurrent workers apart, but vitest re-initializes module state for
+ * every test file, so a per-file cursor (random or not) can overlap another file that ran in the same
+ * partition — and phone_numbers.e164 is UNIQUE, so an overlap turns an insert into a conflict and makes
+ * "nothing was stored" assertions fail. Creating the marker with 'wx' is atomic, so the first caller to
+ * claim an index wins even if two processes race. The directory is keyed on the vitest main process, so
+ * it is shared by every worker of this run and survives worker recycling, and a new run starts clean.
+ */
+function reserveBlock(partition: number, blocks: number): number {
+  const dir = join(tmpdir(), `fmq-phone-blocks-${process.ppid}`, `p${partition}`);
+  mkdirSync(dir, { recursive: true });
+  for (let index = 0; index < blocks; index += 1) {
+    try {
+      closeSync(openSync(join(dir, String(index)), 'wx'));
+      return index;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  }
+  throw new Error(`fictional phone blocks exhausted for partition ${partition} (${blocks} blocks)`);
+}
+
 export interface PhoneFactory {
   /** A new E.164 number in the reserved fictional range +1 NXX 555-0100..0199. */
   next(): string;
 }
 
 /**
- * Numbers are drawn from a partition of the area codes so parallel vitest workers never collide,
- * starting at a random offset so repeated runs against a persistent stack rarely reuse numbers.
+ * Numbers are drawn from a partition of the area codes so parallel vitest workers never collide, and
+ * from a reserved block inside that partition so test files never collide with each other.
  */
-export function createPhoneFactory(options: { partition?: number; partitions?: number; random?: boolean } = {}): PhoneFactory {
+export function createPhoneFactory(options: { partition?: number; partitions?: number } = {}): PhoneFactory {
   const partitions = Math.max(1, options.partitions ?? 1);
-  const partition = ((options.partition ?? 0) % partitions + partitions) % partitions;
+  const partition = (((options.partition ?? 0) % partitions) + partitions) % partitions;
   const codes = FIXTURE_AREA_CODES.filter((_, index) => index % partitions === partition);
   if (codes.length === 0) throw new Error('no fixture area codes available for this partition');
-  const size = codes.length * 100;
-  let cursor = options.random === false ? 0 : randomInt(size);
+
+  // One block per area code: a file that needs more than 100 numbers takes the next block.
+  let block = reserveBlock(partition, codes.length);
   let issued = 0;
+
   return {
     next() {
-      if (issued >= size) throw new Error('fictional phone space exhausted for this partition');
-      const index = cursor % size;
-      cursor += 1;
+      if (issued >= BLOCK_SIZE) {
+        block = reserveBlock(partition, codes.length);
+        issued = 0;
+      }
+      const area = codes[block];
+      const line = String(100 + issued).padStart(4, '0');
       issued += 1;
-      const area = codes[Math.floor(index / 100)];
-      const line = String(100 + (index % 100)).padStart(4, '0');
       return `+1${area}555${line}`;
     },
   };
