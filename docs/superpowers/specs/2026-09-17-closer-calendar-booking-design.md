@@ -158,6 +158,19 @@ Fixtures from real names: *Swan Motel* → `hotel_motel`; *Maria's Pizzeria & Re
 *Coco Bakery-Restaurant* → `restaurant` (order 2 beats 3); *Sea Maids Creamery* → `cafe_bakery`;
 *Casa V. M. Ybor* → `other`. A stored `leads.business_type` always overrides the guess.
 
+### 7.1a Setting types in bulk
+The closer intends to categorize leads explicitly, so the stored type is the normal case and the guess is the
+fallback for anything left blank.
+
+- **CSV import:** a new optional *Business type* field in `CRM_IMPORT_FIELDS`, auto-mapped from the headers
+  *Business type*, *Category*, *Industry* and *Type*. A value maps to a type when it equals a type's label
+  (*Restaurant*, *Café / bakery*, *Hotel / motel*, *Home services*, *Auto*, *Retail*, *Beauty*, *Other*,
+  case-insensitive) or contains one of that type's §7.1 keywords (*Pizzeria* → `restaurant`). Anything else
+  imports as blank, and the review step counts it as *unrecognized business type*.
+- **Bulk action on All Leads (admin):** *Set business type…* with the eight types plus *Guess from name*
+  (clears the column). Backed by `bulk_set_business_type(p_lead_ids uuid[], p_type business_type)`, invoker,
+  admin only, `null` clears, same 5,000-id cap and `too_many_leads` error as `bulk_set_lead_source` (D41).
+
 ### 7.2 Rhythm profiles (lead's local time, every day)
 | Type | Avoid | Best |
 |---|---|---|
@@ -261,12 +274,13 @@ windows on weekdays 10:00–12:00 and 14:00–17:00 (closer's timezone), a few b
 - **Unit:** slot engine (alignment, window merging, windows crossing midnight, notice, horizon, the
   2026-11-01 US clock change, closer/agent/lead in three different zones); business-type guessing (§7.1
   fixtures, plus whole-word matching so *Innovation Labs* ≠ `inn`, *Spain Imports* ≠ `spa`, *Pizzazz Events* ≠
-  `pizza`, *Shopify Pros* ≠ `shop`); scoring and the 60-minute spread rule;
+  `pizza`, *Shopify Pros* ≠ `shop`); import value mapping (labels, keywords, unrecognized → blank); scoring and
+  the 60-minute spread rule;
   phrasing table (§8) including *noon*, *midnight* and the second-line rule; lead timezone mapping (codes, full
   names, unknown).
 - **Database:** agents select only their own appointments; admin selects all; `authenticated` (including admin)
-  cannot select `calendar_connection`; `get_calendar_status` and `cancel_appointment` admin-only; grants
-  matrix and schema contract updated.
+  cannot select `calendar_connection`; `get_calendar_status` and `cancel_appointment` admin-only; `bulk_set_business_type` admin-only,
+  clears with `null`, rejects more than 5,000 ids; grants matrix and schema contract updated.
 - **Integration (fake Google client):** privacy — a busy event titled *SECRET: dentist* never appears anywhere
   in an agent's serialized availability; booking race → `conflict`; Google failure at step 8 leaves no row;
   replayed `clientRequestId` → one appointment; `invalid_grant` → `broken_at` set and agents get
@@ -278,8 +292,8 @@ windows on weekdays 10:00–12:00 and 14:00–17:00 (closer's timezone), a few b
 ## 14. Milestones and deploy order
 
 1. **Milestone 1 — booking on the mock calendar:** migration (tables, enum, column, RPCs, grants), slot engine,
-   business type, scoring, phrasing, lead timezone, mock driver, availability and booking services, panel UI,
-   entry points, all tests. Shippable: production without Google shows the *not available* state.
+   business type (guessing, CSV import field, bulk action), scoring, phrasing, lead timezone, mock driver,
+   availability and booking services, panel UI, entry points, all tests. Shippable: production without Google shows the *not available* state.
 2. **Milestone 2 — Google:** OAuth connect/disconnect, calendar picker, token encryption, Google client
    (`events.list`, `events.insert`, `calendarList.list`), `invalid_grant` handling, status banner, README setup
    section.
