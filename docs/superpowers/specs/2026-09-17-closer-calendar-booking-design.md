@@ -91,15 +91,27 @@ bookable_calendar_set, broken)`; admin only, else `42501`. Never returns the tok
 | `client_request_id` | `uuid not null unique` | Idempotency key per booking attempt |
 | `created_at` | `timestamptz not null default now()` | |
 
-Index on `(starts_at)`. RLS select policy: `booked_by = auth.uid() or public.is_admin()`. No insert, update or
-delete grants to `authenticated`: the booking service writes with the service role after its own checks.
-Admin-only definer RPC `cancel_appointment(p_id uuid)` sets `status = 'cancelled'` (it does not touch Google;
-the closer deletes the event there).
+**Unique index** `appointments_live_start_key` on `(starts_at) where status in ('pending', 'scheduled')`: every
+appointment is exactly 30 minutes on a :00/:30 boundary, so this makes two live bookings of one slot impossible
+at the database level, whatever the timing between two agents.
+
+RLS select policy: `booked_by = auth.uid() or public.is_admin()`. No insert, update or delete grants to
+`authenticated`. All writes go through **guarded SECURITY DEFINER RPCs** that check the caller themselves, per
+the project rule that isolation lives in Postgres:
+
+| RPC | Who | Does |
+|---|---|---|
+| `begin_appointment(p_lead_id, p_starts_at, p_note, p_client_request_id) → appointments` | active user who can see the lead (admin: any; agent: assigned) | Rate limit `book_appointment` (20/hour, else `P0001 rate_limited`); validates the :00/:30 boundary and note length (`22023`); returns the existing row for a replayed `client_request_id`; deletes the caller's `pending` rows older than 10 minutes; inserts `pending`, mapping a unique-index clash to `P0001 slot_taken` |
+| `confirm_appointment(p_id, p_google_event_id) → appointments` | the booker, pending rows only | `pending` → `scheduled` with the event id |
+| `abandon_appointment(p_id) → void` | the booker, pending rows only | Deletes the pending row |
+| `cancel_appointment(p_id) → void` | admin | `scheduled` → `cancelled` (does not touch Google) |
+| `booked_intervals(p_from, p_to) → table(starts_at, ends_at)` | active user | Start/end of every live appointment in range, with no lead or agent, so another agent's fresh booking disappears from the picker before Google is re-read |
+| `set_lead_business_type(p_lead_id, p_type) → void` | active user who can see the lead | Sets or clears (`null`) `leads.business_type` |
 
 ### 5.3 `leads.business_type`
 New enum `business_type`: `restaurant`, `cafe_bakery`, `hotel_motel`, `home_services`, `auto`, `retail`,
-`beauty`, `other`. Nullable column on `leads`; null means *infer from the name*. Editable by anyone who can edit
-the lead, through the same guarded update path as other lead fields (column grant plus `leads_guard`).
+`beauty`, `other`. Nullable column on `leads`; null means *infer from the name*. Agents may change only status and
+notes through a direct update (`leads_guard`), so corrections go through `set_lead_business_type` (§5.2).
 
 Every new function goes into the `tests/db/grants.test.ts` EXECUTE matrix; the new FKs go into
 `tests/db/schema-contract.test.ts`.
@@ -108,7 +120,8 @@ Every new function goes into the `tests/db/grants.test.ts` EXECUTE matrix; the n
 
 A pure function in `src/lib/domain/calendar-slots.ts`:
 
-**Inputs:** bookable windows (events on the bookable calendar), busy intervals (§4), `now`, horizon
+**Inputs:** bookable windows (events on the bookable calendar), busy intervals (§4) merged with
+`booked_intervals` (§5.2), `now`, horizon
 `BOOKING_HORIZON_DAYS = 14`, notice `BOOKING_NOTICE_MINUTES = 120`, closer timezone (the `connected_by`
 profile's timezone when a Google calendar is connected; `settings.default_timezone` with the mock driver).
 
@@ -166,7 +179,8 @@ fallback for anything left blank.
   *Business type*, *Category*, *Industry* and *Type*. A value maps to a type when it equals a type's label
   (*Restaurant*, *Café / bakery*, *Hotel / motel*, *Home services*, *Auto*, *Retail*, *Beauty*, *Other*,
   case-insensitive) or contains one of that type's §7.1 keywords (*Pizzeria* → `restaurant`). Anything else
-  imports as blank, and the review step counts it as *unrecognized business type*.
+  imports as blank and the original value is kept in the lead's notes as `Business type: {value}`, the way
+  import already preserves unmapped columns.
 - **Bulk action on All Leads (admin):** *Set business type…* with the eight types plus *Guess from name*
   (clears the column). Backed by `bulk_set_business_type(p_lead_ids uuid[], p_type business_type)`, invoker,
   admin only, `null` clears, same 5,000-id cap and `too_many_leads` error as `bulk_set_lead_source` (D41).
@@ -217,22 +231,17 @@ instant, a second line reads *(6 pm your time)*.
 4. Choosing a slot shows *Book {phrase} with {business}?*, an optional note for the closer (≤ 500 chars) and
    **Book**.
 
-**Server action `bookAppointment({leadId, start, note, clientRequestId})`:**
-1. Require an active session; the lead must be readable by the caller (existing lead RLS), else `not_found`.
-2. Rate limit `book_appointment`: 20 per user per hour → `rate_limited`.
-3. Validate `start` is a slot boundary and `end = start + 30 min`.
-4. If an appointment with this `clientRequestId` exists, return it (idempotent).
-5. Delete `pending` appointments older than 10 minutes (abandoned attempts).
-6. Re-read windows and busy **bypassing the cache**; if the slot is no longer free → `conflict`
-   (*"That time was just taken"*).
-7. Insert the appointment as `pending`.
-8. Create the Google event on the primary calendar. On failure, delete the pending row and return
-   `unavailable`.
-9. Set `status = 'scheduled'` and `google_event_id`.
-10. The action returns the appointment. If a call is active, the panel (client) tells the dialer to set the
-    wrap-up's `preselectedOutcome = 'APPOINTMENT'`, and logging the outcome applies the status mapping as today.
-    Otherwise the action also moves the lead's status to Appointment through the existing status update (no call
-    row is created).
+**Server action `bookAppointment({leadId, start, note, clientRequestId, inCall})`:**
+1. `begin_appointment` (§5.2) — access, rate limit, boundary, idempotency, abandoned-row cleanup, and the
+   pending insert; a replayed request that is already `scheduled` returns immediately.
+2. Re-read windows and busy **bypassing the cache**; if the slot is no longer free, `abandon_appointment` and
+   return `conflict` (*"That time was just taken"*). `slot_taken` from step 1 returns the same message.
+3. Create the Google event on the primary calendar. On failure, `abandon_appointment` and return `unavailable`.
+4. `confirm_appointment` with the event id.
+5. If `inCall` is false, move the lead's status to Appointment through the existing status update (no call row).
+   If `inCall` is true, the panel (client) dispatches a new dialer action `MEETING_BOOKED`: the live call
+   remembers it, and the wrap-up that follows opens with `preselectedOutcome = 'APPOINTMENT'`, so logging the
+   outcome applies the status mapping as today.
 
 **Google event content:** title *Meeting: {business}*; description with contact name, phone (E.164 and
 formatted), city/state, *Booked by {agent}*, the note, and `{APP_BASE_URL}/leads/{leadId}`; no attendees, so
@@ -281,7 +290,7 @@ windows on weekdays 10:00–12:00 and 14:00–17:00 (closer's timezone), a few b
 - **Database:** agents select only their own appointments; admin selects all; `authenticated` (including admin)
   cannot select `calendar_connection`; `get_calendar_status` and `cancel_appointment` admin-only; `bulk_set_business_type` admin-only,
   clears with `null`, rejects more than 5,000 ids; grants matrix and schema contract updated.
-- **Integration (fake Google client):** privacy — a busy event titled *SECRET: dentist* never appears anywhere
+- **Integration (fake Google client):** `slot_taken` when two bookings race for one start; privacy — a busy event titled *SECRET: dentist* never appears anywhere
   in an agent's serialized availability; booking race → `conflict`; Google failure at step 8 leaves no row;
   replayed `clientRequestId` → one appointment; `invalid_grant` → `broken_at` set and agents get
   *unavailable*; rate limit.
