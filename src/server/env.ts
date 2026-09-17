@@ -5,6 +5,9 @@ import { isUnsafePublicSupabaseKey } from "@/lib/supabase/public-key";
 export const DIALER_DRIVERS = ["twilio", "tel", "mock"] as const;
 export type DialerDriver = (typeof DIALER_DRIVERS)[number];
 
+export const CALENDAR_DRIVERS = ["google", "mock"] as const;
+export type CalendarDriver = (typeof CALENDAR_DRIVERS)[number];
+
 export type EnvSource = Readonly<Record<string, string | undefined>>;
 
 const TWILIO_KEYS = [
@@ -75,6 +78,10 @@ const serverEnvSchema = publicSupabaseSchema
       (value) => (typeof value === "string" ? blankToUndefined(value.trim().toLowerCase()) : value),
       z.enum(DIALER_DRIVERS).optional(),
     ),
+    CALENDAR_DRIVER: z.preprocess(
+      (value) => (typeof value === "string" ? blankToUndefined(value.trim().toLowerCase()) : value),
+      z.enum(CALENDAR_DRIVERS).optional(),
+    ),
     TWILIO_ACCOUNT_SID: optionalString,
     TWILIO_AUTH_TOKEN: optionalString,
     TWILIO_API_KEY_SID: optionalString,
@@ -90,6 +97,13 @@ const serverEnvSchema = publicSupabaseSchema
         code: "custom",
         path: ["DIALER_DRIVER"],
         message: "must not be mock in production (the mock dialer fakes calls and voicemail audio)",
+      });
+    }
+    if (env.CALENDAR_DRIVER === "mock" && env.NODE_ENV === "production") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CALENDAR_DRIVER"],
+        message: "must not be mock in production (the mock calendar invents availability)",
       });
     }
     if (env.DIALER_DRIVER !== "twilio") return;
@@ -121,6 +135,7 @@ function readProcessEnv(): EnvSource {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     APP_BASE_URL: process.env.APP_BASE_URL,
     DIALER_DRIVER: process.env.DIALER_DRIVER,
+    CALENDAR_DRIVER: process.env.CALENDAR_DRIVER,
     TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
     TWILIO_API_KEY_SID: process.env.TWILIO_API_KEY_SID,
@@ -168,6 +183,15 @@ export function getDialerDriver(env: ServerEnv = getServerEnv()): DialerDriver {
   if (env.DIALER_DRIVER) return env.DIALER_DRIVER;
   if (isTwilioConfigured(env)) return "twilio";
   return env.NODE_ENV === "production" ? "tel" : "mock";
+}
+
+/**
+ * Which calendar booking uses (docs/DEVIATIONS.md D46): an explicit CALENDAR_DRIVER, else the mock calendar in
+ * development and tests. Production without a driver has no calendar, so booking reports itself unavailable.
+ */
+export function getCalendarDriver(env: ServerEnv = getServerEnv()): CalendarDriver | "unavailable" {
+  if (env.CALENDAR_DRIVER) return env.CALENDAR_DRIVER;
+  return env.NODE_ENV === "production" ? "unavailable" : "mock";
 }
 
 export function resetEnvCacheForTests(): void {
