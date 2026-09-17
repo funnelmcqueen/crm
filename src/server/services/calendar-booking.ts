@@ -5,16 +5,25 @@
 // field by field below, so a client that hands back more (a title, attendees) still cannot leak it.
 import { z } from "zod";
 import { suggestSlots } from "@/lib/domain/business-rhythm";
-import { BOOKING_UNAVAILABLE_MESSAGE, CALENDAR_LOAD_FAILED_MESSAGE } from "@/lib/domain/booking-messages";
-import { resolveBusinessType, type BusinessType } from "@/lib/domain/business-type";
-import { BOOKING_HORIZON_DAYS, freeSlots, mergeIntervals, type Interval } from "@/lib/domain/calendar-slots";
+import {
+  BOOKING_FAILED_MESSAGE,
+  BOOKING_UNAVAILABLE_MESSAGE,
+  CALENDAR_LOAD_FAILED_MESSAGE,
+  SLOT_TAKEN_MESSAGE,
+} from "@/lib/domain/booking-messages";
+import { isBusinessType, resolveBusinessType, type BusinessType } from "@/lib/domain/business-type";
+import { BOOKING_HORIZON_DAYS, SLOT_MS, freeSlots, mergeIntervals, type Interval } from "@/lib/domain/calendar-slots";
 import { leadTimeZone } from "@/lib/domain/lead-timezone";
+import { buildMeetingDescription, meetingTitle } from "@/lib/domain/meeting-description";
 import { phraseSlot, yourTimeLine, zoneAbbreviation } from "@/lib/domain/slot-phrase";
+import type { LeadStatus } from "@/lib/domain/statuses";
 import { formatInTz } from "@/lib/domain/time";
 import { resolveCalendarClient } from "@/server/calendar/client";
 import type { CalendarClient } from "@/server/calendar/types";
-import { requireActive, type RequestContext } from "@/server/context";
+import { requireActive, requireAdmin, type RequestContext } from "@/server/context";
+import { getServerEnv } from "@/server/env";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
+import { updateLeadStatus } from "@/server/services/leads";
 
 const CACHE_TTL_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -203,4 +212,232 @@ export async function getAgentAvailability(
     busy: busy.filter((block) => block.end > now).map((block) => ({ start: block.start.toISOString(), end: block.end.toISOString() })),
     mine: await myMeetings(active, now),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Booking
+// ---------------------------------------------------------------------------------------------
+
+const MAX_NOTE_LENGTH = 500;
+/** Booking never moves a lead backwards or out of Do Not Contact (compare NO_DOWNGRADE_STATUSES in outcomes.ts). */
+const KEEP_STATUS_ON_BOOKING: readonly LeadStatus[] = ["APPOINTMENT", "PROPOSAL", "CLIENT", "DO_NOT_CONTACT"];
+
+export interface BookedAppointment {
+  id: string;
+  leadId: string;
+  start: string;
+  end: string;
+  phrase: string;
+  zone: string;
+  /** True when a booking outside a call could not move the lead to Appointment. */
+  statusNeedsAttention: boolean;
+}
+
+export interface LeadMeeting {
+  id: string;
+  start: string;
+  end: string;
+  /** Admins only; null for agents. */
+  bookedByName: string | null;
+}
+
+const bookSchema = z.object({
+  leadId: z.string(),
+  start: z.iso.datetime({ offset: true, message: "Pick a time from the calendar." }),
+  note: z
+    .string()
+    .trim()
+    .max(MAX_NOTE_LENGTH, `A note for the closer can be at most ${MAX_NOTE_LENGTH} characters.`)
+    .nullish(),
+  clientRequestId: z.uuid(),
+  inCall: z.boolean(),
+});
+
+/**
+ * Runs only on a path that is already failing, so the original error stays the one the agent sees. A failure here
+ * is logged (ids and code only) and is harmless: begin_appointment clears a pending row once it is ten minutes old.
+ */
+async function abandon(ctx: RequestContext, appointmentId: string): Promise<void> {
+  const { error } = await ctx.supabase.rpc("abandon_appointment", { p_id: appointmentId });
+  if (error) console.error("[booking] abandon_appointment failed", { appointmentId, code: error.code });
+}
+
+async function ensureStillFree(ctx: RequestContext, calendar: CalendarClient, appointmentId: string, start: Date, now: Date): Promise<void> {
+  let read: { windows: Interval[]; busy: Interval[] };
+  try {
+    read = await readCalendar(calendar, new Date(start.getTime() - SLOT_MS), new Date(start.getTime() + 2 * SLOT_MS), false);
+  } catch (error) {
+    await abandon(ctx, appointmentId);
+    throw error;
+  }
+  const free = freeSlots({ windows: read.windows, busy: read.busy, now }).some((slot) => slot.start.getTime() === start.getTime());
+  if (!free) {
+    await abandon(ctx, appointmentId);
+    throw new AppError("conflict", SLOT_TAKEN_MESSAGE, { reason: "slot_taken" });
+  }
+}
+
+function appBaseUrl(): string | null {
+  try {
+    return getServerEnv().APP_BASE_URL ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function createMeetingEvent(
+  ctx: RequestContext,
+  calendar: CalendarClient,
+  appointmentId: string,
+  leadId: string,
+  start: Date,
+  end: Date,
+  note: string | null,
+): Promise<string> {
+  const { data: lead, error } = await ctx.supabase
+    .from("leads")
+    .select("business_name, contact_name, phone, city, state")
+    .eq("id", leadId)
+    .maybeSingle();
+  if (error || !lead) {
+    await abandon(ctx, appointmentId);
+    if (error) fail(error);
+    throw new AppError("not_found");
+  }
+  const baseUrl = appBaseUrl();
+  try {
+    const { eventId } = await calendar.createMeeting({
+      start,
+      end,
+      title: meetingTitle(lead.business_name),
+      description: buildMeetingDescription({
+        businessName: lead.business_name,
+        contactName: lead.contact_name,
+        phone: lead.phone,
+        city: lead.city,
+        state: lead.state,
+        bookedBy: ctx.profile.name || ctx.profile.email,
+        note,
+        leadUrl: baseUrl ? `${baseUrl}/leads/${leadId}` : null,
+      }),
+    });
+    return eventId;
+  } catch (cause) {
+    await abandon(ctx, appointmentId);
+    throw new AppError("unavailable", BOOKING_FAILED_MESSAGE, { cause });
+  }
+}
+
+/** True when the lead's status is where a booking leaves it; false tells the agent to set Appointment by hand. */
+async function moveToAppointment(ctx: RequestContext, leadId: string): Promise<boolean> {
+  const { data, error } = await ctx.supabase.from("leads").select("status").eq("id", leadId).maybeSingle();
+  if (error || !data) return false;
+  if (KEEP_STATUS_ON_BOOKING.includes(data.status)) return true;
+  try {
+    await updateLeadStatus(ctx, leadId, "APPOINTMENT");
+    return true;
+  } catch {
+    // Not swallowed: the booking stands, and the result tells the agent to set the status by hand.
+    return false;
+  }
+}
+
+async function bookedView(
+  ctx: RequestContext,
+  id: string,
+  leadId: string,
+  start: Date,
+  end: Date,
+  now: Date,
+): Promise<Omit<BookedAppointment, "statusNeedsAttention">> {
+  const { data: lead } = await ctx.supabase.from("leads").select("state, country").eq("id", leadId).maybeSingle();
+  const { timeZone } = leadTimeZone({ state: lead?.state ?? null, country: lead?.country ?? null }, ctx.profile.timezone);
+  return {
+    id,
+    leadId,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    phrase: phraseSlot(start, timeZone, now),
+    zone: zoneAbbreviation(start, timeZone),
+  };
+}
+
+/**
+ * begin_appointment (access, rate limit, replay, one live booking per slot) → re-check the calendar without the
+ * cache → create the event → confirm_appointment. Any failure after the pending row exists abandons it.
+ */
+export async function bookAppointment(ctx: RequestContext | null, input: unknown, deps: CalendarDeps = {}): Promise<BookedAppointment> {
+  const active = requireActive(ctx);
+  const parsed = bookSchema.safeParse(input);
+  if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Pick a time and try again.");
+  const leadId = parseId(parsed.data.leadId);
+  const note = parsed.data.note ? parsed.data.note : null;
+  const calendar = await calendarFor(active, deps);
+  const now = deps.now?.() ?? new Date();
+
+  const { data: row, error } = await active.supabase.rpc("begin_appointment", {
+    p_lead_id: leadId,
+    p_starts_at: new Date(parsed.data.start).toISOString(),
+    p_note: note ?? undefined,
+    p_client_request_id: parsed.data.clientRequestId,
+  });
+  if (error) fail(error);
+  if (!row) throw new AppError("internal");
+
+  const start = new Date(row.starts_at);
+  const end = new Date(row.ends_at);
+  let statusNeedsAttention = false;
+  if (row.status === "pending") {
+    await ensureStillFree(active, calendar, row.id, start, now);
+    const eventId = await createMeetingEvent(active, calendar, row.id, leadId, start, end, note);
+    const { error: confirmError } = await active.supabase.rpc("confirm_appointment", { p_id: row.id, p_google_event_id: eventId });
+    if (confirmError) fail(confirmError);
+    if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, leadId));
+  }
+  return { ...(await bookedView(active, row.id, leadId, start, end, now)), statusNeedsAttention };
+}
+
+export async function cancelAppointment(ctx: RequestContext | null, id: unknown): Promise<{ id: string }> {
+  const admin = requireAdmin(ctx);
+  const appointmentId = parseId(id);
+  const { error } = await admin.supabase.rpc("cancel_appointment", { p_id: appointmentId });
+  if (error) fail(error);
+  return { id: appointmentId };
+}
+
+export async function setLeadBusinessType(
+  ctx: RequestContext | null,
+  leadId: unknown,
+  type: unknown,
+): Promise<{ leadId: string; businessType: BusinessType | null }> {
+  const active = requireActive(ctx);
+  const id = parseId(leadId);
+  const businessType: BusinessType | null = isBusinessType(type) ? type : null;
+  if (type !== null && businessType === null) throw new AppError("validation", "Choose a business type.");
+  const { error } = await active.supabase.rpc("set_lead_business_type", { p_lead_id: id, p_type: businessType ?? undefined });
+  if (error) fail(error);
+  return { leadId: id, businessType };
+}
+
+export async function getNextMeeting(ctx: RequestContext | null, leadId: unknown, now: Date = new Date()): Promise<LeadMeeting | null> {
+  const active = requireActive(ctx);
+  const id = parseId(leadId);
+  const { data, error } = await active.supabase
+    .from("appointments")
+    .select("id, starts_at, ends_at, booked_by")
+    .eq("lead_id", id)
+    .eq("status", "scheduled")
+    .gt("ends_at", now.toISOString())
+    .order("starts_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) fail(error);
+  if (!data) return null;
+
+  let bookedByName: string | null = null;
+  if (active.profile.role === "ADMIN") {
+    const { data: profile } = await active.supabase.from("profiles").select("name, email").eq("id", data.booked_by).maybeSingle();
+    bookedByName = profile ? profile.name || profile.email : null;
+  }
+  return { id: data.id, start: new Date(data.starts_at).toISOString(), end: new Date(data.ends_at).toISOString(), bookedByName };
 }
