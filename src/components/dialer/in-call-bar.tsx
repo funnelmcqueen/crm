@@ -2,6 +2,7 @@
 
 import { Grid3x3, Mic, MicOff, PhoneOff, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { BookMeetingButton } from "@/components/booking/book-meeting-button";
 import { formatCallTimer, type DialerState } from "@/lib/dialer/state";
 import { cn } from "@/lib/utils";
 import { Keypad } from "./keypad";
@@ -65,6 +66,14 @@ export function InCallBar({ state, onHangup, onMutedChange, onDigits }: InCallBa
             ) : null}
           </p>
         </div>
+
+        {state.subject.leadId ? (
+          <BookMeetingButton
+            leadId={state.subject.leadId}
+            businessName={state.subject.label}
+            triggerClassName={cn(controlClass, "bg-black/20 hover:bg-black/30")}
+          />
+        ) : null}
 
         <button
           type="button"

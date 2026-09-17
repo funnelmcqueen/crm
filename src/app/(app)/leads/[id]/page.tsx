@@ -2,6 +2,8 @@ import { ChevronLeft, Globe, Mail, MapPin, ShieldBan } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BookMeetingButton } from "@/components/booking/book-meeting-button";
+import { NextMeeting } from "@/components/booking/next-meeting";
 import { DateTime, currentTime } from "@/components/common/datetime";
 import { StatusBadge } from "@/components/common/status-badge";
 import { CallButton } from "@/components/dialer/call-button";
@@ -14,8 +16,10 @@ import { LeadNotesForm } from "@/components/leads/lead-notes-form";
 import { LeadStatusSelect } from "@/components/leads/lead-status-select";
 import { OpenSkipNotice, SkipHistory } from "@/components/leads/lead-skips";
 import type { DialableLead } from "@/lib/dialer/types";
+import { leadTimeZone } from "@/lib/domain/lead-timezone";
 import { websiteHref } from "@/lib/domain/website";
 import { requireUserPage } from "@/server/context";
+import { getNextMeeting } from "@/server/services/calendar-booking";
 import { getLeadDetail, listAgentsForFilter } from "@/server/services/leads";
 import { getLeadSkipHistory } from "@/server/services/skipped-leads";
 
@@ -45,9 +49,10 @@ export default async function LeadDetailPage({
 
   const { lead, history } = detail;
   const isAdmin = ctx.profile.role === "ADMIN";
-  const [agents, skips] = await Promise.all([
+  const [agents, skips, nextMeeting] = await Promise.all([
     isAdmin ? listAgentsForFilter(ctx).then((all) => all.filter((agent) => agent.active)) : Promise.resolve([]),
     getLeadSkipHistory(ctx, lead.id),
+    getNextMeeting(ctx, lead.id),
   ]);
   const openSkip = skips.find((skip) => skip.resolvedAt === null) ?? null;
   const tz = ctx.profile.timezone;
@@ -99,6 +104,24 @@ export default async function LeadDetailPage({
           <CallButton lead={dialable} size="lg" className="h-14 min-w-48 text-lg font-extrabold" />
         </div>
       </header>
+
+      {lead.status !== "DO_NOT_CONTACT" || nextMeeting ? (
+        <div className="mb-4 flex flex-col gap-3">
+          {lead.status !== "DO_NOT_CONTACT" ? (
+            <div>
+              <BookMeetingButton leadId={lead.id} businessName={lead.businessName} />
+            </div>
+          ) : null}
+          {nextMeeting ? (
+            <NextMeeting
+              meeting={nextMeeting}
+              timeZone={leadTimeZone({ state: lead.state, country: lead.country }, tz).timeZone}
+              now={new Date(now)}
+              isAdmin={isAdmin}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {openSkip ? (
         <OpenSkipNotice
