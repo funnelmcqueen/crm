@@ -85,6 +85,9 @@ const MATRIX: Record<string, Access> = {
   // agent Today dashboard
   get_my_call_days: 'api',
   my_caller_id_available: 'api',
+  // closer calendar booking (D46)
+  set_lead_business_type: 'api',
+  bulk_set_business_type: 'api',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',
@@ -120,6 +123,7 @@ const INVOKER = new Set([
   'bulk_delete_leads',
   'export_selected_leads',
   'list_skipped_leads',
+  'bulk_set_business_type',
 ]);
 
 interface FnAcl {

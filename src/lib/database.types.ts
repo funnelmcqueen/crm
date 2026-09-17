@@ -194,6 +194,7 @@ export type Database = {
           address: string | null
           assigned_to: string | null
           business_name: string
+          business_type: Database["public"]["Enums"]["business_type"] | null
           call_count: number
           city: string | null
           contact_name: string | null
@@ -218,6 +219,7 @@ export type Database = {
           address?: string | null
           assigned_to?: string | null
           business_name: string
+          business_type?: Database["public"]["Enums"]["business_type"] | null
           call_count?: number
           city?: string | null
           contact_name?: string | null
@@ -242,6 +244,7 @@ export type Database = {
           address?: string | null
           assigned_to?: string | null
           business_name?: string
+          business_type?: Database["public"]["Enums"]["business_type"] | null
           call_count?: number
           city?: string | null
           contact_name?: string | null
@@ -562,6 +565,13 @@ export type Database = {
           lead_id: string
           result: string
         }[]
+      }
+      bulk_set_business_type: {
+        Args: {
+          p_lead_ids: string[]
+          p_type?: Database["public"]["Enums"]["business_type"]
+        }
+        Returns: number
       }
       bulk_set_lead_source: {
         Args: {
@@ -952,6 +962,13 @@ export type Database = {
           website: string
         }[]
       }
+      set_lead_business_type: {
+        Args: {
+          p_lead_id: string
+          p_type?: Database["public"]["Enums"]["business_type"]
+        }
+        Returns: undefined
+      }
       skip_lead: {
         Args: {
           p_lead_id: string
@@ -970,6 +987,7 @@ export type Database = {
       }
     }
     Enums: {
+      business_type: "restaurant" | "cafe_bakery" | "hotel_motel" | "home_services" | "auto" | "retail" | "beauty" | "other"
       call_direction: "OUTBOUND" | "INBOUND"
       call_mode: "IN_APP" | "TEL"
       call_outcome: "NO_ANSWER" | "VOICEMAIL" | "CONNECTED" | "INTERESTED" | "FOLLOW_UP" | "APPOINTMENT" | "NOT_INTERESTED" | "WRONG_NUMBER"
@@ -1102,6 +1120,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      business_type: ["restaurant", "cafe_bakery", "hotel_motel", "home_services", "auto", "retail", "beauty", "other"],
       call_direction: ["OUTBOUND", "INBOUND"],
       call_mode: ["IN_APP", "TEL"],
       call_outcome: ["NO_ANSWER", "VOICEMAIL", "CONNECTED", "INTERESTED", "FOLLOW_UP", "APPOINTMENT", "NOT_INTERESTED", "WRONG_NUMBER"],
