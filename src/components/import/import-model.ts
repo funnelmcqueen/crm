@@ -39,6 +39,7 @@ export const IMPORT_FIELD_MAX_LENGTH: Readonly<Record<ImportFieldKey, number>> =
   state: 100,
   country: 100,
   source: 200,
+  business_type: 100,
   notes: 10_000,
 };
 

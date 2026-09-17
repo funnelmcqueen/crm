@@ -284,7 +284,8 @@ describe.runIf(isLocalbaseStack())('samples/leads.csv end to end (private seeded
     const perAgent = agents.map((agent) => (stored.data ?? []).filter((lead) => lead.assigned_to === agent.id).length);
     expect(perAgent).toEqual(splitCounts(92, 3));
     expect((stored.data ?? []).every((lead) => /^\+1\d{10}$/.test(lead.phone))).toBe(true);
-    expect((stored.data ?? []).some((lead) => lead.notes?.includes('Industry: '))).toBe(true);
+    // "Industry" is now a recognized business type column (Task 11); "Employees" stays unmapped and still lands in notes.
+    expect((stored.data ?? []).some((lead) => lead.notes?.includes('Employees: '))).toBe(true);
 
     // Importing the same file again finds every valid row as a duplicate; nothing is ready.
     const again = await previewSample();
