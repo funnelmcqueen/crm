@@ -19,6 +19,8 @@ export interface DialerContextValue {
   hangup(): void;
   setMuted(muted: boolean): void;
   sendDigits(digits: string): void;
+  /** Remember a meeting booked with this lead, so the wrap-up opens on Appointment. */
+  markMeetingBooked(leadId: string): void;
   /** The in-app device is registered, so it can place and receive calls. */
   deviceReady: boolean;
   /**
