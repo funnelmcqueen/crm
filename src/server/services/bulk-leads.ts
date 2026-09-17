@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_QUERY_LENGTH, MAX_SOURCE_LENGTH } from "@/components/leads/list-params";
+import { isBusinessType, type BusinessType } from "@/lib/domain/business-type";
 import {
   MAX_BULK_LEADS,
   MAX_BULK_NOTE_LENGTH,
@@ -371,6 +372,21 @@ export async function bulkSetSource(ctx: RequestContext | null, leadIds: unknown
   const { data, error } = await admin.supabase.rpc("bulk_set_lead_source", { p_lead_ids: ids, p_source: value as string });
   if (error) fail(error);
   return { requested: ids.length, count: typeof data === "number" ? data : 0, source: value };
+}
+
+/** Admin: set or clear (null) the business type that ranks meeting times (docs/DEVIATIONS.md D46). */
+export async function bulkSetBusinessType(
+  ctx: RequestContext | null,
+  leadIds: unknown,
+  type: unknown,
+): Promise<BulkCountResult & { businessType: BusinessType | null }> {
+  const admin = requireAdmin(ctx);
+  const ids = parseIds(leadIds);
+  const businessType: BusinessType | null = isBusinessType(type) ? type : null;
+  if (type !== null && businessType === null) throw new AppError("validation", "Choose a business type.");
+  const { data, error } = await admin.supabase.rpc("bulk_set_business_type", { p_lead_ids: ids, p_type: businessType ?? undefined });
+  if (error) fail(error);
+  return { requested: ids.length, count: typeof data === "number" ? data : 0, businessType };
 }
 
 /** Hard delete of the selected leads; their calls and follow-ups go with them (SPEC 4). */

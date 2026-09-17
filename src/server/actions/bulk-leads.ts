@@ -1,6 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
+import type { BusinessType } from "@/lib/domain/business-type";
 import type {
   BulkAssignResult,
   BulkCountResult,
@@ -16,6 +17,7 @@ import {
   bulkCompleteFollowUps,
   bulkDelete,
   bulkScheduleFollowUp,
+  bulkSetBusinessType,
   bulkSetSource,
   bulkUpdateStatus,
   listMatchingLeadIds,
@@ -78,6 +80,15 @@ export async function bulkSetSourceAction(
   source: string | null,
 ): Promise<ActionResult<BulkCountResult & { source: string | null }>> {
   const result = await runAction(async () => bulkSetSource(await getActionContext(), leadIds, source));
+  if (result.ok) refresh();
+  return result;
+}
+
+export async function bulkSetBusinessTypeAction(
+  leadIds: string[],
+  type: BusinessType | null,
+): Promise<ActionResult<BulkCountResult & { businessType: BusinessType | null }>> {
+  const result = await runAction(async () => bulkSetBusinessType(await getActionContext(), leadIds, type));
   if (result.ok) refresh();
   return result;
 }

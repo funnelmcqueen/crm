@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, ChevronDown, Download, ListChecks, MoreHorizontal, Tag, Trash2, UserMinus, UserPlus, X } from "lucide-react";
+import { CalendarClock, ChevronDown, Download, ListChecks, MoreHorizontal, Store, Tag, Trash2, UserMinus, UserPlus, X } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   describeAssignResult,
+  describeBusinessTypeResult,
   describeCompletedFollowUps,
   describeDeleteResult,
   describeFollowUpResult,
@@ -31,13 +32,14 @@ import {
   bulkCompleteFollowUpsAction,
   bulkDeleteAction,
   bulkScheduleFollowUpAction,
+  bulkSetBusinessTypeAction,
   bulkSetSourceAction,
   bulkUpdateStatusAction,
   listMatchingLeadIdsAction,
   undoBulkChangeAction,
 } from "@/server/actions/bulk-leads";
 import type { ActionResult } from "@/server/errors";
-import { BulkConfirmDialog, BulkFollowUpDialog, BulkSourceDialog } from "./bulk-dialogs";
+import { BulkBusinessTypeDialog, BulkConfirmDialog, BulkFollowUpDialog, BulkSourceDialog } from "./bulk-dialogs";
 import { selectAllMatchingLabel } from "./selection";
 import { useLeadSelectionContext } from "./selection-context";
 
@@ -54,7 +56,7 @@ export interface BulkActionBarProps {
   now: number;
 }
 
-type OpenDialog = "follow-up" | "source" | "delete" | "clear-follow-ups" | "do-not-contact" | null;
+type OpenDialog = "follow-up" | "source" | "business-type" | "delete" | "clear-follow-ups" | "do-not-contact" | null;
 
 const UNDO_MS = 10_000;
 const BUTTON = "h-12 gap-2 px-4";
@@ -312,10 +314,16 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
                 Clear follow-ups
               </DropdownMenuItem>
               {isAdmin ? (
-                <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => setDialog("source")}>
-                  <Tag aria-hidden />
-                  Change source
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => setDialog("source")}>
+                    <Tag aria-hidden />
+                    Change source
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => setDialog("business-type")}>
+                    <Store aria-hidden />
+                    Set business type
+                  </DropdownMenuItem>
+                </>
               ) : null}
               <DropdownMenuItem className="min-h-12 gap-2" onSelect={exportSelected}>
                 <Download aria-hidden />
@@ -371,6 +379,19 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
               source === null ? `Clearing the source on ${leadCount(count)}…` : `Setting the source on ${leadCount(count)}…`,
               () => bulkSetSourceAction(selectedIds, source),
               (data) => confirmed(describeSourceResult(data, data.source), null),
+            )
+          }
+        />
+      ) : null}
+      {dialog === "business-type" ? (
+        <BulkBusinessTypeDialog
+          count={count}
+          onClose={() => setDialog(null)}
+          onSubmit={(type) =>
+            run(
+              type === null ? `Clearing the business type on ${leadCount(count)}…` : `Setting the business type on ${leadCount(count)}…`,
+              () => bulkSetBusinessTypeAction(selectedIds, type),
+              (data) => confirmed(describeBusinessTypeResult(data, data.businessType), null),
             )
           }
         />
