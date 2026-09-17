@@ -146,6 +146,7 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
           connectedAt: action.at,
           muted: false,
           warning: state.kind === "ringing" ? state.warning : null,
+          ...(state.kind === "ringing" && state.meetingBooked ? { meetingBooked: true } : {}),
         };
       }
       return state;

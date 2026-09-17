@@ -44,6 +44,19 @@ describe("MEETING_BOOKED", () => {
     expect(after).toMatchObject({ kind: "wrap-up", mode: "TEL", preselectedOutcome: "APPOINTMENT" });
   });
 
+  it("carries a booking made while ringing through CONNECTED into the wrap-up", () => {
+    const ringing = run([
+      { type: "OUTBOUND_START", subject },
+      { type: "OUTBOUND_CREATED", callId: CALL },
+      { type: "RINGING" },
+    ]);
+    const after = run(
+      [{ type: "MEETING_BOOKED", leadId: LEAD }, { type: "CONNECTED", at: 1_000 }, { type: "DISCONNECTED", reason: "completed" }],
+      ringing,
+    );
+    expect(after).toMatchObject({ kind: "wrap-up", preselectedOutcome: "APPOINTMENT" });
+  });
+
   it("returns the same state when there is nothing to remember", () => {
     expect(dialerReducer(INITIAL_DIALER_STATE, { type: "MEETING_BOOKED", leadId: LEAD })).toBe(INITIAL_DIALER_STATE);
     const booked = dialerReducer(inCall, { type: "MEETING_BOOKED", leadId: LEAD });
