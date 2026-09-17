@@ -32,6 +32,7 @@ import type { WrapUp } from "@/lib/dialer/state";
 import { CALL_OUTCOME_OPTIONS, type CallOutcome } from "@/lib/domain/outcomes";
 import { formatInTz, isValidTimeZone } from "@/lib/domain/time";
 import { cn } from "@/lib/utils";
+import { cheerOutcome } from "@/components/pep/pep-toast";
 import { logCallAction } from "@/server/actions/calls";
 
 export interface OutcomeSheetProps {
@@ -95,6 +96,8 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
         setError(result.error.message);
         return;
       }
+      // Only a real lead gets named: an unknown inbound caller's label is their phone number.
+      cheerOutcome({ outcome: built.payload.outcome, business: wrapUp.leadId ? wrapUp.label : null, callId: result.data.callId });
       onSaved(goNext);
     } catch {
       setError(SAVE_ERROR);

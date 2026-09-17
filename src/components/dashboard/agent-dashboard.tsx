@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { StatusBadge } from "@/components/common/status-badge";
 import { CallButton } from "@/components/dialer/call-button";
 import { SkipLeadMenu } from "@/components/dialer/skip-lead-menu";
+import { PepLine } from "@/components/pep/pep-line";
 import { NEXT_LEAD_REASON_LABELS, leadFlowHref, nextLeadHref } from "@/lib/dialer/skip-list";
 import type { DialableLead, DialerDriverName } from "@/lib/dialer/types";
 import {
@@ -229,6 +230,7 @@ function GoalCard({ goal, copy, callDays }: { goal: DailyGoal; copy: GoalCopy; c
       <div className="rounded-lg bg-muted/50 px-3 py-2">
         <p className="text-sm font-bold">{copy.title}</p>
         <p className="text-sm text-muted-foreground">{copy.body}</p>
+        <PepLine mood={copy.mood} dials={goal.dials} target={goal.target} />
       </div>
 
       {callDays.length > 0 ? <ConsistencyStrip days={callDays} /> : null}

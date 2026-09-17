@@ -82,6 +82,7 @@ worse than no index.
 | [D42](#d42-a-skipped-lead-waits-in-a-skipped-queue) | A skipped lead waits in a Skipped queue instead of coming back |
 | [D43](#d43-the-agent-dashboard-is-a-today-workspace-and-one-goal-module-drives-every-target-display) | The agent dashboard is a Today workspace, and one goal module drives every target display |
 | [D44](#d44-pipeline-stage-navigation-and-bounded-columns) | Pipeline stage navigation and bounded columns |
+| [D45](#d45-between-calls-lines) | Between-calls lines |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -727,3 +728,16 @@ the Move to… menu are unchanged; phones keep the swipeable, full-height column
 **Why:** with a few hundred New leads the later stages were off screen and the only way to reach them was a scrollbar below the
 longest column.
 
+## D45. Between-calls lines
+**Spec:** not mentioned. §7 covers the call workspace and §6 the dashboard; neither asks for anything like this.
+**Built:** a one-liner in three places, from a written pool of ~100 in `src/lib/domain/pep-talk-lines.ts`: under the goal copy
+on Today, in a toast after a logged outcome (always the first call of the day, then about one in three), and in place of the
+outcome line when a call is the tenth, the halfway point or the target itself. Lines are tagged clean, salty or raw; Settings
+offers those three levels and Off, defaulting to raw, stored per device beside the call-mode preference. The picker is pure and
+seeded by call id or by day and mood, so a line never re-rolls under the agent, and the day's shown ids are remembered so a
+bucket is used up before anything repeats.
+**Why:** the team asked for it, and the ten seconds before the next dial is where a cold caller actually loses the day. The
+humour targets the situation, the prospect or the job, never the agent, and never anyone's identity: someone who has just been
+hung up on is the audience, not the punchline. Off is one click away in Settings and nobody is told what anyone picked.
+**Not built:** nothing is stored server-side, so the level and the day's counters do not follow an agent between devices, and
+the milestone counter counts calls logged in that browser rather than reading the dashboard's figure.
