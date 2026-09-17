@@ -99,10 +99,6 @@ export async function calendarFor(ctx: RequestContext, deps: CalendarDeps): Prom
 // Best effort and per server instance: correctness comes from the re-check when booking.
 let cache: { key: string; expires: number; windows: Interval[]; busy: Interval[] } | null = null;
 
-export function clearAvailabilityCacheForTests(): void {
-  cache = null;
-}
-
 export async function readCalendar(
   calendar: CalendarClient,
   from: Date,
@@ -117,6 +113,7 @@ export async function readCalendar(
   try {
     read = await calendar.readAvailability({ from, to });
   } catch (error) {
+    console.error("[booking] readAvailability failed", { code: error instanceof Error ? error.name : typeof error });
     throw new AppError("unavailable", CALENDAR_LOAD_FAILED_MESSAGE, { cause: error });
   }
   const windows = read.windows.map((window) => ({ start: new Date(window.start), end: new Date(window.end) }));
@@ -323,6 +320,7 @@ async function createMeetingEvent(
     });
     return eventId;
   } catch (cause) {
+    console.error("[booking] createMeeting failed", { appointmentId, code: cause instanceof Error ? cause.name : typeof cause });
     await abandon(ctx, appointmentId);
     throw new AppError("unavailable", BOOKING_FAILED_MESSAGE, { cause });
   }
@@ -364,7 +362,9 @@ async function bookedView(
 
 /**
  * begin_appointment (access, rate limit, replay, one live booking per slot) → re-check the calendar without the
- * cache → create the event → confirm_appointment. Any failure after the pending row exists abandons it.
+ * cache → create the event → confirm_appointment. Failures abandon the pending appointment until the meeting event
+ * is created (docs/DEVIATIONS.md D46); a confirm_appointment failure after that point does not abandon it, since
+ * the calendar event already exists.
  */
 export async function bookAppointment(ctx: RequestContext | null, input: unknown, deps: CalendarDeps = {}): Promise<BookedAppointment> {
   const active = requireActive(ctx);
@@ -389,12 +389,15 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
   let statusNeedsAttention = false;
   if (row.status === "pending") {
     await ensureStillFree(active, calendar, row.id, start, now);
-    const eventId = await createMeetingEvent(active, calendar, row.id, leadId, start, end, note);
+    const eventId = await createMeetingEvent(active, calendar, row.id, row.lead_id, start, end, note);
     const { error: confirmError } = await active.supabase.rpc("confirm_appointment", { p_id: row.id, p_google_event_id: eventId });
-    if (confirmError) fail(confirmError);
-    if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, leadId));
+    if (confirmError) {
+      console.error("[booking] confirm_appointment failed", { appointmentId: row.id, eventId, code: confirmError.code });
+      fail(confirmError);
+    }
+    if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, row.lead_id));
   }
-  return { ...(await bookedView(active, row.id, leadId, start, end, now)), statusNeedsAttention };
+  return { ...(await bookedView(active, row.id, row.lead_id, start, end, now)), statusNeedsAttention };
 }
 
 export async function cancelAppointment(ctx: RequestContext | null, id: unknown): Promise<{ id: string }> {
