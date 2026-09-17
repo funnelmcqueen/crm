@@ -14,6 +14,98 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          booked_by: string
+          client_request_id: string
+          created_at: string
+          ends_at: string
+          google_event_id: string | null
+          id: string
+          lead_id: string
+          note: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
+        }
+        Insert: {
+          booked_by: string
+          client_request_id: string
+          created_at?: string
+          ends_at: string
+          google_event_id?: string | null
+          id?: string
+          lead_id: string
+          note?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+        }
+        Update: {
+          booked_by?: string
+          client_request_id?: string
+          created_at?: string
+          ends_at?: string
+          google_event_id?: string | null
+          id?: string
+          lead_id?: string
+          note?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_booked_by_fkey"
+            columns: ["booked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_connection: {
+        Row: {
+          bookable_calendar_id: string | null
+          broken_at: string | null
+          connected_at: string
+          connected_by: string
+          google_email: string
+          id: boolean
+          refresh_token_ciphertext: string
+        }
+        Insert: {
+          bookable_calendar_id?: string | null
+          broken_at?: string | null
+          connected_at?: string
+          connected_by: string
+          google_email: string
+          id?: boolean
+          refresh_token_ciphertext: string
+        }
+        Update: {
+          bookable_calendar_id?: string | null
+          broken_at?: string | null
+          connected_at?: string
+          connected_by?: string
+          google_email?: string
+          id?: boolean
+          refresh_token_ciphertext?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_connection_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calls: {
         Row: {
           call_status: string | null
@@ -411,6 +503,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      abandon_appointment: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       admin_agent_activity: {
         Args: {
           p_from: string
@@ -528,6 +626,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      begin_appointment: {
+        Args: {
+          p_client_request_id?: string
+          p_lead_id: string
+          p_note?: string
+          p_starts_at: string
+        }
+        Returns: Database["public"]["Tables"]["appointments"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      booked_intervals: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          ends_at: string
+          starts_at: string
+        }[]
+      }
       bulk_assign_leads: {
         Args: {
           p_expected_assigned_to?: string
@@ -598,6 +721,12 @@ export type Database = {
         }
         Returns: boolean
       }
+      cancel_appointment: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       claim_caller_id: {
         Args: {
           p_user_id: string
@@ -606,6 +735,19 @@ export type Database = {
           e164: string
           phone_number_id: string
         }[]
+      }
+      confirm_appointment: {
+        Args: {
+          p_google_event_id: string
+          p_id: string
+        }
+        Returns: Database["public"]["Tables"]["appointments"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       consume_rate_limit: {
         Args: {
@@ -695,6 +837,15 @@ export type Database = {
       follow_up_tab_counts: {
         Args: never
         Returns: Json
+      }
+      get_calendar_status: {
+        Args: never
+        Returns: {
+          bookable_calendar_set: boolean
+          broken: boolean
+          connected: boolean
+          google_email: string
+        }[]
       }
       get_company_name: {
         Args: never
@@ -987,6 +1138,7 @@ export type Database = {
       }
     }
     Enums: {
+      appointment_status: "pending" | "scheduled" | "cancelled"
       business_type: "restaurant" | "cafe_bakery" | "hotel_motel" | "home_services" | "auto" | "retail" | "beauty" | "other"
       call_direction: "OUTBOUND" | "INBOUND"
       call_mode: "IN_APP" | "TEL"
@@ -1120,6 +1272,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      appointment_status: ["pending", "scheduled", "cancelled"],
       business_type: ["restaurant", "cafe_bakery", "hotel_motel", "home_services", "auto", "retail", "beauty", "other"],
       call_direction: ["OUTBOUND", "INBOUND"],
       call_mode: ["IN_APP", "TEL"],

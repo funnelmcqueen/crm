@@ -144,6 +144,10 @@ describe('foreign keys (SPEC 4: profiles RESTRICT, lead deletion cascades)', () 
       // Skipped queue (D42): a skip goes with its lead; a user with skips is never deleted.
       'public.lead_skips.lead_id -> public.leads': 'c',
       'public.lead_skips.user_id -> public.profiles': 'r',
+      // Closer calendar booking (D46): an appointment goes with its lead; a booker or connector is never deleted.
+      'public.appointments.lead_id -> public.leads': 'c',
+      'public.appointments.booked_by -> public.profiles': 'r',
+      'public.calendar_connection.connected_by -> public.profiles': 'r',
       'public.leads.assigned_to -> public.profiles': 'r',
       'public.phone_numbers.assigned_to -> public.profiles': 'r',
       'public.profiles.id -> auth.users': 'r',

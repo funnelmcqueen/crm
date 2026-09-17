@@ -88,6 +88,12 @@ const MATRIX: Record<string, Access> = {
   // closer calendar booking (D46)
   set_lead_business_type: 'api',
   bulk_set_business_type: 'api',
+  begin_appointment: 'api',
+  confirm_appointment: 'api',
+  abandon_appointment: 'api',
+  cancel_appointment: 'api',
+  booked_intervals: 'api',
+  get_calendar_status: 'api',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',
