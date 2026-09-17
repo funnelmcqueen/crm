@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { SLOT_TAKEN_MESSAGE } from "@/lib/domain/booking-messages";
 
 export const APP_ERROR_STATUS = {
   unauthorized: 401,
@@ -14,7 +15,7 @@ export const APP_ERROR_STATUS = {
 export type AppErrorCode = keyof typeof APP_ERROR_STATUS;
 
 /** Machine-readable reason for a `conflict`, raised by RPCs as `P0001` with this exact message. */
-export type ConflictReason = "do_not_contact" | "call_in_progress";
+export type ConflictReason = "do_not_contact" | "call_in_progress" | "slot_taken";
 
 const DEFAULT_MESSAGES: Record<AppErrorCode, string> = {
   unauthorized: "Please sign in again.",
@@ -30,6 +31,7 @@ const DEFAULT_MESSAGES: Record<AppErrorCode, string> = {
 const CONFLICT_MESSAGES: Record<ConflictReason, string> = {
   do_not_contact: "This lead is marked Do Not Contact.",
   call_in_progress: "You already have a call in progress.",
+  slot_taken: SLOT_TAKEN_MESSAGE,
 };
 
 export class AppError extends Error {
@@ -94,7 +96,7 @@ export function mapPostgrestError(err: PostgrestLikeError | null | undefined): A
       return new AppError("unauthorized", undefined, { cause });
     case "P0001": {
       const message = err?.message ?? "";
-      if (message === "do_not_contact" || message === "call_in_progress") {
+      if (message === "do_not_contact" || message === "call_in_progress" || message === "slot_taken") {
         return new AppError("conflict", CONFLICT_MESSAGES[message], { cause, reason: message });
       }
       if (message === "rate_limited") {
