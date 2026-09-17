@@ -2042,14 +2042,15 @@ git commit -m "feat: calendar client interface, mock calendar and CALENDAR_DRIVE
 ### Task 9: Availability service with the privacy boundary
 
 **Files:**
+- Create: `src/lib/domain/booking-messages.ts`
 - Modify: `src/server/errors.ts`
 - Create: `src/server/services/calendar-booking.ts` (availability half)
 - Test: `tests/integration/calendar/availability.test.ts`
 
 **Interfaces:**
 - Consumes: Tasks 2–8.
+- Produces in `src/lib/domain/booking-messages.ts` (client-safe, shared by the service and the panel, compared by exact equality — never by prefix): `BOOKING_UNAVAILABLE_MESSAGE`, `CALENDAR_LOAD_FAILED_MESSAGE`, `SLOT_TAKEN_MESSAGE`, `BOOKING_FAILED_MESSAGE`, `STATUS_NOT_UPDATED_MESSAGE`.
 - Produces (in `src/server/services/calendar-booking.ts`):
-  - `BOOKING_UNAVAILABLE_MESSAGE`, `CALENDAR_LOAD_FAILED_MESSAGE`, `SLOT_TAKEN_MESSAGE`
   - `interface CalendarDeps { calendar?: CalendarClient | null; now?: () => Date }` — `calendar: undefined` means "use the configured driver" (with the 60-second cache); `null` means "no calendar".
   - `interface SlotView { start: string; end: string; day: string; phrase: string; zone: string; yourTime: string | null }`
   - `interface IntervalView { start: string; end: string }`
@@ -2147,7 +2148,26 @@ The cross-agent case ("another agent's booking vanishes at once") needs `bookApp
 Run: `npx vitest run --project integration tests/integration/calendar/availability.test.ts`
 Expected: FAIL — cannot resolve `@/server/services/calendar-booking`.
 
-- [ ] **Step 3: Add the conflict reason** — in `src/server/errors.ts`:
+- [ ] **Step 3a: Create the shared messages** — `src/lib/domain/booking-messages.ts`:
+
+```ts
+// Messages the booking service raises and the booking panel recognises (docs/DEVIATIONS.md D46). Client-safe: no
+// server imports, so the panel compares against these exact strings instead of matching text.
+
+export const BOOKING_UNAVAILABLE_MESSAGE = "Booking isn't available right now. Schedule a follow-up instead.";
+export const CALENDAR_LOAD_FAILED_MESSAGE = "Couldn't load the calendar. Try again.";
+export const SLOT_TAKEN_MESSAGE = "That time was just taken. Pick another.";
+export const BOOKING_FAILED_MESSAGE = "Couldn't book the meeting. Nothing was saved. Try again.";
+export const STATUS_NOT_UPDATED_MESSAGE = "Booked, but the lead's status didn't change. Set it to Appointment by hand.";
+```
+
+- [ ] **Step 3b: Add the conflict reason** — in `src/server/errors.ts`, add the import
+
+```ts
+import { SLOT_TAKEN_MESSAGE } from "@/lib/domain/booking-messages";
+```
+
+and then:
 
 Replace
 
@@ -2164,7 +2184,7 @@ export type ConflictReason = "do_not_contact" | "call_in_progress" | "slot_taken
 In `CONFLICT_MESSAGES`, after `  call_in_progress: "You already have a call in progress.",` add:
 
 ```ts
-  slot_taken: "That time was just taken. Pick another.",
+  slot_taken: SLOT_TAKEN_MESSAGE,
 ```
 
 In `mapPostgrestError`, replace
@@ -2189,6 +2209,7 @@ with
 // field by field below, so a client that hands back more (a title, attendees) still cannot leak it.
 import { z } from "zod";
 import { suggestSlots } from "@/lib/domain/business-rhythm";
+import { BOOKING_UNAVAILABLE_MESSAGE, CALENDAR_LOAD_FAILED_MESSAGE } from "@/lib/domain/booking-messages";
 import { resolveBusinessType, type BusinessType } from "@/lib/domain/business-type";
 import { BOOKING_HORIZON_DAYS, freeSlots, mergeIntervals, type Interval } from "@/lib/domain/calendar-slots";
 import { leadTimeZone } from "@/lib/domain/lead-timezone";
@@ -2198,10 +2219,6 @@ import { resolveCalendarClient } from "@/server/calendar/client";
 import type { CalendarClient } from "@/server/calendar/types";
 import { requireActive, type RequestContext } from "@/server/context";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
-
-export const BOOKING_UNAVAILABLE_MESSAGE = "Booking isn't available right now. Schedule a follow-up instead.";
-export const CALENDAR_LOAD_FAILED_MESSAGE = "Couldn't load the calendar. Try again.";
-export const SLOT_TAKEN_MESSAGE = "That time was just taken. Pick another.";
 
 const CACHE_TTL_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -2404,7 +2421,7 @@ Run: `npm run typecheck`
 Expected: PASS.
 
 ```bash
-git add src/server/errors.ts src/server/services/calendar-booking.ts tests/integration/calendar/availability.test.ts
+git add src/lib/domain/booking-messages.ts src/server/errors.ts src/server/services/calendar-booking.ts tests/integration/calendar/availability.test.ts
 git commit -m "feat: agent availability from the closer calendar, with titles kept on the server" -m "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
@@ -2420,8 +2437,7 @@ git commit -m "feat: agent availability from the closer calendar, with titles ke
 **Interfaces:**
 - Consumes: Task 9's `calendarFor`, `readCalendar`, `CalendarDeps`, messages; `updateLeadStatus(ctx, id, status)` from `src/server/services/leads.ts`.
 - Produces:
-  - `BOOKING_FAILED_MESSAGE`
-  - `interface BookedAppointment { id: string; leadId: string; start: string; end: string; phrase: string; zone: string }`
+  - `interface BookedAppointment { id: string; leadId: string; start: string; end: string; phrase: string; zone: string; statusNeedsAttention: boolean }` — `statusNeedsAttention` is true only when a booking outside a call could not move the lead to Appointment; the panel then tells the agent to set it by hand.
   - `interface LeadMeeting { id: string; start: string; end: string; bookedByName: string | null }`
   - `bookAppointment(ctx, input: unknown, deps?: CalendarDeps): Promise<BookedAppointment>` where input is `{ leadId: string; start: string (ISO); note?: string | null; clientRequestId: string (uuid); inCall: boolean }`
   - `cancelAppointment(ctx, id: unknown): Promise<{ id: string }>` (admin)
@@ -2509,7 +2525,7 @@ describe('bookAppointment', () => {
 
     const booked = await bookAppointment(ctx, request(lead.id, at(3), { note: 'bring the menu' }), { calendar: calendar.client, now: () => now });
 
-    expect(booked).toMatchObject({ leadId: lead.id, start: at(3).toISOString(), phrase: 'Today at noon', zone: 'EDT' });
+    expect(booked).toMatchObject({ leadId: lead.id, start: at(3).toISOString(), phrase: 'Today at noon', zone: 'EDT', statusNeedsAttention: false });
     expect(calendar.created).toHaveLength(1);
     expect(await statusOf(ctx, lead.id)).toBe('APPOINTMENT');
     expect((await getNextMeeting(ctx, lead.id, now))?.start).toBe(at(3).toISOString());
@@ -2619,6 +2635,12 @@ Expected: FAIL — `bookAppointment` is not exported.
 ```ts
 import { z } from "zod";
 import { suggestSlots } from "@/lib/domain/business-rhythm";
+import {
+  BOOKING_FAILED_MESSAGE,
+  BOOKING_UNAVAILABLE_MESSAGE,
+  CALENDAR_LOAD_FAILED_MESSAGE,
+  SLOT_TAKEN_MESSAGE,
+} from "@/lib/domain/booking-messages";
 import { isBusinessType, resolveBusinessType, type BusinessType } from "@/lib/domain/business-type";
 import { BOOKING_HORIZON_DAYS, SLOT_MS, freeSlots, mergeIntervals, type Interval } from "@/lib/domain/calendar-slots";
 import { leadTimeZone } from "@/lib/domain/lead-timezone";
@@ -2641,7 +2663,6 @@ Then append to the end of the file:
 // Booking
 // ---------------------------------------------------------------------------------------------
 
-export const BOOKING_FAILED_MESSAGE = "Couldn't book the meeting. Nothing was saved. Try again.";
 const MAX_NOTE_LENGTH = 500;
 /** Booking never moves a lead backwards or out of Do Not Contact (compare NO_DOWNGRADE_STATUSES in outcomes.ts). */
 const KEEP_STATUS_ON_BOOKING: readonly LeadStatus[] = ["APPOINTMENT", "PROPOSAL", "CLIENT", "DO_NOT_CONTACT"];
@@ -2653,6 +2674,8 @@ export interface BookedAppointment {
   end: string;
   phrase: string;
   zone: string;
+  /** True when a booking outside a call could not move the lead to Appointment. */
+  statusNeedsAttention: boolean;
 }
 
 export interface LeadMeeting {
@@ -2675,9 +2698,13 @@ const bookSchema = z.object({
   inCall: z.boolean(),
 });
 
+/**
+ * Runs only on a path that is already failing, so the original error stays the one the agent sees. A failure here
+ * is logged (ids and code only) and is harmless: begin_appointment clears a pending row once it is ten minutes old.
+ */
 async function abandon(ctx: RequestContext, appointmentId: string): Promise<void> {
-  // Best effort: begin_appointment clears a pending row left behind once it is ten minutes old.
-  await ctx.supabase.rpc("abandon_appointment", { p_id: appointmentId });
+  const { error } = await ctx.supabase.rpc("abandon_appointment", { p_id: appointmentId });
+  if (error) console.error("[booking] abandon_appointment failed", { appointmentId, code: error.code });
 }
 
 async function ensureStillFree(ctx: RequestContext, calendar: CalendarClient, appointmentId: string, start: Date, now: Date): Promise<void> {
@@ -2746,17 +2773,28 @@ async function createMeetingEvent(
   }
 }
 
-async function moveToAppointment(ctx: RequestContext, leadId: string): Promise<void> {
-  const { data } = await ctx.supabase.from("leads").select("status").eq("id", leadId).maybeSingle();
-  if (!data || KEEP_STATUS_ON_BOOKING.includes(data.status)) return;
+/** True when the lead's status is where a booking leaves it; false tells the agent to set Appointment by hand. */
+async function moveToAppointment(ctx: RequestContext, leadId: string): Promise<boolean> {
+  const { data, error } = await ctx.supabase.from("leads").select("status").eq("id", leadId).maybeSingle();
+  if (error || !data) return false;
+  if (KEEP_STATUS_ON_BOOKING.includes(data.status)) return true;
   try {
     await updateLeadStatus(ctx, leadId, "APPOINTMENT");
+    return true;
   } catch {
-    // The meeting is booked either way; the status can still be set by hand.
+    // Not swallowed: the booking stands, and the result tells the agent to set the status by hand.
+    return false;
   }
 }
 
-async function bookedView(ctx: RequestContext, id: string, leadId: string, start: Date, end: Date, now: Date): Promise<BookedAppointment> {
+async function bookedView(
+  ctx: RequestContext,
+  id: string,
+  leadId: string,
+  start: Date,
+  end: Date,
+  now: Date,
+): Promise<Omit<BookedAppointment, "statusNeedsAttention">> {
   const { data: lead } = await ctx.supabase.from("leads").select("state, country").eq("id", leadId).maybeSingle();
   const { timeZone } = leadTimeZone({ state: lead?.state ?? null, country: lead?.country ?? null }, ctx.profile.timezone);
   return {
@@ -2793,14 +2831,15 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
 
   const start = new Date(row.starts_at);
   const end = new Date(row.ends_at);
+  let statusNeedsAttention = false;
   if (row.status === "pending") {
     await ensureStillFree(active, calendar, row.id, start, now);
     const eventId = await createMeetingEvent(active, calendar, row.id, leadId, start, end, note);
     const { error: confirmError } = await active.supabase.rpc("confirm_appointment", { p_id: row.id, p_google_event_id: eventId });
     if (confirmError) fail(confirmError);
-    if (!parsed.data.inCall) await moveToAppointment(active, leadId);
+    if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, leadId));
   }
-  return bookedView(active, row.id, leadId, start, end, now);
+  return { ...(await bookedView(active, row.id, leadId, start, end, now)), statusNeedsAttention };
 }
 
 export async function cancelAppointment(ctx: RequestContext | null, id: unknown): Promise<{ id: string }> {
@@ -3813,6 +3852,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CALENDAR_LOAD_FAILED_MESSAGE, STATUS_NOT_UPDATED_MESSAGE } from "@/lib/domain/booking-messages";
 import { BUSINESS_TYPES, BUSINESS_TYPE_BEST_FOR, BUSINESS_TYPE_LABELS, isBusinessType } from "@/lib/domain/business-type";
 import { cn } from "@/lib/utils";
 import { bookAppointmentAction, setLeadBusinessTypeAction } from "@/server/actions/calendar-booking";
@@ -3874,7 +3914,7 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
   if (state.kind === "error" || !availability) {
     return (
       <div role="alert" className="flex flex-col gap-3 p-4 text-sm">
-        <p>{state.kind === "error" ? state.message : "Couldn't load the calendar. Try again."}</p>
+        <p>{state.kind === "error" ? state.message : CALENDAR_LOAD_FAILED_MESSAGE}</p>
         {state.kind === "error" && state.unavailable ? null : (
           <Button type="button" variant="outline" className="min-h-12 self-start" onClick={onReload}>
             Retry
@@ -3927,6 +3967,7 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
         return;
       }
       toast.success(`Booked: ${result.data.phrase} ${result.data.zone}`);
+      if (result.data.statusNeedsAttention) toast.warning(STATUS_NOT_UPDATED_MESSAGE);
       if (inCall) dialer?.markMeetingBooked(leadId);
       onBooked();
     });
@@ -4046,6 +4087,7 @@ import { CalendarPlus } from "lucide-react";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { BOOKING_UNAVAILABLE_MESSAGE, CALENDAR_LOAD_FAILED_MESSAGE } from "@/lib/domain/booking-messages";
 import { getAvailabilityAction } from "@/server/actions/calendar-booking";
 import { BookingPanel, type BookingLoadState } from "./booking-panel";
 
@@ -4065,8 +4107,9 @@ export function BookMeetingButton({ leadId, businessName, triggerClassName }: Bo
     setState({ kind: "loading" });
     startTransition(async () => {
       const result = await getAvailabilityAction(leadId).catch(() => null);
-      if (!result) setState({ kind: "error", message: "Couldn't load the calendar. Try again.", unavailable: false });
-      else if (!result.ok) setState({ kind: "error", message: result.error.message, unavailable: result.error.code === "unavailable" && result.error.message.startsWith("Booking isn't available") });
+      if (!result) setState({ kind: "error", message: CALENDAR_LOAD_FAILED_MESSAGE, unavailable: false });
+      // No calendar at all: retrying cannot help, so the panel offers none. A failed load can be retried.
+      else if (!result.ok) setState({ kind: "error", message: result.error.message, unavailable: result.error.message === BOOKING_UNAVAILABLE_MESSAGE });
       else setState({ kind: "ready", availability: result.data });
     });
   }
