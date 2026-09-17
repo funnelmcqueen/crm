@@ -69,6 +69,9 @@ are unsure about.
   export in one go, with Undo for status changes.
 - Skip with a reason: a skipped lead waits in Follow-ups › Skipped instead of coming back to the call
   queue, until it is resumed, called, rescheduled or changes status.
+- Book a meeting mid-call: a panel of the closer's open 30-minute slots, the best three for the lead's kind of business
+  phrased in their local time ("Tomorrow at 5 pm EDT"), plain Busy blocks for everything else, and Appointment
+  preselected when the call ends.
 - Lead detail: call button (sticky at the bottom on mobile), status, notes, follow-up picker, and
   the full call history with a voicemail player.
 - Calling: in-app through Twilio on desktop, the native dialer on iPhone, with an in-call bar
@@ -146,7 +149,7 @@ prints a ready-to-paste env block:
 ```
 [localbase] applied bootstrap.sql
 [localbase] applied migration 20260915000100_core_schema.sql
-... (17 migrations)
+... (18 migrations)
 [localbase] listening on http://127.0.0.1:54321
 
 localbase is running (data: .../.localbase/data)

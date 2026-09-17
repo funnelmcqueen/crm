@@ -552,6 +552,7 @@ supabase/migrations/20260915001500_revoke_user_sessions.sql  end a user's Auth s
 supabase/migrations/20260915001600_bulk_leads.sql      bulk lead actions (D41)
 supabase/migrations/20260915001700_skipped_leads.sql   Skipped queue (D42)
 supabase/migrations/20260915001800_agent_today.sql     agent Today dashboard (D43)
+supabase/migrations/20260915001900_calendar_booking.sql closer calendar booking (D46)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
 Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`
@@ -818,6 +819,29 @@ request's SQL as `postgres`.
 last 1h and carry Supabase claims (`aud, exp, iat, iss, sub, email, phone, app_metadata, user_metadata,
 role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signup`) → 422
 `signup_disabled`. `auth.users` and `auth.identities` columns mirror Supabase's so the same SQL works on both.
+
+---
+
+## Closer calendar booking (D46)
+
+Tables: `appointments` (lead, `booked_by`, 30-minute `starts_at`/`ends_at`, `status` pending|scheduled|cancelled,
+`google_event_id`, `note` ≤ 500, `client_request_id`; unique index on `starts_at` where live; RLS select: booker or
+admin) and `calendar_connection` (singleton, no API access). `leads.business_type` (enum, null = guess from name).
+
+| RPC | Security | Who | Notes |
+|---|---|---|---|
+| `set_lead_business_type(p_lead_id, p_type)` | definer | active; admin any lead, agent own | null clears |
+| `bulk_set_business_type(p_lead_ids, p_type)` | invoker | admin | 5,000 cap, `too_many_leads` |
+| `begin_appointment(p_lead_id, p_starts_at, p_note, p_client_request_id)` | definer | active; lead access | replay, boundary, DNC, `book_appointment` 20/hour, stale-pending cleanup, `slot_taken` |
+| `confirm_appointment(p_id, p_google_event_id)` | definer | booker | pending → scheduled, idempotent |
+| `abandon_appointment(p_id)` | definer | booker | deletes own pending row |
+| `cancel_appointment(p_id)` | definer | admin | scheduled → cancelled, CRM only |
+| `booked_intervals(p_from, p_to)` | definer | active | times only, range ≤ 31 days |
+| `get_calendar_status()` | definer | admin | never returns the token |
+
+Environment: `CALENDAR_DRIVER` = `google` | `mock`; unset is `mock` outside production and unavailable in production;
+`mock` in production is refused at startup. Code: `src/lib/domain/{business-type,lead-timezone,calendar-slots,business-rhythm,slot-phrase,meeting-description}.ts`,
+`src/server/calendar/*`, `src/server/services/calendar-booking.ts`, `src/components/booking/*`.
 
 ---
 

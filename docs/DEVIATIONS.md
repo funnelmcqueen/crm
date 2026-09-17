@@ -82,6 +82,7 @@ worse than no index.
 | [D42](#d42-a-skipped-lead-waits-in-a-skipped-queue) | A skipped lead waits in a Skipped queue instead of coming back |
 | [D43](#d43-the-agent-dashboard-is-a-today-workspace-and-one-goal-module-drives-every-target-display) | The agent dashboard is a Today workspace, and one goal module drives every target display |
 | [D44](#d44-pipeline-stage-navigation-and-bounded-columns) | Pipeline stage navigation and bounded columns |
+| [D46](#d46-closer-calendar-booking) | Closer calendar booking |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -726,4 +727,20 @@ never pushes the board's sideways scrollbar off the screen; columns are 256px wi
 the Move to… menu are unchanged; phones keep the swipeable, full-height columns.
 **Why:** with a few hundred New leads the later stages were off screen and the only way to reach them was a scrollbar below the
 longest column.
+
+## D46. Closer calendar booking
+**Spec:** §15 lists Google Calendar under "Future-ready, not built".
+**Built:** agents book 30-minute meetings with a lead into one closer calendar from the lead page or the in-call bar.
+The panel shows open slots inside the closer's bookable windows, plain **Busy** blocks for everything else, full
+details only of meetings the agent booked, and the three best slots for the lead's business type phrased in the lead's
+local time ("Tomorrow at 5 pm EDT"). Booking writes go through guarded SECURITY DEFINER RPCs; a unique index on live
+start times makes a double booking impossible; failures abandon the pending appointment until the meeting event is created. A booking during
+a call preselects Appointment; otherwise the lead moves to Appointment unless it is already further along. Business
+type is set in bulk, through CSV import or corrected in the panel, and guessed from the name when blank. This release
+runs on an in-memory mock calendar (`CALENDAR_DRIVER=mock`, refused in production); the Google connection is the second
+milestone. Design: `docs/superpowers/specs/2026-09-17-closer-calendar-booking-design.md`.
+**Why:** the closer confirms meetings personally, agents need to offer concrete times mid-call, and the closer's calendar
+details are none of the agents' business.
+**Not built:** texts or emails to the lead, rescheduling or cancelling by agents, reminders, several closers. States
+spanning two time zones use their larger zone. Marking a meeting cancelled in the CRM leaves the Google event in place.
 
