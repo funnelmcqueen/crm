@@ -12,6 +12,7 @@ import { OUTCOME_LABELS } from "@/lib/domain/outcomes";
 import { NextLeadControls } from "@/components/dialer/next-lead-controls";
 import { AdminLeadPanel } from "@/components/leads/admin-lead-panel";
 import { CallHistory } from "@/components/leads/call-history";
+import { CallPlaybook } from "@/components/leads/call-playbook";
 import { CopyPhoneButton } from "@/components/leads/copy-phone-button";
 import { FollowUpPicker } from "@/components/leads/follow-up-picker";
 import { LeadNotesForm } from "@/components/leads/lead-notes-form";
@@ -130,6 +131,8 @@ export default async function LeadDetailPage({
           <p className="max-h-40 overflow-auto text-sm break-words whitespace-pre-wrap">{lead.notes || "Add useful context in Notes below."}</p>
         </details>
       </section>
+
+      <CallPlaybook contactName={lead.contactName} agentName={ctx.profile.name} />
 
       {openSkip ? (
         <OpenSkipNotice

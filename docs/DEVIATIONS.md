@@ -760,3 +760,9 @@ humour targets the situation, the prospect or the job, never the agent, and neve
 hung up on is the audience, not the punchline. Off is one click away in Settings and nobody is told what anyone picked.
 **Not built:** nothing is stored server-side, so the level and the day's counters do not follow an agent between devices, and
 the milestone counter counts calls logged in that browser rather than reading the dashboard's figure.
+
+## D46. Versioned March restaurant call playbook
+**Spec:** §7 defines the call workspace but does not provide campaign-specific scripting or live objection guidance.
+**Built:** every lead workspace now includes a compact, read-only Call Playbook panel with the reviewed March restaurant callback script (v3): a personalized opening, five stages, eight objection responses, booking handoff, no-show recovery, and factual-call guardrails. The content lives in the pure `src/lib/domain/call-playbook.ts` module and the page panel needs no client state, new API, database table, or permission.
+**Why:** agents need the next useful line while a lead is open. A static, versioned source gives every caller the same approved words without introducing an admin configuration surface before the team has tested the flow.
+**Not built:** per-campaign assignment, a playbook editor, automatic calendar invites, automatic messages, and AI-generated call responses. The `CallPlaybook` component consumes a small typed module so a future campaign-backed source can replace it without changing the lead workspace.
