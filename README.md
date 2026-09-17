@@ -371,6 +371,7 @@ tests that mint their own JWTs. Nothing else changes: the same suite, the same a
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs…` | **server only** | yes |
 | `APP_BASE_URL` | `https://crm.example.com` | server only | yes in practice; required when `DIALER_DRIVER=twilio` |
 | `DIALER_DRIVER` | `twilio` | server only | no (see [below](#switching-dialer_driver)) |
+| `CALENDAR_DRIVER` | `mock` | server only | no; `google` \| `mock`, unset resolves to `mock` outside production and to "booking unavailable" in production, and `mock` with `NODE_ENV=production` is refused at startup |
 | `TWILIO_ACCOUNT_SID` | `AC00000000000000000000000000000000` | **server only** | required with `twilio` |
 | `TWILIO_AUTH_TOKEN` | `your_auth_token` | **server only** | required with `twilio` |
 | `TWILIO_API_KEY_SID` | `SK00000000000000000000000000000000` | **server only** | required with `twilio` |

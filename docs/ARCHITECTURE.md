@@ -133,6 +133,7 @@ e2e/                     Playwright specs (mock dialer)
 | `APP_BASE_URL` | server-only | exact public origin, no trailing slash; used for Twilio signature URLs |
 | `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock`. Unset: `twilio` when configured, else `mock` in development/test and `tel` in production (never silently fake calls in prod). `mock` with `NODE_ENV=production` is an invalid environment (D24) |
 | `TWILIO_ACCOUNT_SID` `TWILIO_AUTH_TOKEN` `TWILIO_API_KEY_SID` `TWILIO_API_KEY_SECRET` `TWILIO_TWIML_APP_SID` | server-only | required when `DIALER_DRIVER=twilio` |
+| `CALENDAR_DRIVER` | server-only | `google` \| `mock`. Unset: `mock` outside production, "booking unavailable" in production (never silently invent availability in prod). `mock` with `NODE_ENV=production` is refused at startup (D46) |
 
 `src/server/env.ts` exports `getServerEnv()`, which parses lazily and caches (so importing never
 throws at build time). `DIALER_DRIVER` reaches the client only as a prop from the `(app)` layout.
@@ -385,7 +386,7 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 | `list_lead_sources() → setof text` | invoker | authenticated | Distinct non-null sources visible to the caller. |
 | `touch_device_presence() → void` | definer | authenticated | `device_seen_at = now()` for the active caller. |
 | `consume_rate_limit(p_bucket text) → boolean` | definer | authenticated | Keyed on `auth.uid()`; inactive or missing caller → `42501`. Only `voice_token` and `export` are accepted (else `22023`; `outbound_call` is enforced inside `create_outbound_call` and is still refused here). Delegates to `apply_rate_limit`. |
-| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min, `export` 30 per 10 min (D36); unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
+| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min, `export` 30 per 10 min (D36), `book_appointment` 20 per hour (D46); unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
 | `claim_caller_id(p_user_id uuid) → table(phone_number_id uuid, e164 text)` | definer | **service_role only** | Least recently used active number assigned to the user, else least recently used active pool number (`last_used_at nulls first, created_at`), locking the assigned number with `for no key update` (without SKIP LOCKED, so the KEY SHARE lock of a concurrent calls insert never causes a pool fallback) and pool numbers with `for no key update skip locked`. Sets `last_used_at = now()`. |
 | `apply_call_status(p_call_sid text, p_status text, p_duration int default null) → boolean` | definer | service_role only | Idempotent. Finds the row by `provider_call_sid`. Terminal statuses (completed/busy/no-answer/failed/canceled) are never replaced by non-terminal ones, and a terminal status only changes if the duration is being filled. `duration_seconds = greatest(existing, p_duration)`. |
 | `record_voicemail(p_call_sid text, p_recording_sid text, p_duration int) → boolean` | definer | service_role only | Atomic: sets the recording where `voicemail_recording_sid is null`. On first set, if the lead has an owner, inserts follow-up (owner, `due_at = now()`, note 'Voicemail received'). Returns whether it was newly set. |
@@ -598,7 +599,7 @@ export function requireAdmin(ctx): RequestContext   // throws AppError('forbidde
 - `AppError` codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `validation` (400),
   `conflict` (409), `rate_limited` (429), `unavailable` (503), `internal` (500, unmapped errors).
   Route handlers that browsers call with cookies use `getRouteAuth(req) → { ctx, applyCookies }`. `mapPostgrestError(err)` maps P0002→not_found,
-  42501→forbidden, 22023/22P02/23514→validation, P0001 do_not_contact/call_in_progress→conflict, P0001 rate_limited→rate_limited.
+  42501→forbidden, 22023/22P02/23514→validation, P0001 do_not_contact/call_in_progress/slot_taken→conflict, P0001 rate_limited→rate_limited.
 - Server actions return `ActionResult<T> = { ok: true; data: T } | { ok: false; error: { code: AppErrorCode; message: string } }`
   and never throw to the client.
 - Route handler cores: `src/server/http/<name>.ts` exports `handle<Name>(req: Request, deps?: Partial<Deps>)`.
