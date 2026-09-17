@@ -7,6 +7,7 @@ import { telHref } from "@/lib/dialer/resolve-mode";
 import { activeLeadId, type DialerState } from "@/lib/dialer/state";
 import type { DialableLead } from "@/lib/dialer/types";
 import { isDialable } from "@/lib/domain/statuses";
+import { E164_PATTERN } from "@/lib/domain/phone";
 import { cn } from "@/lib/utils";
 import { useDialer } from "./dialer-context";
 
@@ -48,6 +49,9 @@ export function CallButton({ lead, size = "default", label = "CALL", className }
   } else if (!isDialable(lead.status)) {
     text = "Do Not Contact";
     reason = "This lead is marked Do Not Contact";
+  } else if (!E164_PATTERN.test(lead.phone)) {
+    text = "Phone needed";
+    reason = "Ask an admin to add a valid phone number before calling";
   } else if (dialer.state.kind !== "idle") {
     if (activeLeadId(dialer.state) === lead.id) text = busyLabel(dialer.state);
     reason = dialer.state.kind === "wrap-up" ? "Log the last call first" : "Another call is active";

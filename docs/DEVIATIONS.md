@@ -728,6 +728,25 @@ the Move to… menu are unchanged; phones keep the swipeable, full-height column
 **Why:** with a few hundred New leads the later stages were off screen and the only way to reach them was a scrollbar below the
 longest column.
 
+## D45. Phase 2 calling workspace and recoverable drafts
+**Spec:** the Phase 2 handoff asks for clearer calling context, fast feedback, reliable notes and graceful interruptions.
+**Built:** the lead header highlights the current lead; a compact Before you call summary shows the latest call,
+next follow-up and expandable previous notes. The existing calling-setup notice is reused on the lead page and
+the active phone/in-app mode is explained. Invalid numbers disable CALL using the existing E.164 rule.
+
+Lead notes and outcome forms survive same-tab reloads for up to 12 hours. Drafts are scoped to user and lead/call,
+never automatically submitted, and removed after successful save or explicit discard/sign-out. Memory preserves
+edits during SPA/history navigation if storage is unavailable; the UI warns that reload recovery is unavailable.
+Links and queue exits ask about unsaved lead notes; native reload/close warns about notes or a live/unfinished call.
+In-app recovery rechecks access with existing server actions before showing cached context. It retains the same
+call ID, refuses already-logged/inaccessible calls and offers retry on transient errors. A failed driver connection
+after call creation can still be logged. Save & Next confirms success and uses the existing queue without auto-dialing;
+the empty queue links to Follow-ups and Skipped. Existing outcome keyboard shortcuts are described in the sheet.
+
+**Limits:** drafts are per tab, expire after 12 hours, and cannot restore live audio. Storage-denied reloads cannot
+retain drafts; a warning is shown. Browser Back/Forward preserves drafts without rewriting browser history.
+No migrations, provider settings, credentials, permissions or production data were changed for Phase 2.
+
 ## D45. Between-calls lines
 **Spec:** not mentioned. §7 covers the call workspace and §6 the dashboard; neither asks for anything like this.
 **Built:** a one-liner in three places, from a written pool of ~100 in `src/lib/domain/pep-talk-lines.ts`: under the goal copy

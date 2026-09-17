@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { confirmUnsavedNotes } from "@/components/common/use-unsaved-notes";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -51,6 +52,7 @@ export function SkipLeadMenu({ leadId, businessName, nextHref, fallbackHref, dis
   }
 
   function skip(reason: SkipReason | null, skipNote?: string) {
+    if (nextHref && !confirmUnsavedNotes()) return;
     setOtherOpen(false);
     startTransition(async () => {
       let result: Awaited<ReturnType<typeof skipLeadAction>> | null = null;

@@ -2,6 +2,8 @@
 
 import { Check } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { confirmUnsavedNotes } from "@/components/common/use-unsaved-notes";
+import { draftKey, outcomeDraftSchema, readDraft, removeDraft, writeDraft } from "@/lib/dialer/workspace-drafts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,6 +38,7 @@ import { cheerOutcome } from "@/components/pep/pep-toast";
 import { logCallAction } from "@/server/actions/calls";
 
 export interface OutcomeSheetProps {
+  userId: string;
   wrapUp: WrapUp;
   timezone: string;
   /** After a successful save. `goNext` is true for Save & Next. */
@@ -46,11 +49,14 @@ export interface OutcomeSheetProps {
 
 const SAVE_ERROR = "Couldn't save. Check your connection and try again.";
 
-export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSheetProps) {
+export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: OutcomeSheetProps) {
+  const storageKey = draftKey(userId, "outcome", wrapUp.callId ?? wrapUp.clientRequestId ?? "unknown");
   const formId = useId();
   const tz = isValidTimeZone(timezone) ? timezone : "UTC";
-  const [values, setValues] = useState<OutcomeFormValues>(EMPTY_OUTCOME_FORM);
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [values, setValues] = useState<OutcomeFormValues>(() => readDraft(storageKey, outcomeDraftSchema) ?? EMPTY_OUTCOME_FORM);
+  const valuesRef = useRef(values);
+  const [notesOpen, setNotesOpen] = useState(values.notes.length > 0);
+  const [draftUnavailable, setDraftUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -61,7 +67,10 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
   // The agent's own choice wins; until then the end reason (or server status) suggests one.
   const outcome: CallOutcome | null = values.outcome ?? wrapUp.preselectedOutcome;
   const update = (patch: Partial<OutcomeFormValues>) => {
-    setValues((current) => ({ ...current, ...patch }));
+    const next = { ...valuesRef.current, ...patch };
+    valuesRef.current = next;
+    setValues(next);
+    setDraftUnavailable(!writeDraft(storageKey, next));
     setError(null);
   };
 
@@ -72,6 +81,7 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
 
   async function save(goNext: boolean) {
     if (savingRef.current) return;
+    if (goNext && !confirmUnsavedNotes()) return;
     const built = buildLogCallPayload(
       { ...values, outcome },
       {
@@ -96,6 +106,7 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
         setError(result.error.message);
         return;
       }
+      removeDraft(storageKey);
       // Only a real lead gets named: an unknown inbound caller's label is their phone number.
       cheerOutcome({ outcome: built.payload.outcome, business: wrapUp.leadId ? wrapUp.label : null, callId: result.data.callId });
       onSaved(goNext);
@@ -173,6 +184,8 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pb-4">
+              <p className="text-sm text-muted-foreground">Choose an outcome, add a note if needed, then Save &amp; Next.</p>
+              <p className="hidden text-xs text-muted-foreground md:block">Keyboard: 1–8 selects an outcome. Enter saves the selected outcome and opens the next lead.</p>
               <div role="radiogroup" aria-label="Outcome" className="grid grid-cols-2 gap-2 md:grid-cols-4">
                 {CALL_OUTCOME_OPTIONS.map((option, index) => {
                   const selected = outcome === option.value;
@@ -333,6 +346,8 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
                   {error}
                 </p>
               ) : null}
+              {draftUnavailable ? <p role="status" className="text-sm text-destructive">Draft recovery is unavailable. Keep this page open until your call is saved.</p> : null}
+              <p role="status" className="sr-only">{saving ? "Saving call outcome…" : ""}</p>
             </div>
 
             <div className="grid grid-cols-[auto_1fr] gap-2 border-t px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
@@ -363,11 +378,11 @@ export function OutcomeSheet({ wrapUp, timezone, onSaved, onDiscard }: OutcomeSh
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Close without logging?</AlertDialogTitle>
-            <AlertDialogDescription>This call&apos;s outcome won&apos;t be saved.</AlertDialogDescription>
+            <AlertDialogDescription>This call&apos;s outcome and any notes entered here will be discarded.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="min-h-12">Keep logging</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" className="min-h-12" onClick={onDiscard}>
+            <AlertDialogAction variant="destructive" className="min-h-12" onClick={() => { removeDraft(storageKey); onDiscard(); }}>
               Discard
             </AlertDialogAction>
           </AlertDialogFooter>

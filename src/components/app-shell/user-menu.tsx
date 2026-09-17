@@ -3,6 +3,7 @@
 import { LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -13,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { clearPendingTel } from "@/lib/dialer/drivers/tel";
+import { clearWorkspaceDrafts } from "@/lib/dialer/workspace-drafts";
+import { confirmUnsavedNotes, releaseUnsavedNotes } from "@/components/common/use-unsaved-notes";
 import { LOGIN_PATH } from "@/lib/supabase/auth-redirect";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/server/actions/auth";
@@ -68,10 +71,18 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
           disabled={signingOut}
           className="min-h-12"
           onSelect={() => {
+            if (!confirmUnsavedNotes(true)) return;
             startSignOut(async () => {
+              try {
+                await signOut();
+              } catch {
+                toast.error("Couldn't sign out. Check your connection and try again. Your drafts are still here.");
+                return;
+              }
               // A tapped phone call is this user's data; the next person on a shared device must not find it.
               clearPendingTel();
-              await signOut();
+              clearWorkspaceDrafts();
+              releaseUnsavedNotes();
               // A full page load drops every in-memory client store (dialer, badge counts) of this user.
               window.location.replace(LOGIN_PATH);
             });
