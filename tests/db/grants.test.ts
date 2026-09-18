@@ -94,6 +94,11 @@ const MATRIX: Record<string, Access> = {
   cancel_appointment: 'api',
   booked_intervals: 'api',
   get_calendar_status: 'api',
+  // Google Calendar connection (D47)
+  set_bookable_hours: 'api',
+  connect_calendar: 'api',
+  disconnect_calendar: 'api',
+  mark_calendar_broken: 'api',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',

@@ -203,11 +203,13 @@ describe('calendar_connection', () => {
   it('is unreadable through the API, even for an admin, and get_calendar_status exposes no token', async () => {
     expect((await pgError(userRows(db, admin, 'select * from public.calendar_connection'))).code).toBe('42501');
     const [before] = await userRows<Record<string, unknown>>(db, admin, 'select * from public.get_calendar_status()');
-    expect(before).toEqual({ connected: false, google_email: null, bookable_calendar_set: false, broken: false });
+    // Milestone 2 (D47) replaces bookable_calendar_set with hours_set and app_calendar_id; the seeded
+    // hours (20260915002000_google_calendar.sql) make hours_set true from the first migration onward.
+    expect(before).toEqual({ connected: false, google_email: null, hours_set: true, broken: false, app_calendar_id: null });
 
     await adminSqlRows(db, 'insert into public.calendar_connection (google_email, refresh_token_ciphertext, connected_by) values ($1, $2, $3)', ['closer@example.com', 'ciphertext', admin]);
     const [after] = await userRows<Record<string, unknown>>(db, admin, 'select * from public.get_calendar_status()');
-    expect(after).toEqual({ connected: true, google_email: 'closer@example.com', bookable_calendar_set: false, broken: false });
+    expect(after).toEqual({ connected: true, google_email: 'closer@example.com', hours_set: true, broken: false, app_calendar_id: null });
 
     const { agent } = await agentWithLead();
     expect((await pgError(userRows(db, agent, 'select * from public.get_calendar_status()'))).code).toBe('42501');

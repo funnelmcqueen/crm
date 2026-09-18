@@ -68,9 +68,30 @@ export type Database = {
           },
         ]
       }
+      bookable_hours: {
+        Row: {
+          ends_minute: number
+          id: string
+          starts_minute: number
+          weekday: number
+        }
+        Insert: {
+          ends_minute: number
+          id?: string
+          starts_minute: number
+          weekday: number
+        }
+        Update: {
+          ends_minute?: number
+          id?: string
+          starts_minute?: number
+          weekday?: number
+        }
+        Relationships: []
+      }
       calendar_connection: {
         Row: {
-          bookable_calendar_id: string | null
+          app_calendar_id: string | null
           broken_at: string | null
           connected_at: string
           connected_by: string
@@ -79,7 +100,7 @@ export type Database = {
           refresh_token_ciphertext: string
         }
         Insert: {
-          bookable_calendar_id?: string | null
+          app_calendar_id?: string | null
           broken_at?: string | null
           connected_at?: string
           connected_by: string
@@ -88,7 +109,7 @@ export type Database = {
           refresh_token_ciphertext: string
         }
         Update: {
-          bookable_calendar_id?: string | null
+          app_calendar_id?: string | null
           broken_at?: string | null
           connected_at?: string
           connected_by?: string
@@ -749,6 +770,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      connect_calendar: {
+        Args: {
+          p_app_calendar_id: string
+          p_ciphertext: string
+          p_email: string
+        }
+        Returns: undefined
+      }
       consume_rate_limit: {
         Args: {
           p_bucket: string
@@ -760,6 +789,10 @@ export type Database = {
           p_lead_id: string
         }
         Returns: string
+      }
+      disconnect_calendar: {
+        Args: never
+        Returns: undefined
       }
       export_leads: {
         Args: {
@@ -841,10 +874,11 @@ export type Database = {
       get_calendar_status: {
         Args: never
         Returns: {
-          bookable_calendar_set: boolean
+          app_calendar_id: string
           broken: boolean
           connected: boolean
           google_email: string
+          hours_set: boolean
         }[]
       }
       get_company_name: {
@@ -1002,6 +1036,10 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_calendar_broken: {
+        Args: never
+        Returns: undefined
+      }
       mark_voicemail_heard: {
         Args: {
           p_call_id: string
@@ -1112,6 +1150,12 @@ export type Database = {
           total_count: number
           website: string
         }[]
+      }
+      set_bookable_hours: {
+        Args: {
+          p_rows: Json
+        }
+        Returns: undefined
       }
       set_lead_business_type: {
         Args: {

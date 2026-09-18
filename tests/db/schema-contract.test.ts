@@ -64,6 +64,8 @@ describe('columns (SPEC 4)', () => {
       id: 'uuid', lead_id: 'uuid', user_id: 'uuid', created_at: 'timestamp with time zone', due_at: 'timestamp with time zone',
       completed_at: 'timestamp with time zone', note: 'text',
     },
+    // Google Calendar connection (D47): bookable hours, replacing milestone 1's bookable calendar.
+    bookable_hours: { id: 'uuid', weekday: 'smallint', starts_minute: 'integer', ends_minute: 'integer' },
   };
 
   it.each(Object.keys(SPEC_COLUMNS))('%s has every specified column with the specified type', async (table) => {
