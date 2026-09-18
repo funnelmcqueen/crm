@@ -12,10 +12,10 @@ import type { CalendarAvailability, CalendarClient, CalendarInterval } from "./t
 
 /** A connected account, as stored (ciphertext only — never the raw refresh token). */
 export interface GoogleCalendarConnection {
-  refreshTokenCiphertext: string;
-  googleEmail: string;
+  readonly refreshTokenCiphertext: string;
+  readonly googleEmail: string;
   /** The secondary calendar the app writes meetings to (design §3). Null until `ensureAppCalendar` creates one. */
-  appCalendarId: string | null;
+  readonly appCalendarId: string | null;
 }
 
 export interface GoogleCalendarDeps {
@@ -26,13 +26,10 @@ export interface GoogleCalendarDeps {
   /** Called once when any Google call fails with GoogleApiError kind "invalid_grant" (access revoked). */
   onInvalidGrant: () => Promise<void>;
   /**
-   * Creates the app calendar for the connection identified by `id` when the connection has none yet. This is a
-   * defensive fallback only — Task 6 creates the app calendar once, at connect time — but the interface still
-   * has to cover a connection row that somehow has no `appCalendarId`. `GoogleCalendarConnection`'s fields carry
-   * no `readonly` (unlike `ranges`): the caller is expected to set `connection.appCalendarId` on the same object
-   * before this promise resolves, which is how the newly created id reaches this module despite the void return.
+   * The connection's app calendar id, creating it (via `createAppCalendar` and `connect_calendar`, Task 7) when
+   * the connection has none yet, and just returning it when one already exists.
    */
-  ensureAppCalendar: (id: string) => Promise<void>;
+  ensureAppCalendar: () => Promise<string>;
 }
 
 /** createMeeting's input, widened with the optional lead email the CalendarClient interface itself does not carry. */
@@ -65,11 +62,7 @@ async function withAccessToken<T>(deps: GoogleCalendarDeps, fn: (accessToken: st
 /** The connection's app calendar id, creating it through `ensureAppCalendar` first when there is none yet. */
 async function resolveAppCalendarId(deps: GoogleCalendarDeps): Promise<string> {
   if (deps.connection.appCalendarId) return deps.connection.appCalendarId;
-  await deps.ensureAppCalendar(deps.connection.googleEmail);
-  if (!deps.connection.appCalendarId) {
-    throw new Error("Google Calendar connection has no app calendar to book into");
-  }
-  return deps.connection.appCalendarId;
+  return deps.ensureAppCalendar();
 }
 
 export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient & { cancelMeeting(eventId: string): Promise<void> } {
