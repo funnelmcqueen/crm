@@ -1,11 +1,14 @@
 import "server-only";
 import { getCalendarDriver, type ServerEnv } from "@/server/env";
+import { createGoogleCalendar, type GoogleCalendarDeps } from "./google";
 import { createMockCalendar } from "./mock";
 import type { CalendarClient } from "./types";
 
 /**
  * The calendar for the configured driver, or null when booking is unavailable (no driver in production, an invalid
  * environment, or the Google driver before Plan 2 adds it). `timeZone` is the closer's zone for the mock calendar.
+ * This resolver never queries the database: the Google path is reached through `resolveGoogleCalendar` below,
+ * once the caller (src/server/services/calendar-connection.ts, Task 6) has loaded a connection and hours.
  */
 export function resolveCalendarClient(timeZone: string, env?: ServerEnv): CalendarClient | null {
   let driver: ReturnType<typeof getCalendarDriver>;
@@ -15,4 +18,13 @@ export function resolveCalendarClient(timeZone: string, env?: ServerEnv): Calend
     return null;
   }
   return driver === "mock" ? createMockCalendar(timeZone) : null;
+}
+
+/**
+ * The Google-backed calendar for an already-loaded connection and bookable hours (docs/DEVIATIONS.md D47). Unlike
+ * `resolveCalendarClient`, this never resolves the driver or touches the database itself — the caller reads the
+ * connection row and the hours and passes them in through `deps`.
+ */
+export function resolveGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient {
+  return createGoogleCalendar(deps);
 }
