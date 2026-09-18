@@ -71,6 +71,11 @@ describe("validateBookableRanges", () => {
     expect(validateBookableRanges([range(1, 540, 660), range(1, 660, 780)])).toBeNull();
   });
 
+  it("rejects a weekday outside 0-6", () => {
+    expect(validateBookableRanges([range(7, 600, 720)])).toBe("Pick a day of the week.");
+    expect(validateBookableRanges([range(-1, 600, 720)])).toBe("Pick a day of the week.");
+  });
+
   it("rejects a time off the half hour", () => {
     expect(validateBookableRanges([range(1, 545, 600)])).toBe("Times must be on the hour or the half hour.");
   });

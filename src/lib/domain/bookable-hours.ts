@@ -66,10 +66,16 @@ export function bookableWindows(
 
 /**
  * The same rules `set_bookable_hours` enforces in Postgres, checked in this order across every range —
- * granularity, ordering, bounds, overlap — returning the first failure's message, or `null` when every
- * range is valid.
+ * weekday, granularity, ordering, bounds, overlap — returning the first failure's message, or `null` when
+ * every range is valid. Weekday comes first: a bad weekday makes every other message about that range
+ * meaningless.
  */
 export function validateBookableRanges(ranges: readonly BookableRange[]): string | null {
+  for (const range of ranges) {
+    if (range.weekday < 0 || range.weekday > 6) {
+      return "Pick a day of the week.";
+    }
+  }
   for (const range of ranges) {
     if (range.startsMinute % HOURS_GRANULARITY_MINUTES !== 0 || range.endsMinute % HOURS_GRANULARITY_MINUTES !== 0) {
       return "Times must be on the hour or the half hour.";
