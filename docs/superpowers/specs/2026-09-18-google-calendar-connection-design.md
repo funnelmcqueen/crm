@@ -37,22 +37,33 @@ The CRM cannot create these for them, and Claude never handles the values.
    over; with the three variables set and `CALENDAR_DRIVER` unset, the driver resolves to `google`
    automatically, mirroring how `DIALER_DRIVER` resolves from the Twilio variables.
 
-## 3. Scopes — least privilege, verified before coding
+## 3. Scopes — least privilege
 
-The privacy promise ("no event title, description or attendee ever reaches an agent") is currently kept by
-the server discarding what it reads. With Google it can be kept by never having permission to read those
-fields at all, which is much stronger.
+The privacy promise ("no event title, description or attendee ever reaches an agent") was kept in milestone
+1 by the server discarding what it read. With Google it is kept by never being granted permission to read
+those fields at all, which is much stronger. Verified against Google's reference on 2026-09-18:
 
-Wanted: permission to read **free/busy only** on the owner's calendar, plus permission to create and delete
-**the events this app itself created**, and nothing else. Google's scope list changes; the first
-implementation task is to confirm the exact scope strings and their real capabilities against current
-Google documentation (including whether an app-created-events scope can create a Meet conference and invite
-a guest, and which calendar such events land on) before any code is written. The chosen scopes go in the
-spec's appendix and in `docs/ARCHITECTURE.md`, with a one-line note on what each permits. Falling back to a
-broader events scope is acceptable only if the narrow one cannot create the meeting the owner asked for,
-and the fallback must be recorded in `docs/DEVIATIONS.md` with the reason.
+| Scope | What it permits | Why |
+|---|---|---|
+| `https://www.googleapis.com/auth/calendar.freebusy` | `freebusy.query`, whose response is a list of busy `start`/`end` pairs per calendar and carries no summary, description or attendee | Read when the closer is busy |
+| `https://www.googleapis.com/auth/calendar.app.created` | Create secondary calendars and see, create, change and delete events **on calendars this app created** — authorises `events.insert` and `events.delete` | Write the meetings, and nothing else |
+| `openid`, `https://www.googleapis.com/auth/userinfo.email` | The account's email address | Shown in Settings, and used as the primary calendar's id in the free/busy query |
 
-Whatever the scope, the code requests only the fields it needs and never selects event summaries.
+Consequences, both intended:
+
+- Booked meetings live on a **secondary calendar the app creates** on first connect (title "Funnel McQueen
+  meetings"), not on the primary calendar. It appears in Google Calendar and on the owner's phone beside
+  everything else, and its id is stored in `calendar_connection.app_calendar_id`.
+- The app **cannot read a single event** of the primary calendar — only its busy ranges. An agent could not
+  be shown a title even by a bug.
+
+Busy time is read from the primary calendar, addressed by the account's email (its calendar id), plus the
+app calendar itself. Busy time the owner keeps on *other* secondary calendars is not seen; see §12.
+
+If `events.insert` with a Meet conference or an attendee turns out to be refused under
+`calendar.app.created`, the fallback is `https://www.googleapis.com/auth/calendar.events.owned` for writes,
+keeping `calendar.freebusy` for reads, recorded in `docs/DEVIATIONS.md` with the refusal message. No
+broader scope than that is acceptable.
 
 ## 4. Bookable hours in the CRM
 
@@ -67,7 +78,7 @@ A new admin setting replaces milestone 1's "windows come from a bookable calenda
   validates weekday range, minute range, granularity, ordering and overlap, raising `invalid_hours`.
 - Hours are interpreted in `settings.default_timezone` (the closer's zone), so a window is "10:00–12:00
   local" on each day and survives daylight-saving changes.
-- `calendar_connection.bookable_calendar_id` is dropped and `get_calendar_status()` returns
+- `calendar_connection.bookable_calendar_id` is replaced by `app_calendar_id` (the secondary calendar the app created, §3) and `get_calendar_status()` returns
   `hours_set boolean` in its place; the column was never populated.
 
 Defaults seeded with the migration: Monday–Friday, 10:00–12:00 and 14:00–17:00 — the same shape the mock
@@ -81,7 +92,7 @@ calendar used, so behaviour before and after connecting is recognisable.
 - `GET /api/google/callback` — verifies the session is still the same admin and the `state` matches the
   cookie, exchanges the code for tokens, reads the account's email address, encrypts the refresh token with
   AES-256-GCM under `GOOGLE_TOKEN_ENCRYPTION_KEY`, and stores it through
-  `connect_calendar(p_email, p_ciphertext)` (definer, admin only, upserts the singleton and clears
+  `connect_calendar(p_email, p_ciphertext, p_app_calendar_id)` (definer, admin only, upserts the singleton and clears
   `broken_at`). Redirects back to Settings with a success or failure flag. Any error state from Google
   (`access_denied`, a mismatched state, a missing refresh token) lands on Settings with a plain message and
   writes nothing.
@@ -167,5 +178,11 @@ steps.
 ## 12. Not built
 
 Several closers or per-agent calendars; rescheduling or cancelling by agents; reminders; watching Google
-for changes made there (no push notifications or sync tokens); recurring meetings; booking across more than
-one calendar; anything that reads an event's title, description or guest list.
+for changes made there (no push notifications or sync tokens); recurring meetings; anything that reads an
+event's title, description or guest list.
+
+Busy time is read from the owner's primary calendar and the app's own calendar only. Time blocked on
+another secondary calendar they keep (a shared family calendar, say) is invisible to the slot engine, and
+an agent could book over it. Enumerating their calendars would need a broader scope than §3 allows, so the
+answer is to keep commitments on the primary calendar. If this bites, the smallest fix is a Settings field
+listing extra calendar ids to treat as busy.
