@@ -18,6 +18,8 @@ const TWILIO_KEYS = [
   "TWILIO_TWIML_APP_SID",
 ] as const;
 
+const GOOGLE_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_TOKEN_ENCRYPTION_KEY"] as const;
+
 /** Unset and blank values (e.g. `TWILIO_AUTH_TOKEN=` copied from .env.example) both count as missing. */
 function blankToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -87,6 +89,9 @@ const serverEnvSchema = publicSupabaseSchema
     TWILIO_API_KEY_SID: optionalString,
     TWILIO_API_KEY_SECRET: optionalString,
     TWILIO_TWIML_APP_SID: optionalString,
+    GOOGLE_CLIENT_ID: optionalString,
+    GOOGLE_CLIENT_SECRET: optionalString,
+    GOOGLE_TOKEN_ENCRYPTION_KEY: optionalString,
   })
   .superRefine((env, ctx) => {
     if (env.SUPABASE_SERVICE_ROLE_KEY === env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -141,6 +146,9 @@ function readProcessEnv(): EnvSource {
     TWILIO_API_KEY_SID: process.env.TWILIO_API_KEY_SID,
     TWILIO_API_KEY_SECRET: process.env.TWILIO_API_KEY_SECRET,
     TWILIO_TWIML_APP_SID: process.env.TWILIO_TWIML_APP_SID,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_TOKEN_ENCRYPTION_KEY: process.env.GOOGLE_TOKEN_ENCRYPTION_KEY,
   };
 }
 
@@ -175,6 +183,10 @@ export function isTwilioConfigured(env: ServerEnv = getServerEnv()): boolean {
   return TWILIO_KEYS.every((key) => env[key] !== undefined) && env.APP_BASE_URL !== undefined;
 }
 
+export function isGoogleCalendarConfigured(env: ServerEnv = getServerEnv()): boolean {
+  return GOOGLE_KEYS.every((key) => env[key] !== undefined);
+}
+
 /**
  * DIALER_DRIVER when set. Otherwise `twilio` when Twilio is fully configured, else `mock` in
  * development/test and `tel` in production (a production app must never silently fake calls).
@@ -186,11 +198,13 @@ export function getDialerDriver(env: ServerEnv = getServerEnv()): DialerDriver {
 }
 
 /**
- * Which calendar booking uses (docs/DEVIATIONS.md D46): an explicit CALENDAR_DRIVER, else the mock calendar in
- * development and tests. Production without a driver has no calendar, so booking reports itself unavailable.
+ * Which calendar booking uses (docs/DEVIATIONS.md D46, D47): an explicit CALENDAR_DRIVER, else `google` when
+ * the Google variables are fully configured, else the mock calendar in development and tests. Production
+ * without a driver or Google configuration has no calendar, so booking reports itself unavailable.
  */
 export function getCalendarDriver(env: ServerEnv = getServerEnv()): CalendarDriver | "unavailable" {
   if (env.CALENDAR_DRIVER) return env.CALENDAR_DRIVER;
+  if (isGoogleCalendarConfigured(env)) return "google";
   return env.NODE_ENV === "production" ? "unavailable" : "mock";
 }
 
