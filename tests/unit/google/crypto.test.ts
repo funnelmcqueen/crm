@@ -62,20 +62,42 @@ describe("encryptRefreshToken / decryptRefreshToken", () => {
     const bytes = Buffer.from(body, "base64");
     bytes[0] = bytes[0] ^ 0xff;
     const tampered = [version, iv, tag, bytes.toString("base64")].join(".");
-    expect(() => decryptRefreshToken(tampered, KEY)).toThrow();
+    expect(() => decryptRefreshToken(tampered, KEY)).toThrow("stored calendar token is not readable");
   });
 
   it("throws on a wrong version prefix", () => {
     const payload = encryptRefreshToken("some-token", KEY);
     const parts = payload.split(".");
     parts[0] = "v2";
-    expect(() => decryptRefreshToken(parts.join("."), KEY)).toThrow();
+    expect(() => decryptRefreshToken(parts.join("."), KEY)).toThrow("stored calendar token is not readable");
   });
 
   it("throws on too few parts", () => {
     const payload = encryptRefreshToken("some-token", KEY);
     const parts = payload.split(".");
-    expect(() => decryptRefreshToken(parts.slice(0, 3).join("."), KEY)).toThrow();
+    expect(() => decryptRefreshToken(parts.slice(0, 3).join("."), KEY)).toThrow("stored calendar token is not readable");
+  });
+
+  it("throws the same generic message on a wrong-length IV, not Node's raw crypto error", () => {
+    // A zero-length IV fails inside createDecipheriv itself (Node raises "Invalid initialization vector"
+    // there, before any authentication is attempted) — the case that used to escape the try block.
+    const payload = encryptRefreshToken("some-token", KEY);
+    const [version, , tag, body] = payload.split(".");
+    const emptyIv = Buffer.alloc(0).toString("base64");
+    const tampered = [version, emptyIv, tag, body].join(".");
+    const err = thrownBy(() => decryptRefreshToken(tampered, KEY));
+    expect(err.message).toBe("stored calendar token is not readable");
+    expect(err.message).not.toContain(KEY);
+  });
+
+  it("throws the same generic message on a wrong-length auth tag, not Node's raw crypto error", () => {
+    const payload = encryptRefreshToken("some-token", KEY);
+    const [version, iv, , body] = payload.split(".");
+    const shortTag = Buffer.alloc(3, 0).toString("base64");
+    const tampered = [version, iv, shortTag, body].join(".");
+    const err = thrownBy(() => decryptRefreshToken(tampered, KEY));
+    expect(err.message).toBe("stored calendar token is not readable");
+    expect(err.message).not.toContain(KEY);
   });
 
   it("throws a clear configuration error when the key is not 32 bytes decoded", () => {
