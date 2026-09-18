@@ -53,7 +53,8 @@ function makeConnection(overrides: Partial<GoogleCalendarConnection> = {}): Goog
 
 function makeDeps(overrides: Partial<GoogleCalendarDeps> = {}) {
   const onInvalidGrant = vi.fn(async () => {});
-  const ensureAppCalendar = vi.fn(async () => {});
+  // Never exercised by default (every test's connection already has an appCalendarId unless it overrides this).
+  const ensureAppCalendar = vi.fn(async () => "unused-default-app-cal-id");
   const deps: GoogleCalendarDeps = {
     connection: makeConnection(),
     ranges: RANGES,
@@ -152,18 +153,14 @@ describe("createGoogleCalendar", () => {
 
     it("creates the app calendar first when the connection has none, and uses the id that comes back", async () => {
       vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-3" });
-      const connectionNoAppCal = makeConnection({ appCalendarId: null });
-      const ensureAppCalendar = vi.fn(async () => {
-        // The service (Task 7) is expected to create the calendar and persist its id back onto the connection
-        // object it handed in — GoogleCalendarConnection's fields carry no `readonly`, unlike `ranges`.
-        connectionNoAppCal.appCalendarId = "created-cal-1";
-      });
-      const { deps } = makeDeps({ connection: connectionNoAppCal, ensureAppCalendar });
+      const ensureAppCalendar = vi.fn(async () => "created-cal-1");
+      const { deps } = makeDeps({ connection: makeConnection({ appCalendarId: null }), ensureAppCalendar });
 
       const input = { start, end, title: "t", description: "d", leadEmail: null };
       await createGoogleCalendar(deps).createMeeting(input);
 
       expect(ensureAppCalendar).toHaveBeenCalledTimes(1);
+      expect(ensureAppCalendar).toHaveBeenCalledWith();
       const [, calendarId] = vi.mocked(insertEvent).mock.calls[0]!;
       expect(calendarId).toBe("created-cal-1");
     });
