@@ -1,11 +1,15 @@
-// The only module that talks to Google over HTTP (docs/DEVIATIONS.md D47). Every function takes an access
-// token as an argument; nothing here reads the database, the request context, or the environment beyond
+// The Calendar/OAuth2 REST calls (docs/DEVIATIONS.md D47) — the other Google HTTP caller is
+// src/server/google/oauth.ts (the authorization-code exchange and token revocation), and both share their
+// timeout+retry plumbing through src/server/google/http.ts. Every function here takes an access token as
+// an argument; nothing here reads the database, the request context, or the environment beyond
 // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET for the token refresh. Errors carry a status and a short reason
 // code only — never a token, a secret, or a request/response body.
 import "server-only";
 import { getServerEnv } from "@/server/env";
+import { GOOGLE_HTTP_TIMEOUT_MS, GoogleConnectionFailure, requestWithRetry as googleRequestWithRetry } from "@/server/google/http";
 
-export const GOOGLE_TIMEOUT_MS = 8000;
+/** Kept under its historical name: tests/unit/google/api.test.ts imports it to drive fake timers. */
+export const GOOGLE_TIMEOUT_MS = GOOGLE_HTTP_TIMEOUT_MS;
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const FREEBUSY_URL = "https://www.googleapis.com/calendar/v3/freeBusy";
@@ -47,9 +51,6 @@ export class GoogleApiError extends Error {
 /** Module-level access-token cache, keyed by refresh token. Access tokens never touch the database. */
 const tokenCache = new Map<string, GoogleTokens>();
 
-/** Marks a rejection from the timeout race so requestOnce can tell it apart from a real fetch failure. */
-class TimeoutSignal extends Error {}
-
 interface GoogleErrorDetail {
   reason?: string;
 }
@@ -80,51 +81,12 @@ function classify(status: number, body: unknown): { kind: GoogleApiError["kind"]
   return { kind: "permanent", reason };
 }
 
-/**
- * Races a fetch call against a timer so the timeout is driven by plain setTimeout/clearTimeout (mockable
- * with vi.useFakeTimers()) rather than AbortSignal.timeout, whose internal timer several fake-timer
- * implementations (notably on Windows/Node) cannot advance. The AbortController still cancels the
- * underlying request when the timer wins.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number, controller: AbortController): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      controller.abort();
-      reject(new TimeoutSignal("Google request timed out"));
-    }, ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err: unknown) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
-}
-
-/** One attempt: fetch with an 8s timeout, classifying a timeout or connection error as transient. */
-async function requestOnce(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  try {
-    return await withTimeout(fetch(url, { ...init, signal: controller.signal }), GOOGLE_TIMEOUT_MS, controller);
-  } catch (err) {
-    if (err instanceof TimeoutSignal) throw new GoogleApiError("transient", 0, "timeout");
-    if (err instanceof TypeError) throw new GoogleApiError("transient", 0, "connection_error");
-    throw err;
-  }
-}
-
-/** Retries once, only for a connection error or a timeout — never for an HTTP status the server returned. */
+/** The shared timeout+retry primitive (src/server/google/http.ts), mapped to this module's own error type. */
 async function requestWithRetry(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await requestOnce(url, init);
+    return await googleRequestWithRetry(url, init);
   } catch (err) {
-    if (err instanceof GoogleApiError && err.kind === "transient" && (err.reason === "timeout" || err.reason === "connection_error")) {
-      return await requestOnce(url, init);
-    }
+    if (err instanceof GoogleConnectionFailure) throw new GoogleApiError("transient", 0, err.reason);
     throw err;
   }
 }

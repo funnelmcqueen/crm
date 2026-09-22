@@ -5,6 +5,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { getServerEnv } from "@/server/env";
+import { GoogleConnectionFailure, requestWithRetry as googleRequestWithRetry } from "@/server/google/http";
 
 /** Least privilege (design §3): free/busy on the primary calendar, writes only on a calendar the app itself created. */
 export const GOOGLE_SCOPES: readonly string[] = [
@@ -17,7 +18,6 @@ export const GOOGLE_SCOPES: readonly string[] = [
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
-const OAUTH_TIMEOUT_MS = 8000;
 
 /** RFC 7636 PKCE pair: a random verifier and its S256 challenge. Both are URL-safe, unpadded base64. */
 export function newPkcePair(): { verifier: string; challenge: string } {
@@ -42,48 +42,23 @@ export function consentUrl(input: { clientId: string; redirectUri: string; state
   return `${AUTH_URL}?${params.toString()}`;
 }
 
-/** Marks a rejection from the timeout race, mirroring src/server/google/api.ts's requestOnce. */
-class TimeoutSignal extends Error {}
+/** This module's own name for a connection-level failure (mirrors GoogleApiError's role in api.ts). */
+class ConnectionError extends Error {
+  readonly reason: "timeout" | "connection_error";
 
-function withTimeout<T>(promise: Promise<T>, ms: number, controller: AbortController): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      controller.abort();
-      reject(new TimeoutSignal("Google OAuth request timed out"));
-    }, ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err: unknown) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
-}
-
-class ConnectionError extends Error {}
-
-/** One attempt with an 8s timeout; a timeout or connection failure becomes a ConnectionError (retryable). */
-async function requestOnce(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  try {
-    return await withTimeout(fetch(url, { ...init, signal: controller.signal }), OAUTH_TIMEOUT_MS, controller);
-  } catch (err) {
-    if (err instanceof TimeoutSignal) throw new ConnectionError("timeout");
-    if (err instanceof TypeError) throw new ConnectionError("connection_error");
-    throw err;
+  constructor(reason: "timeout" | "connection_error") {
+    super(`Google OAuth request failed: ${reason}`);
+    this.name = "ConnectionError";
+    this.reason = reason;
   }
 }
 
-/** Retries once, only for a connection error or timeout — never for an HTTP status Google returned. */
+/** The shared timeout+retry primitive (src/server/google/http.ts), mapped to this module's own error type. */
 async function requestWithRetry(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await requestOnce(url, init);
+    return await googleRequestWithRetry(url, init);
   } catch (err) {
-    if (err instanceof ConnectionError) return await requestOnce(url, init);
+    if (err instanceof GoogleConnectionFailure) throw new ConnectionError(err.reason);
     throw err;
   }
 }
