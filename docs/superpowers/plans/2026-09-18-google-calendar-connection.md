@@ -500,7 +500,7 @@ git commit -m "feat: Google Calendar HTTP layer with timeouts and classified fai
 - Consumes: `CalendarClient`, `CalendarAvailability`, `CalendarInterval` from `src/server/calendar/types.ts`; `bookableWindows` (Task 2); `accessTokenFor`, `freeBusy`, `insertEvent`, `deleteEvent`, `GoogleApiError` (Task 4); `decryptRefreshToken` (Task 3).
 - Produces:
   - `interface GoogleCalendarConnection { refreshTokenCiphertext: string; googleEmail: string; appCalendarId: string | null }`
-  - `interface GoogleCalendarDeps { connection: GoogleCalendarConnection; ranges: readonly BookableRange[]; timeZone: string; onInvalidGrant: () => Promise<void>; ensureAppCalendar: () => Promise<string> }` — `ensureAppCalendar` creates the app calendar when the connection has none, persists its id, and resolves with it; `GoogleCalendarConnection`'s fields are readonly
+  - `interface GoogleCalendarDeps { connection: GoogleCalendarConnection; ranges: readonly BookableRange[]; timeZone: string; onInvalidGrant: () => Promise<void>; }` — `GoogleCalendarConnection`'s fields are readonly and its `appCalendarId` is a non-null `string`. The client never creates a calendar: the service builds it only for a connection that already has one (controller ruling, Task 7 review)
   - `createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient & { cancelMeeting(eventId: string): Promise<void> }`
   - In `client.ts`: `resolveCalendarClient` keeps its signature, and gains an optional second path for the `google` driver — it is given an already-loaded connection and ranges by the service (the resolver must not query the database itself; `src/server/services/calendar-connection.ts` in Task 6 does that and passes them in). Add `resolveGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient` and leave the mock path untouched.
 
@@ -509,7 +509,7 @@ git commit -m "feat: Google Calendar HTTP layer with timeouts and classified fai
 1. `readAvailability` returns windows built from the ranges (assert one exact ISO start) and busy intervals exactly as `freeBusy` returned them, with **no other fields** on either — assert `Object.keys(busy[0])` is exactly `["start", "end"]`;
 2. it queries free/busy for both the account email and the app calendar id, and for the app calendar id only when it is set;
 3. `createMeeting` calls `insertEvent` with the app calendar id, the title and description it was given, the closer's time zone, and the attendee only when the input carries a lead email; it returns the event id;
-4. when the connection has no app calendar id, `createMeeting` calls `ensureAppCalendar()` once and passes the id it resolves with to `insertEvent`;
+4. the client has no calendar-creating path at all: a connection without an app calendar id never reaches it, because the service treats that as "no calendar";
 5. a `GoogleApiError` with `kind === "invalid_grant"` from any call invokes `onInvalidGrant()` once and then rethrows;
 6. a `transient` error is rethrown without calling `onInvalidGrant`;
 7. `cancelMeeting` delegates to `deleteEvent` with the app calendar id.
