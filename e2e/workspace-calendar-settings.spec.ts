@@ -7,8 +7,10 @@ import { signIn } from './helpers';
  * covers the bookable-hours editor, which works the same with or without a connection. Signed in as the
  * seeded admin, in the `workspace` project.
  *
- * The seeded Monday hours (10:00–12:00, 14:00–17:00) are what other specs assume, so the last test restores
- * them before finishing.
+ * The seeded Monday hours (10:00–12:00, 14:00–17:00) are what other specs assume. The last test already puts
+ * them back on its own successful path, but `afterAll` below restores them unconditionally too: Playwright
+ * stops a serial file at its first failing `expect()`, so any flake anywhere in this file — not just in the
+ * last test — could otherwise leave Monday mid-edit for every spec that runs after it.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -78,4 +80,32 @@ test('setting a start later than its end shows the inline message and saves noth
   await page.locator('#calendar').getByRole('button', { name: 'Save hours' }).click();
   await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Bookable hours saved.' })).toBeVisible();
   await expect(monday.locator('li').nth(0)).toContainText('10:00 – 12:00');
+});
+
+test.afterAll(async ({ browser }) => {
+  // Unconditional cleanup: runs whether every test above passed, one of them failed partway through, or a
+  // failure earlier in the file left the rest not run at all (serial mode stops the file at the first
+  // failing `expect()`). A fresh context/page, independent of any test's own `page`, so a broken locator in
+  // one of the tests can't also break the restore. Sets every value explicitly rather than reading current
+  // state first, so it does not matter which range or field the last-run test left mid-edit.
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await signIn(page, 'admin');
+    await page.goto('/settings');
+
+    const calendar = page.locator('#calendar');
+    const monday = calendar.getByRole('heading', { level: 4, name: 'Monday' }).locator('xpath=..');
+    await monday.getByLabel('Monday range 1 start').selectOption({ label: '10:00' });
+    await monday.getByLabel('Monday range 1 end').selectOption({ label: '12:00' });
+    await monday.getByLabel('Monday range 2 start').selectOption({ label: '14:00' });
+    await monday.getByLabel('Monday range 2 end').selectOption({ label: '17:00' });
+    await calendar.getByRole('button', { name: 'Save hours' }).click();
+
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Bookable hours saved.' })).toBeVisible();
+    await expect(monday.locator('li').nth(0)).toContainText('10:00 – 12:00');
+    await expect(monday.locator('li').nth(1)).toContainText('14:00 – 17:00');
+  } finally {
+    await context.close();
+  }
 });
