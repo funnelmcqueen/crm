@@ -13,6 +13,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOOKING_FAILED_MESSAGE, BOOKING_UNAVAILABLE_MESSAGE } from '@/lib/domain/booking-messages';
+import type { CalendarClient } from '@/server/calendar/types';
 import type { RequestContext } from '@/server/context';
 import { resetEnvCacheForTests } from '@/server/env';
 import { decryptRefreshToken, encryptRefreshToken } from '@/server/google/crypto';
@@ -629,6 +630,52 @@ describe('booking against Google', () => {
 
       const status = await admin.supabase.rpc('get_calendar_status');
       expect(status.data?.[0]?.broken).toBe(false);
+    });
+
+    it('does not let a database error during the post-confirm cleanup replace the mapped confirm failure', async () => {
+      // The main calendar comes from a fake (not Google) so only the post-confirm cleanup's own connection read
+      // touches createAdminClient — the one seam this suite can break deterministically, by making its service
+      // role key wrong for just this test. confirm_appointment is made to fail by handing it an oversized event
+      // id (over 1024 chars, the RPC's own limit), a fake-calendar detail already fully under this test's control
+      // — no timing race against a concurrent write was needed.
+      await connect();
+      const { ctx, lead } = await agentAndLead('CleanupDbFails');
+      const oversizedEventId = 'x'.repeat(1100);
+      const fakeCalendar: CalendarClient = {
+        async readAvailability() {
+          return { windows: [{ start: at(9), end: at(9.5) }], busy: [] };
+        },
+        async createMeeting() {
+          return { eventId: oversizedEventId };
+        },
+      };
+      const calls = stubGoogle();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'broken-service-role-key-for-this-test-only');
+      resetEnvCacheForTests();
+      let cleanupLogged = false;
+      try {
+        // Pre-fix, the cleanup's own database error escaped uncaught and replaced this rejection.
+        await expect(
+          bookAppointment(ctx, request(lead.id, at(9)), { calendar: fakeCalendar, now: () => at(0) }),
+        ).rejects.toMatchObject({ code: 'validation' });
+        // Read the spy's calls before mockRestore() below, which also resets its recorded call history.
+        cleanupLogged = consoleErrorSpy.mock.calls.some(
+          (call) => call[0] === '[booking] cancelMeeting failed' && (call[1] as { eventId?: unknown })?.eventId === oversizedEventId,
+        );
+      } finally {
+        stubGoogleEnv(); // Restores the real service role key before any later test in this file runs.
+        consoleErrorSpy.mockRestore();
+      }
+
+      // Nothing here ever reaches Google: the fake calendar covers the booking, and the cleanup's own database
+      // read fails before it would call Google at all.
+      expect(calls).toEqual([]);
+      expect(cleanupLogged).toBe(true);
+
+      const { data: rows } = await serviceClient().from('appointments').select('status').eq('lead_id', lead.id);
+      expect(rows?.every((row) => row.status !== 'scheduled')).toBe(true);
     });
   });
 

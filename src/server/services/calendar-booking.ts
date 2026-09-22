@@ -514,15 +514,17 @@ async function isGoogleDriver(): Promise<boolean> {
 /**
  * Deletes a Google event best effort — used both when an appointment is cancelled in the CRM (design §7) and
  * when `confirm_appointment` fails after the event already exists, so neither path leaves an orphan meeting on
- * the closer's calendar. Never throws: any failure (including invalid_grant, which still marks the connection
- * broken through onInvalidGrant) is only logged, since by the time this runs the CRM side is already settled
- * (the appointment row is either cancelled or about to fail regardless).
+ * the closer's calendar. Genuinely never throws: resolving the closer's time zone, loading the connection and
+ * hours, and the delete itself all run inside one try, so a database error reading either of those (not just a
+ * Google failure) is caught here too (fix round 2) — by the time this runs the CRM side is already settled (the
+ * appointment row is either cancelled or about to fail regardless), and the caller's own result or mapped error
+ * must not be replaced by an unrelated failure from this best-effort cleanup.
  */
 async function cancelGoogleEvent(ctx: RequestContext, appointmentId: string, eventId: string): Promise<void> {
-  const timeZone = await closerTimeZone(ctx);
-  const deps = await buildGoogleDeps(ctx, timeZone);
-  if (!deps) return;
   try {
+    const timeZone = await closerTimeZone(ctx);
+    const deps = await buildGoogleDeps(ctx, timeZone);
+    if (!deps) return;
     await createGoogleCalendar(deps).cancelMeeting(eventId);
   } catch (error) {
     console.error("[booking] cancelMeeting failed", {
