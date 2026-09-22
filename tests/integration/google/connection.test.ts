@@ -113,8 +113,9 @@ describe('connect flow', () => {
     });
   }
 
-  function googleFlow(options: { includeRefreshToken?: boolean } = {}): FetchCall[] {
+  function googleFlow(options: { includeRefreshToken?: boolean; calendarId?: string } = {}): FetchCall[] {
     const includeRefreshToken = options.includeRefreshToken ?? true;
+    const calendarId = options.calendarId ?? FAKE_CALENDAR_ID;
     return stubGoogleFetch((url) => {
       if (url === TOKEN_URL) {
         const body: Record<string, unknown> = { access_token: FAKE_ACCESS_TOKEN, expires_in: 3600, token_type: 'Bearer' };
@@ -122,7 +123,7 @@ describe('connect flow', () => {
         return json(body);
       }
       if (url === USERINFO_URL) return json({ email: FAKE_GOOGLE_EMAIL });
-      if (url === CALENDAR_INSERT_URL) return json({ id: FAKE_CALENDAR_ID });
+      if (url === CALENDAR_INSERT_URL) return json({ id: calendarId });
       throw new Error(`unexpected Google network call to ${url}`);
     });
   }
@@ -358,6 +359,30 @@ describe('connect flow', () => {
         broken: false,
       });
       expectNoSecretsLogged();
+    });
+
+    it('reconnecting reuses the existing app calendar instead of creating a second one', async () => {
+      const first = await startFlow();
+      googleFlow();
+      const firstRes = await handleGoogleCallback(
+        callbackAs(adminSession, `state=${encodeURIComponent(first.state)}&code=${TEST_AUTH_CODE}`, first.cookie),
+      );
+      expect(firstRes.status).toBe(302);
+      expect(firstRes.headers.get('location')).toBe(`${APP_BASE_URL}/settings?calendar=connected`);
+      expect((await connectionRow())?.app_calendar_id).toBe(FAKE_CALENDAR_ID);
+
+      // A distinct id: if the callback wrongly creates a second calendar, both assertions below catch it —
+      // the insert call itself, and the stored id changing to this one.
+      const second = await startFlow();
+      const calls = googleFlow({ calendarId: `${FAKE_CALENDAR_ID}-should-not-be-created` });
+      const secondRes = await handleGoogleCallback(
+        callbackAs(adminSession, `state=${encodeURIComponent(second.state)}&code=${TEST_AUTH_CODE}`, second.cookie),
+      );
+      expect(secondRes.status).toBe(302);
+      expect(secondRes.headers.get('location')).toBe(`${APP_BASE_URL}/settings?calendar=connected`);
+
+      expect(calls.some((c) => c.url === CALENDAR_INSERT_URL)).toBe(false);
+      expect((await connectionRow())?.app_calendar_id).toBe(FAKE_CALENDAR_ID);
     });
 
     it('a token response with no refresh_token redirects to calendar=error and writes nothing', async () => {

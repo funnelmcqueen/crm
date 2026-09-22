@@ -12,6 +12,7 @@ import { accountEmail, createAppCalendar, GoogleApiError } from "@/server/google
 import { encryptRefreshToken } from "@/server/google/crypto";
 import { consentUrl, exchangeCode, newPkcePair } from "@/server/google/oauth";
 import { NO_STORE } from "@/server/http/browser";
+import { createAdminClient } from "@/server/supabase/admin";
 
 export interface GoogleOAuthDeps {
   env: ServerEnv;
@@ -98,6 +99,19 @@ function constantTimeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a, "utf8");
   const bufB = Buffer.from(b, "utf8");
   return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * The current connection's app calendar id, if any — read with the service role since no API role, admin
+ * included, may select calendar_connection directly (see supabase/migrations/20260915002000_google_calendar.sql
+ * and src/server/services/calendar-connection.ts's loadRefreshTokenCiphertext for the same pattern). A
+ * reconnect reuses this instead of creating a second "Funnel McQueen meetings" calendar and stranding the
+ * first one, along with every already-booked appointment whose google_event_id lives there.
+ */
+async function existingAppCalendarId(): Promise<string | null> {
+  const { data, error } = await createAdminClient().from("calendar_connection").select("app_calendar_id").eq("id", true).maybeSingle();
+  if (error) throw mapPostgrestError(error);
+  return data?.app_calendar_id ?? null;
 }
 
 /** Never a code, token or secret — just enough to see where a connection attempt broke. */
@@ -208,7 +222,8 @@ export async function handleGoogleCallback(req: Request, deps: Partial<GoogleOAu
 
   let appCalendarId: string;
   try {
-    appCalendarId = (await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone)).id;
+    const existing = await existingAppCalendarId();
+    appCalendarId = existing ?? (await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone)).id;
   } catch (error) {
     if (isNextControlFlowError(error)) throw error;
     logGoogleOAuthError("create_app_calendar", error);
