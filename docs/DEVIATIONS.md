@@ -83,6 +83,7 @@ worse than no index.
 | [D43](#d43-the-agent-dashboard-is-a-today-workspace-and-one-goal-module-drives-every-target-display) | The agent dashboard is a Today workspace, and one goal module drives every target display |
 | [D44](#d44-pipeline-stage-navigation-and-bounded-columns) | Pipeline stage navigation and bounded columns |
 | [D46](#d46-closer-calendar-booking) | Closer calendar booking |
+| [D47](#d47-google-calendar-connection) | Google Calendar connection |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -743,4 +744,65 @@ milestone. Design: `docs/superpowers/specs/2026-09-17-closer-calendar-booking-de
 details are none of the agents' business.
 **Not built:** texts or emails to the lead, rescheduling or cancelling by agents, reminders, several closers. States
 spanning two time zones use their larger zone. Marking a meeting cancelled in the CRM leaves the Google event in place.
+
+## D47. Google Calendar connection
+**Spec:** §15 lists Google Calendar under "Future-ready, not built". D46 shipped booking against an in-memory mock
+calendar and named the real Google connection as its second milestone.
+**Built:** the closer's real Google Calendar now backs booking (`CALENDAR_DRIVER=google`), through a minimal,
+least-privilege OAuth connection (`docs/superpowers/specs/2026-09-18-google-calendar-connection-design.md`):
+
+- **Four scopes, exactly, no broader grant:**
+
+  | Scope | Permits |
+  |---|---|
+  | `openid`, `https://www.googleapis.com/auth/userinfo.email` | The account's email — shown in Settings, and used as the primary calendar's id for the free/busy query |
+  | `https://www.googleapis.com/auth/calendar.freebusy` | `freebusy.query` only: bare busy `start`/`end` pairs per calendar, never a title, description or attendee |
+  | `https://www.googleapis.com/auth/calendar.app.created` | Create a secondary calendar, and see/create/change/delete events only **on calendars the app itself created** — authorises `events.insert` and `events.delete` on that calendar, nothing on the primary one |
+
+- **Meetings live on a calendar the app created**, never the closer's primary calendar, because `calendar.app.created`
+  is the only write scope granted. The OAuth connect flow (`GET /api/google/callback`,
+  `src/server/http/google-oauth.ts`) creates a secondary calendar titled "Funnel McQueen meetings" on first connect
+  and stores its id in `calendar_connection.app_calendar_id` in the same write that stores the connection.
+  **The calendar client (`src/server/calendar/google.ts`) never creates this calendar itself** — an intentional
+  change from the design, which had the client create it lazily on first use: a `connect_calendar` rejection after
+  a lazy create would have orphaned the calendar on the closer's account, and `connect_calendar` is admin-only, so a
+  lazy create triggered by an agent's own booking session would just raise `forbidden`. A connection stored without
+  an app calendar id — a state the connect flow itself never produces — is treated as booking-unavailable rather
+  than attempted (`buildGoogleDeps`, `src/server/services/calendar-booking.ts`).
+- **Bookable hours live in the CRM**, not read from a Google calendar — a change from D46's original design (its §4
+  said "windows come from a bookable calendar"). `public.bookable_hours` (one row per weekday range, minutes from
+  local midnight, replaced atomically by the admin-only `set_bookable_hours` RPC) replaces it, interpreted in
+  `settings.default_timezone` so a window stays "10:00-12:00 local" across a daylight-saving change.
+- **The meeting gets a Google Meet link, and the lead is invited as a guest** when they have an email address;
+  Google sends that invitation, not the CRM (`insertEvent`, `src/server/google/api.ts`,
+  `conferenceDataVersion=1&sendUpdates=all`).
+- **Cancelling in the CRM deletes the Google event too** (`cancelAppointment` → `cancelMeeting`), so Google notifies
+  the guest. A 404/410 from Google (already gone) counts as success; any other failure leaves the CRM row cancelled
+  and logs the appointment and event ids for manual reconciliation — the calendar can be tidied by hand.
+- **The refresh token is stored only as AES-256-GCM ciphertext** (`src/server/google/crypto.ts`,
+  `calendar_connection.refresh_token_ciphertext`; no API role, admin included, may select that column — the one
+  place that needs the plaintext, disconnecting to revoke it with Google, reads it with the service role). Access
+  tokens are obtained per server instance and cached in memory only, never written to the database, a log, a cookie
+  or the browser.
+- **`unauthorized_client` from Google is a permanent error, not a revoked grant.** Only Google's `invalid_grant`
+  reason marks the connection broken (`mark_calendar_broken`, which shows the reconnect banner in Settings);
+  `unauthorized_client` (a bad or rotated client id/secret) is classified `permanent` instead (`classify`,
+  `src/server/google/api.ts`), because sending the owner through a reconnect would not fix a client-credential
+  problem — reconnecting is specifically the remedy for a revoked or expired refresh token.
+**Why:** the least-privilege scopes keep milestone 1's privacy promise ("no event title, description or attendee
+ever reaches an agent") by never being granted permission to read those fields at all, which is stronger than
+milestone 1's server discarding what it read. Reading bookable hours from the CRM instead of a Google calendar
+avoids asking the owner to maintain a second, Google-side notion of "bookable" that the app cannot validate.
+Misclassifying `unauthorized_client` as a revoked grant would send the owner through a reconnect flow that can
+never fix a credentials problem, and would hide the real fix (checking the variables) behind the wrong prompt.
+
+**Not built:** several closers or per-agent calendars; rescheduling or cancelling by agents; reminders; watching
+Google for changes made there (no push notifications or sync tokens, so a meeting moved or deleted directly in
+Google leaves the CRM's own record in place and the slot stays blocked until it is cancelled in the CRM);
+recurring meetings; anything that reads an event's title, description or guest list. **Busy time is read only from
+the closer's primary calendar and the app's own calendar** (`readAvailability`, `src/server/calendar/google.ts`) —
+time blocked on another secondary calendar the closer keeps (a shared family calendar, say) is invisible to the
+slot engine, and an agent could book over it. Enumerating the closer's calendars would need a broader scope than
+the four above allow, so the mitigation is to keep commitments on the primary calendar; the smallest fix if this
+bites is a Settings field listing extra calendar ids to treat as busy.
 

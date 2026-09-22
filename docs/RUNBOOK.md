@@ -118,6 +118,41 @@ Twilio's usage triggers (README, Twilio step 8) should catch this first. When on
 
 ---
 
+## Calendar
+
+### The calendar connection broke
+
+Symptom: an agent tries to book a meeting and sees "Booking isn't available right now. Schedule a
+follow-up instead." Admin → Settings → Google Calendar shows a red banner — "The connection to Google
+broke. Reconnect to keep booking meetings." — instead of "Connected as name@gmail.com".
+
+This happens when Google revokes the refresh token: the owner changed their Google password, removed the
+app's access from their Google Account, or (the usual cause) the OAuth consent screen was left in
+*Testing* and Google expired the token after seven days (README, Google Calendar setup, step 2). The
+server only learns this the next time it tries to read availability or book a meeting — Google returns
+`invalid_grant`, `mark_calendar_broken()` sets `calendar_connection.broken_at`, and every agent sees
+booking as unavailable until it is fixed. A timeout, a 5xx or a Google rate limit is logged but does
+**not** set `broken_at` — that is treated as transient, not a revoked grant, and clears itself on the next
+successful call.
+
+**Fix:** Admin → Settings → Google Calendar → **Reconnect**, sign in as the same Gmail account, and
+approve the consent screen again.
+
+If Google refuses to complete the reconnect (an error page from Google, or Settings shows the toast
+"Couldn't connect Google Calendar. Try again." after redirecting back):
+
+1. Check all three variables are set and match what is in Google Cloud Console: `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`. A client secret rotated in the Console without
+   updating `GOOGLE_CLIENT_SECRET` here looks the same from the outside (Google reports
+   `unauthorized_client`), but the server does **not** treat that as a revoked grant — reconnecting will
+   not fix a wrong client secret; update the variable and redeploy instead.
+2. Confirm the OAuth consent screen is **Published**, not stuck in Testing (README, Google Calendar
+   setup, step 2).
+3. Confirm both redirect URIs are still registered on the OAuth client, the deployed one included
+   (`https://<app-domain>/api/google/callback`).
+
+---
+
 ## Data
 
 ### Reassign leads

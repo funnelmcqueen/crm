@@ -29,11 +29,12 @@ things in the UI.
 6. [Real Supabase setup](#real-supabase-setup)
 7. [Deploying to Vercel](#deploying-to-vercel)
 8. [Twilio setup, step by step](#twilio-setup-step-by-step)
-9. [Running webhooks locally through a tunnel](#running-webhooks-locally-through-a-tunnel)
-10. [Switching DIALER_DRIVER](#switching-dialer_driver)
-11. [Testing and verification](#testing-and-verification)
-12. [Security notes](#security-notes)
-13. [Troubleshooting](#troubleshooting)
+9. [Google Calendar setup, step by step](#google-calendar-setup-step-by-step)
+10. [Running webhooks locally through a tunnel](#running-webhooks-locally-through-a-tunnel)
+11. [Switching DIALER_DRIVER](#switching-dialer_driver)
+12. [Testing and verification](#testing-and-verification)
+13. [Security notes](#security-notes)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -149,7 +150,7 @@ prints a ready-to-paste env block:
 ```
 [localbase] applied bootstrap.sql
 [localbase] applied migration 20260915000100_core_schema.sql
-... (18 migrations)
+... (19 migrations)
 [localbase] listening on http://127.0.0.1:54321
 
 localbase is running (data: .../.localbase/data)
@@ -371,7 +372,10 @@ tests that mint their own JWTs. Nothing else changes: the same suite, the same a
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs…` | **server only** | yes |
 | `APP_BASE_URL` | `https://crm.example.com` | server only | yes in practice; required when `DIALER_DRIVER=twilio` |
 | `DIALER_DRIVER` | `twilio` | server only | no (see [below](#switching-dialer_driver)) |
-| `CALENDAR_DRIVER` | `mock` | server only | no; `google` \| `mock`, unset resolves to `mock` outside production and to "booking unavailable" in production, and `mock` with `NODE_ENV=production` is refused at startup |
+| `CALENDAR_DRIVER` | `mock` | server only | no; `google` \| `mock`, unset resolves to `google` when the three `GOOGLE_*` variables below are all set, else `mock` outside production and "booking unavailable" in production, and `mock` with `NODE_ENV=production` is refused at startup |
+| `GOOGLE_CLIENT_ID` | `1234567890-abc123.apps.googleusercontent.com` | **server only** | required for `CALENDAR_DRIVER=google` (or its auto-detect) |
+| `GOOGLE_CLIENT_SECRET` | `GOCSPX-…` | **server only** | required for `CALENDAR_DRIVER=google` (or its auto-detect) |
+| `GOOGLE_TOKEN_ENCRYPTION_KEY` | 32 random bytes, base64 | **server only** | required for `CALENDAR_DRIVER=google` (or its auto-detect) |
 | `TWILIO_ACCOUNT_SID` | `AC00000000000000000000000000000000` | **server only** | required with `twilio` |
 | `TWILIO_AUTH_TOKEN` | `your_auth_token` | **server only** | required with `twilio` |
 | `TWILIO_API_KEY_SID` | `SK00000000000000000000000000000000` | **server only** | required with `twilio` |
@@ -552,6 +556,86 @@ TWILIO_API_KEY_SECRET=…
 TWILIO_TWIML_APP_SID=AP…
 APP_BASE_URL=https://crm.example.com
 DIALER_DRIVER=twilio
+```
+
+---
+
+## Google Calendar setup, step by step
+
+This connects one closer's real Google Calendar so booking (deviation D47) works in production. A free
+Gmail account is all you need — Google Workspace is not required. Every step below happens in Google's own
+console; the CRM cannot do any of it for you, and the account owner is the only one who ever needs to see
+the values it produces.
+
+### 1. Create a project and enable the Calendar API
+
+**console.cloud.google.com** → create a project (or reuse one) → **APIs & Services → Library** → search
+for **Google Calendar API** → **Enable**.
+
+### 2. Configure the OAuth consent screen, and publish it
+
+**APIs & Services → OAuth consent screen.** User type **External**, with the closer's own Gmail as the
+only owner. Fill in the required fields, then **Publish app**.
+
+**Publishing is not optional.** An app left in *Testing* has its refresh tokens expired by Google after
+seven days, so the connection would need reconnecting about once a week, silently, until an agent tries
+to book and finds it broken. Publishing without Google's verification review is the right trade for a
+single-user app like this one: the owner sees a one-time "Google hasn't verified this app" interstitial
+the first time they connect (**Advanced → Go to \<app name\> (unsafe)**), and it does not reappear on
+later reconnects.
+
+### 3. Create an OAuth client ID
+
+**APIs & Services → Credentials → Create Credentials → OAuth client ID**, type **Web application**. Add
+both redirect URIs — the deployed one and localhost for local development:
+
+```
+https://<your-app-domain>/api/google/callback
+http://localhost:3000/api/google/callback
+```
+
+Save, then copy the client ID and secret.
+
+> `GOOGLE_CLIENT_ID=….apps.googleusercontent.com`
+> `GOOGLE_CLIENT_SECRET=GOCSPX-…`
+
+### 4. Generate the token encryption key
+
+The refresh token Google issues is encrypted at rest (AES-256-GCM) before it is stored; this key never
+leaves the server environment and is never logged.
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+> `GOOGLE_TOKEN_ENCRYPTION_KEY=<the printed value>`
+
+All three variables are server-only and must never carry a `NEXT_PUBLIC_` prefix. With all three set,
+`CALENDAR_DRIVER` resolves to `google` automatically — the same way `DIALER_DRIVER` resolves to `twilio`
+once the Twilio variables are all present. Set `CALENDAR_DRIVER=google` explicitly if you would rather not
+rely on that.
+
+### 5. Connect the account and set bookable hours
+
+Deploy (or run locally) with the three variables set, then sign in to the CRM as an admin:
+**Settings → Google Calendar → Connect Google Calendar**, sign in as the closer's Gmail account, and
+approve the consent screen. The app creates a secondary calendar named "Funnel McQueen meetings" on first
+connect — meetings live there, never on the primary calendar — and Settings then shows "Connected as
+name@gmail.com". Set **Bookable hours** underneath (seeded to weekdays 10:00-12:00 and 14:00-17:00, the
+same shape the mock calendar used, until you change it).
+
+If the connection needs reconnecting every few days, the consent screen was almost certainly left in
+Testing — go back to step 2 and publish it.
+
+### Summary
+
+After all five steps:
+
+```bash
+GOOGLE_CLIENT_ID=….apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-…
+GOOGLE_TOKEN_ENCRYPTION_KEY=<32 random bytes, base64>
+CALENDAR_DRIVER=google
 ```
 
 ---

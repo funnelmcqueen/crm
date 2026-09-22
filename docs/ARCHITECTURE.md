@@ -133,7 +133,8 @@ e2e/                     Playwright specs (mock dialer)
 | `APP_BASE_URL` | server-only | exact public origin, no trailing slash; used for Twilio signature URLs |
 | `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock`. Unset: `twilio` when configured, else `mock` in development/test and `tel` in production (never silently fake calls in prod). `mock` with `NODE_ENV=production` is an invalid environment (D24) |
 | `TWILIO_ACCOUNT_SID` `TWILIO_AUTH_TOKEN` `TWILIO_API_KEY_SID` `TWILIO_API_KEY_SECRET` `TWILIO_TWIML_APP_SID` | server-only | required when `DIALER_DRIVER=twilio` |
-| `CALENDAR_DRIVER` | server-only | `google` \| `mock`. Unset: `mock` outside production, "booking unavailable" in production (never silently invent availability in prod). `mock` with `NODE_ENV=production` is refused at startup (D46) |
+| `CALENDAR_DRIVER` | server-only | `google` \| `mock`. Unset: `google` when the three `GOOGLE_*` variables below are all set (mirroring how `DIALER_DRIVER` auto-detects `twilio`), else `mock` outside production, "booking unavailable" in production (never silently invent availability in prod). `mock` with `NODE_ENV=production` is refused at startup (D46) |
+| `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_TOKEN_ENCRYPTION_KEY` | server-only | required for `CALENDAR_DRIVER=google` (or its auto-detect above); `GOOGLE_TOKEN_ENCRYPTION_KEY` is 32 random bytes, base64, and encrypts the stored refresh token at rest (D47) |
 
 `src/server/env.ts` exports `getServerEnv()`, which parses lazily and caches (so importing never
 throws at build time). `DIALER_DRIVER` reaches the client only as a prop from the `(app)` layout.
@@ -554,6 +555,7 @@ supabase/migrations/20260915001600_bulk_leads.sql      bulk lead actions (D41)
 supabase/migrations/20260915001700_skipped_leads.sql   Skipped queue (D42)
 supabase/migrations/20260915001800_agent_today.sql     agent Today dashboard (D43)
 supabase/migrations/20260915001900_calendar_booking.sql closer calendar booking (D46)
+supabase/migrations/20260915002000_google_calendar.sql   Google Calendar connection (D47)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
 Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`
@@ -823,11 +825,15 @@ role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signu
 
 ---
 
-## Closer calendar booking (D46)
+## Closer calendar booking (D46) and the Google connection (D47)
 
 Tables: `appointments` (lead, `booked_by`, 30-minute `starts_at`/`ends_at`, `status` pending|scheduled|cancelled,
 `google_event_id`, `note` ≤ 500, `client_request_id`; unique index on `starts_at` where live; RLS select: booker or
-admin) and `calendar_connection` (singleton, no API access). `leads.business_type` (enum, null = guess from name).
+admin), `calendar_connection` (singleton, no API access — not even admin; `google_email`, `refresh_token_ciphertext`,
+`app_calendar_id`, `connected_by`, `connected_at`, `broken_at`), and `bookable_hours` (D47: `weekday` 0-6,
+`starts_minute`/`ends_minute` minutes from local midnight, both multiples of 30, `starts_minute < ends_minute`, no
+overlap within a weekday; RLS select: any active user; seeded Mon-Fri 10:00-12:00 and 14:00-17:00, the shape the mock
+calendar used). `leads.business_type` (enum, null = guess from name).
 
 | RPC | Security | Who | Notes |
 |---|---|---|---|
@@ -838,11 +844,42 @@ admin) and `calendar_connection` (singleton, no API access). `leads.business_typ
 | `abandon_appointment(p_id)` | definer | booker | deletes own pending row |
 | `cancel_appointment(p_id)` | definer | admin | scheduled → cancelled, CRM only |
 | `booked_intervals(p_from, p_to)` | definer | active | times only, range ≤ 31 days |
-| `get_calendar_status()` | definer | admin | never returns the token |
+| `set_bookable_hours(p_rows)` | definer | admin | D47: replaces the whole week atomically; validates weekday/minute range, 30-minute granularity, ordering and overlap, else `invalid_hours` |
+| `connect_calendar(p_email, p_ciphertext, p_app_calendar_id)` | definer | admin | D47: upserts the singleton, clears `broken_at` |
+| `disconnect_calendar()` | definer | admin | D47: deletes the row |
+| `mark_calendar_broken()` | definer | active | D47: any active user's booking attempt can discover a revoked grant; only ever sets `broken_at` |
+| `get_calendar_status()` | definer | admin | returns `connected, google_email, hours_set, broken, app_calendar_id`, never the token. D47: `hours_set` now reflects whether any `bookable_hours` rows exist — previously a `bookable_calendar_id is not null` stand-in that was never populated |
 
-Environment: `CALENDAR_DRIVER` = `google` | `mock`; unset is `mock` outside production and unavailable in production;
-`mock` in production is refused at startup. Code: `src/lib/domain/{business-type,lead-timezone,calendar-slots,business-rhythm,slot-phrase,meeting-description}.ts`,
-`src/server/calendar/*`, `src/server/services/calendar-booking.ts`, `src/components/booking/*`.
+**Driver resolution** (`getCalendarDriver`, `src/server/env.ts`): an explicit `CALENDAR_DRIVER` wins; otherwise
+`google` when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_TOKEN_ENCRYPTION_KEY` are all set (mirroring how
+`DIALER_DRIVER` auto-detects `twilio` from the Twilio variables), else `mock` in development/test and `unavailable`
+in production — a production deployment with no driver set and no Google configuration reports booking unavailable
+rather than inventing availability. `CALENDAR_DRIVER=mock` with `NODE_ENV=production` is still refused at startup.
+
+**Google modules (D47).** `src/server/google/http.ts` is the shared timeout+retry primitive both Google HTTP callers
+use: an 8s timeout per attempt, one retry on a connection error or timeout only, never on an HTTP status Google
+returned. `src/server/google/oauth.ts` is the PKCE authorization-code exchange and best-effort token revocation.
+`src/server/google/api.ts` is every Calendar/OAuth2 REST call an access token can make (`accessTokenFor` refreshes
+and caches an access token per refresh token in memory, `freeBusy`, `insertEvent`, `deleteEvent`,
+`createAppCalendar`, `accountEmail`), and classifies every Google error as `invalid_grant` (access revoked — the
+only kind that marks the connection broken), `transient` (429, 5xx, a rate-limit reason) or `permanent` (everything
+else, `unauthorized_client` included: a bad or rotated client id/secret is not a revoked grant, and reconnecting
+would not fix it). `src/server/google/crypto.ts` is AES-256-GCM for the refresh token, the only form it takes
+outside memory. `src/server/calendar/google.ts` (`createGoogleCalendar`) implements `CalendarClient` against those
+modules: `readAvailability` builds windows from `bookable_hours` and busy time from `freeBusy` on the closer's
+primary calendar (addressed by email) plus the app calendar; `createMeeting` inserts a Meet-conferenced event with
+the lead as an attendee when they have an email address; `cancelMeeting` deletes it. **It never creates the app
+calendar itself** — only `GET /api/google/callback` (`src/server/http/google-oauth.ts`) does, once, on first
+connect, storing the new calendar's id in `calendar_connection.app_calendar_id` in the same write that stores the
+connection; a connection without an app calendar id is treated as booking-unavailable rather than triggering a lazy
+create (D47 amends the original design here — see `docs/DEVIATIONS.md`).
+
+Environment: `CALENDAR_DRIVER` = `google` | `mock` (see driver resolution above); `mock` in production is refused at
+startup. `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (32 random bytes, base64) are
+server-only and never `NEXT_PUBLIC_`. Code: `src/lib/domain/{business-type,lead-timezone,calendar-slots,business-rhythm,slot-phrase,meeting-description,bookable-hours}.ts`,
+`src/server/calendar/*`, `src/server/google/*`, `src/server/http/google-oauth.ts`,
+`src/server/services/{calendar-booking,calendar-connection}.ts`, `src/components/booking/*`,
+`src/components/settings/{calendar-section,bookable-hours-form}.tsx`.
 
 ---
 
