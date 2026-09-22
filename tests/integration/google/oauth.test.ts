@@ -3,7 +3,7 @@
 // layer — every non-Google call (Supabase auth/REST) passes through to the real fetch, so no test reaches
 // the actual network for Google, but the shared local Supabase stack still works normally. Every credential
 // below is an obvious placeholder; nothing here is a real client id, secret, code or token.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetEnvCacheForTests } from '@/server/env';
 import { decryptRefreshToken } from '@/server/google/crypto';
@@ -21,6 +21,7 @@ const FAKE_ACCESS_TOKEN = 'test-access-token';
 const FAKE_REFRESH_TOKEN = 'test-refresh-token';
 const FAKE_CALENDAR_ID = 'test-app-calendar-id';
 const FAKE_GOOGLE_EMAIL = 'connected-owner@example.test';
+const TEST_AUTH_CODE = 'test-auth-code';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
@@ -130,6 +131,13 @@ function expectClearsCookie(res: Response): void {
   expect(maxAgeOf(setCookie ?? '')).toBe(0);
 }
 
+/** Decodes this file's own view of the cookie: name=base64url(JSON({state, verifier})). */
+function decodeStateCookie(cookie: string): { state: string; verifier: string } {
+  const value = cookie.slice(cookie.indexOf('=') + 1);
+  const decoded = Buffer.from(value, 'base64url').toString('utf8');
+  return JSON.parse(decoded) as { state: string; verifier: string };
+}
+
 async function connectionRow() {
   const { data, error } = await serviceClient().from('calendar_connection').select('*').eq('id', true).maybeSingle();
   if (error) throw new Error(`connectionRow failed: ${error.message}`);
@@ -141,26 +149,29 @@ async function clearConnection(): Promise<void> {
   if (error) throw new Error(`clearConnection failed: ${error.message}`);
 }
 
-/** Runs a real GET /api/google/start as the admin and returns the consent state plus the cookie it set. */
-async function startFlow(): Promise<{ cookie: string; state: string }> {
+/** Runs a real GET /api/google/start as the admin and returns everything the callback flow needs. */
+async function startFlow(): Promise<{ cookie: string; state: string; verifier: string; codeChallenge: string }> {
   const res = await handleGoogleStart(browserRequest(START_PATH, { method: 'GET', token: adminSession.accessToken }));
   expect(res.status).toBe(302);
   const location = new URL(res.headers.get('location') ?? '');
   const state = location.searchParams.get('state') ?? '';
+  const codeChallenge = location.searchParams.get('code_challenge') ?? '';
   const cookie = setCookieHeader(res, COOKIE_NAME)?.split(';')[0] ?? '';
   expect(state).not.toBe('');
   expect(cookie).not.toBe('');
-  return { cookie, state };
+  const { verifier } = decodeStateCookie(cookie);
+  return { cookie, state, verifier, codeChallenge };
 }
 
-function callbackAs(session: SignedInUser, query: string, cookie: string): Request {
-  return browserRequest(`${CALLBACK_PATH}?${query}`, { method: 'GET', token: session.accessToken, headers: { Cookie: cookie } });
+function callbackAs(session: SignedInUser | null, query: string, cookie: string): Request {
+  return browserRequest(`${CALLBACK_PATH}?${query}`, { method: 'GET', token: session?.accessToken, headers: { Cookie: cookie } });
 }
 
 let admin: FixtureUser;
 let agent: FixtureUser;
 let adminSession: SignedInUser;
 let agentSession: SignedInUser;
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeAll(async () => {
   stubGoogleEnv();
@@ -177,22 +188,47 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearConnection();
+  // Keeps the run pristine (the handler does log a sanitized line on a failed connection attempt) and
+  // gives every test a record to check for secrets in — see expectNoSecretsLogged below (fix round 1, #4).
+  consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  consoleErrorSpy.mockRestore();
 });
+
+/** The only test coverage "no token may reach a log" actually has: inspects what was really logged. */
+function expectNoSecretsLogged(): void {
+  const text = consoleErrorSpy.mock.calls
+    .flat()
+    .map((arg: unknown) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+    .join('\n');
+  expect(text).not.toContain(FAKE_REFRESH_TOKEN);
+  expect(text).not.toContain(FAKE_ACCESS_TOKEN);
+  expect(text).not.toContain(GOOGLE_CLIENT_SECRET);
+  expect(text).not.toContain(TEST_AUTH_CODE);
+}
 
 describe('handleGoogleStart', () => {
   it('refuses an agent with 403 and writes nothing', async () => {
-    noGoogleNetwork();
+    const calls = noGoogleNetwork();
     const res = await handleGoogleStart(browserRequest(START_PATH, { method: 'GET', token: agentSession.accessToken }));
     expect(res.status).toBe(403);
     expect(await connectionRow()).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a signed-out caller with 401 and writes nothing', async () => {
+    const calls = noGoogleNetwork();
+    const res = await handleGoogleStart(browserRequest(START_PATH, { method: 'GET' }));
+    expect(res.status).toBe(401);
+    expect(await connectionRow()).toBeNull();
+    expect(calls).toEqual([]);
   });
 
   it("redirects an admin to Google's consent URL with the four scopes and PKCE, and sets a short-lived state cookie", async () => {
-    noGoogleNetwork();
+    const calls = noGoogleNetwork();
     const res = await handleGoogleStart(browserRequest(START_PATH, { method: 'GET', token: adminSession.accessToken }));
     expect(res.status).toBe(302);
 
@@ -218,37 +254,71 @@ describe('handleGoogleStart', () => {
     expect(maxAge).toBeLessThanOrEqual(600);
 
     expect(await connectionRow()).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("binds the consent URL's code_challenge to the state cookie's verifier (S256), and the token exchange later sends that same verifier", async () => {
+    const { cookie, state, verifier, codeChallenge } = await startFlow();
+    expect(codeChallenge).toBe(createHash('sha256').update(verifier).digest('base64url'));
+
+    const calls = googleFlow();
+    const res = await handleGoogleCallback(callbackAs(adminSession, `state=${encodeURIComponent(state)}&code=${TEST_AUTH_CODE}`, cookie));
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`${APP_BASE_URL}/settings?calendar=connected`);
+
+    const tokenCall = calls.find((c) => c.url === TOKEN_URL);
+    expect(tokenCall).toBeTruthy();
+    const body = new URLSearchParams((tokenCall?.init.body as string) ?? '');
+    expect(body.get('code_verifier')).toBe(verifier);
+    expectNoSecretsLogged();
   });
 });
 
 describe('handleGoogleCallback', () => {
   it('rejects a mismatched state, writes nothing, reaches no Google endpoint, and clears the cookie', async () => {
-    noGoogleNetwork();
+    const calls = noGoogleNetwork();
     const { cookie } = await startFlow();
     const res = await handleGoogleCallback(callbackAs(adminSession, 'state=wrong-state&code=test-auth-code', cookie));
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe(`${APP_BASE_URL}/settings?calendar=error`);
     expect(await connectionRow()).toBeNull();
     expectClearsCookie(res);
+    expect(calls).toEqual([]);
+    expectNoSecretsLogged();
   });
 
   it('redirects error=access_denied to calendar=denied and writes nothing', async () => {
-    noGoogleNetwork();
+    const calls = noGoogleNetwork();
     const { cookie, state } = await startFlow();
     const res = await handleGoogleCallback(callbackAs(adminSession, `error=access_denied&state=${encodeURIComponent(state)}`, cookie));
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe(`${APP_BASE_URL}/settings?calendar=denied`);
     expect(await connectionRow()).toBeNull();
     expectClearsCookie(res);
+    expect(calls).toEqual([]);
+    expectNoSecretsLogged();
   });
 
   it('re-checks the admin session on the callback: a non-admin caller is refused and writes nothing', async () => {
-    noGoogleNetwork();
+    const calls = noGoogleNetwork();
     const { cookie, state } = await startFlow();
     const res = await handleGoogleCallback(callbackAs(agentSession, `state=${encodeURIComponent(state)}&code=test-auth-code`, cookie));
     expect(res.status).toBe(403);
     expect(await connectionRow()).toBeNull();
     expectClearsCookie(res);
+    expect(calls).toEqual([]);
+    expectNoSecretsLogged();
+  });
+
+  it('refuses a signed-out caller with 401, writes nothing, and still clears the cookie', async () => {
+    const calls = noGoogleNetwork();
+    const { cookie, state } = await startFlow();
+    const res = await handleGoogleCallback(callbackAs(null, `state=${encodeURIComponent(state)}&code=${TEST_AUTH_CODE}`, cookie));
+    expect(res.status).toBe(401);
+    expect(await connectionRow()).toBeNull();
+    expectClearsCookie(res);
+    expect(calls).toEqual([]);
+    expectNoSecretsLogged();
   });
 
   it('exchanges the code, creates the app calendar, stores the connection, and redirects to calendar=connected', async () => {
@@ -274,6 +344,7 @@ describe('handleGoogleCallback', () => {
       app_calendar_id: FAKE_CALENDAR_ID,
       broken: false,
     });
+    expectNoSecretsLogged();
   });
 
   it('a token response with no refresh_token redirects to calendar=error and writes nothing', async () => {
@@ -287,5 +358,8 @@ describe('handleGoogleCallback', () => {
     expectClearsCookie(res);
     // Only the token exchange should have run: no email/calendar call once the refresh token is missing.
     expect(calls.map((c) => c.url)).toEqual([TOKEN_URL]);
+    // This is the one branch that does log (exchange_code) — the real coverage for "never logs a token".
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expectNoSecretsLogged();
   });
 });

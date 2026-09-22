@@ -38,9 +38,13 @@ function googleConfigured(env: ServerEnv): env is ServerEnv & { GOOGLE_CLIENT_ID
   return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.APP_BASE_URL);
 }
 
-function cookieAttributes(env: ServerEnv): string[] {
+/**
+ * Only NODE_ENV drives the cookie's attributes, so this (unlike every other Google call in this file) does
+ * not need a resolved ServerEnv — it works even in the two callback branches that fail before one exists.
+ */
+function cookieAttributes(nodeEnv: string | undefined): string[] {
   const attrs = [`Path=${COOKIE_PATH}`, "HttpOnly", "SameSite=Lax"];
-  if (env.NODE_ENV !== "development") attrs.push("Secure");
+  if (nodeEnv !== "development") attrs.push("Secure");
   return attrs;
 }
 
@@ -49,13 +53,24 @@ function encodeStateCookie(state: string, verifier: string): string {
   return Buffer.from(JSON.stringify({ state, verifier }), "utf8").toString("base64url");
 }
 
-function setStateCookie(env: ServerEnv, state: string, verifier: string): string {
-  return [`${COOKIE_NAME}=${encodeStateCookie(state, verifier)}`, `Max-Age=${COOKIE_MAX_AGE_SECONDS}`, ...cookieAttributes(env)].join("; ");
+function setStateCookie(nodeEnv: string | undefined, state: string, verifier: string): string {
+  return [`${COOKIE_NAME}=${encodeStateCookie(state, verifier)}`, `Max-Age=${COOKIE_MAX_AGE_SECONDS}`, ...cookieAttributes(nodeEnv)].join("; ");
 }
 
 /** Cleared the same way on every branch of the callback (start's cookie, denial, error or success). */
-function clearStateCookie(env: ServerEnv): string {
-  return [`${COOKIE_NAME}=`, "Max-Age=0", ...cookieAttributes(env)].join("; ");
+function clearStateCookie(nodeEnv: string | undefined): string {
+  return [`${COOKIE_NAME}=`, "Max-Age=0", ...cookieAttributes(nodeEnv)].join("; ");
+}
+
+/**
+ * Appends the cleared state cookie to a response and nothing else — no resolved env or session required.
+ * The callback uses this for its two earliest failure branches (env resolution, session lookup), which
+ * happen before `env` or `applyCookies` exist; every later branch goes through `withClearedCookie` below,
+ * which also folds in `applyCookies`.
+ */
+function clearOnly(res: Response, nodeEnv: string | undefined = process.env.NODE_ENV): Response {
+  res.headers.append("Set-Cookie", clearStateCookie(nodeEnv));
+  return res;
 }
 
 function readStateCookie(req: Request): { state: string; verifier: string } | null {
@@ -122,7 +137,7 @@ export async function handleGoogleStart(req: Request, deps: Partial<GoogleOAuthD
     const location = consentUrl({ clientId: env.GOOGLE_CLIENT_ID, redirectUri, state, codeChallenge: challenge });
 
     const res = new Response(null, { status: 302, headers: { Location: location, ...NO_STORE } });
-    res.headers.append("Set-Cookie", setStateCookie(env, state, verifier));
+    res.headers.append("Set-Cookie", setStateCookie(env.NODE_ENV, state, verifier));
     return applyCookies(res);
   } catch (error) {
     return applyCookies(toHttpResponse(error));
@@ -132,21 +147,18 @@ export async function handleGoogleStart(req: Request, deps: Partial<GoogleOAuthD
 /** GET /api/google/callback: re-checks the admin session, verifies state, exchanges the code, and connects. */
 export async function handleGoogleCallback(req: Request, deps: Partial<GoogleOAuthDeps> = {}): Promise<Response> {
   const resolved = resolveEnv(deps);
-  if ("response" in resolved) return resolved.response;
+  if ("response" in resolved) return clearOnly(resolved.response);
   const { env } = resolved;
 
   let auth: Awaited<ReturnType<typeof getRouteAuth>>;
   try {
     auth = await getRouteAuth(req);
   } catch (error) {
-    return toHttpResponse(error);
+    return clearOnly(toHttpResponse(error), env.NODE_ENV);
   }
   const { ctx, applyCookies } = auth;
 
-  const withClearedCookie = (res: Response): Response => {
-    res.headers.append("Set-Cookie", clearStateCookie(env));
-    return applyCookies(res);
-  };
+  const withClearedCookie = (res: Response): Response => applyCookies(clearOnly(res, env.NODE_ENV));
 
   const toSettings = (status: CalendarStatus): Response => {
     const base = env.APP_BASE_URL ?? "";
