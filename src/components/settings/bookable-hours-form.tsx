@@ -97,18 +97,18 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
               <p className="text-sm text-muted-foreground">Closed</p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {dayRanges.map((range) => (
+                {dayRanges.map((range, index) => (
                   <li key={range.id} className="flex flex-wrap items-center gap-2">
                     <span className="text-sm tabular-nums">
                       {formatMinutes(range.startsMinute)} – {formatMinutes(range.endsMinute)}
                     </span>
                     <TimeSelect
-                      label={`${name} range start`}
+                      label={`${name} range ${index + 1} start`}
                       value={range.startsMinute}
                       onChange={(value) => updateRange(range.id, { startsMinute: value })}
                     />
                     <TimeSelect
-                      label={`${name} range end`}
+                      label={`${name} range ${index + 1} end`}
                       value={range.endsMinute}
                       onChange={(value) => updateRange(range.id, { endsMinute: value })}
                     />

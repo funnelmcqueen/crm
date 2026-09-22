@@ -37,6 +37,20 @@ describe("CalendarSection", () => {
     expect(html).not.toMatch(/token|ciphertext|ya29\./i);
   });
 
+  // Radix's AlertDialog only renders its Content into markup while `open` is true, so this also proves the
+  // confirmation dialog is closed by default: the Disconnect fix (Task 8 review round 1) made `open` an
+  // explicit useState(false) instead of leaving Radix's own uncontrolled default, and a regression there
+  // (e.g. defaulting to true) would pop the confirmation open on every page load.
+  //
+  // This does NOT cover the actual bug that was fixed (the dialog failing to close after a successful
+  // disconnect): renderToStaticMarkup is a single, non-interactive server render with no event dispatch, no
+  // state updates and no effects, so it cannot click a button, resolve the mocked async action, or observe
+  // an open-state transition. That behaviour isn't expressible as a test in this file's approach.
+  it("keeps the Disconnect confirmation closed by default", () => {
+    const html = render(CONNECTED);
+    expect(html).not.toContain("Disconnect Google Calendar?");
+  });
+
   it("shows the reconnect banner and still shows the email when the connection is broken", () => {
     const html = render(BROKEN);
     expect(html).toContain("Reconnect");

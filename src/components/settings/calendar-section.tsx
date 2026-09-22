@@ -3,7 +3,7 @@
 // The Settings card for Google Calendar (design §9, §5, §8): connection status, connect/reconnect (a
 // redirect, not an action), disconnect behind a confirmation, and the bookable-hours editor. Never renders
 // a token, a ciphertext or any Google event detail — CalendarConnectionStatus carries none of those.
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -33,32 +33,47 @@ const CALENDAR_NOTICES: Record<string, { message: string; kind: "success" | "err
   error: { message: "Couldn't connect Google Calendar. Try again.", kind: "error" },
 };
 
-/** Reads `?calendar=` off the URL on mount (never during a static/server render) and toasts once. */
+/**
+ * Reads `?calendar=` off the URL on mount (never during a static/server render), toasts once, then strips
+ * it from the address bar with `history.replaceState` so a refresh doesn't re-fire the toast.
+ */
 function useCalendarQueryNotice(): void {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const value = new URLSearchParams(window.location.search).get("calendar");
+    const url = new URL(window.location.href);
+    const value = url.searchParams.get("calendar");
     if (!value) return;
     const notice = CALENDAR_NOTICES[value];
-    if (!notice) return;
-    if (notice.kind === "success") toast.success(notice.message);
-    else toast.error(notice.message);
+    if (notice) {
+      if (notice.kind === "success") toast.success(notice.message);
+      else toast.error(notice.message);
+    }
+    url.searchParams.delete("calendar");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
 }
 
 function DisconnectButton() {
+  const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function confirm() {
     startTransition(async () => {
       const result = await disconnectCalendarAction();
-      if (result.ok) toast.success("Google Calendar disconnected.");
-      else toast.error(result.error.message);
+      if (result.ok) {
+        toast.success("Google Calendar disconnected.");
+        setOpen(false);
+      } else {
+        toast.error(result.error.message);
+      }
     });
   }
 
   return (
-    <AlertDialog>
+    // Controlled, and refuses to close while pending: AlertDialogAction below calls preventDefault() so it
+    // can run the action first, which also suppresses Radix's own close-on-click — confirm() above closes
+    // it explicitly once the action actually succeeds (matches SetAgentActiveDialog in agent-dialogs.tsx).
+    <AlertDialog open={open} onOpenChange={(next) => (pending ? undefined : setOpen(next))}>
       <AlertDialogTrigger asChild>
         <Button type="button" variant="outline" className="min-h-12" disabled={pending}>
           Disconnect
