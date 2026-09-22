@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/common/page-header";
 import { AgentTargetsList, CompanySettingsForm } from "@/components/settings/admin-settings";
 import { AudioSection } from "@/components/settings/audio-section";
+import { CalendarSection } from "@/components/settings/calendar-section";
 import { CallModeSection } from "@/components/settings/call-mode-section";
 import { EmailForm, NameForm, PasswordForm, type EmailChangeNotice } from "@/components/settings/profile-forms";
 import { SettingsSection } from "@/components/settings/settings-section";
 import { requireUserPage } from "@/server/context";
 import { getDialerDriver } from "@/server/env";
+import { getBookableHours, getCalendarConnectionStatus } from "@/server/services/calendar-connection";
 import { getSettingsPageData } from "@/server/services/settings";
 
 export const metadata: Metadata = {
@@ -33,9 +35,13 @@ export default async function SettingsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireUserPage();
-  const [data, query] = await Promise.all([getSettingsPageData(ctx), searchParams]);
+  const isAdmin = ctx.profile.role === "ADMIN";
+  const [data, query, calendar] = await Promise.all([
+    getSettingsPageData(ctx),
+    searchParams,
+    isAdmin ? Promise.all([getCalendarConnectionStatus(ctx), getBookableHours(ctx)]) : Promise.resolve(null),
+  ]);
   const { profile } = data;
-  const isAdmin = data.admin !== null;
   const inAppAvailable = profile.inAppCallingEnabled && inAppDriverAvailable();
 
   return (
@@ -69,8 +75,9 @@ export default async function SettingsPage({
         <AudioSection inAppAvailable={inAppAvailable} />
       </SettingsSection>
 
-      {data.admin ? (
+      {data.admin && calendar ? (
         <>
+          <CalendarSection status={calendar[0]} hours={calendar[1]} timeZone={data.admin.company.defaultTimezone} />
           <SettingsSection id="company" title="Company" description="Admin only.">
             <CompanySettingsForm company={data.admin.company} />
           </SettingsSection>
