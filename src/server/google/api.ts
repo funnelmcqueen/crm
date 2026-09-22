@@ -72,7 +72,10 @@ function extractReason(body: unknown): string | undefined {
 
 function classify(status: number, body: unknown): { kind: GoogleApiError["kind"]; reason: string } {
   const reason = extractReason(body) ?? `http_${status}`;
-  if (reason === "invalid_grant" || reason === "unauthorized_client") {
+  // unauthorized_client (a bad/rotated client id or secret) is deliberately not treated as invalid_grant: marking
+  // the connection broken and telling the owner to reconnect would not fix a client credential problem, and
+  // "reconnect" is specifically the remedy for a revoked/expired refresh token (fix round 1).
+  if (reason === "invalid_grant") {
     return { kind: "invalid_grant", reason };
   }
   if (status === 429 || (status >= 500 && status < 600) || reason === "rateLimitExceeded" || reason === "userRateLimitExceeded") {
