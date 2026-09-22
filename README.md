@@ -580,9 +580,9 @@ only owner. Fill in the required fields, then **Publish app**.
 **Publishing is not optional.** An app left in *Testing* has its refresh tokens expired by Google after
 seven days, so the connection would need reconnecting about once a week, silently, until an agent tries
 to book and finds it broken. Publishing without Google's verification review is the right trade for a
-single-user app like this one: the owner sees a one-time "Google hasn't verified this app" interstitial
-the first time they connect (**Advanced → Go to \<app name\> (unsafe)**), and it does not reappear on
-later reconnects.
+single-user app like this one: the owner clicks past a "Google hasn't verified this app" interstitial
+(**Advanced → Go to \<app name\> (unsafe)**). Expect to see it again on a reconnect — the app always asks
+for consent explicitly, so that it is always issued a refresh token.
 
 ### 3. Create an OAuth client ID
 
