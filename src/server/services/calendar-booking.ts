@@ -5,6 +5,7 @@
 // field by field below, so a client that hands back more (a title, attendees) still cannot leak it.
 import { z } from "zod";
 import { suggestSlots } from "@/lib/domain/business-rhythm";
+import type { BookableRange } from "@/lib/domain/bookable-hours";
 import {
   BOOKING_FAILED_MESSAGE,
   BOOKING_UNAVAILABLE_MESSAGE,
@@ -18,12 +19,19 @@ import { buildMeetingDescription, meetingTitle } from "@/lib/domain/meeting-desc
 import { phraseSlot, yourTimeLine, zoneAbbreviation } from "@/lib/domain/slot-phrase";
 import type { LeadStatus } from "@/lib/domain/statuses";
 import { formatInTz } from "@/lib/domain/time";
-import { resolveCalendarClient } from "@/server/calendar/client";
+import { resolveCalendarClient, resolveGoogleCalendar } from "@/server/calendar/client";
+import { createGoogleCalendar, type GoogleCalendarDeps } from "@/server/calendar/google";
 import type { CalendarClient } from "@/server/calendar/types";
 import { requireActive, requireAdmin, type RequestContext } from "@/server/context";
-import { getServerEnv } from "@/server/env";
+import { getCalendarDriver, getServerEnv } from "@/server/env";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
+import { accessTokenFor, createAppCalendar, GoogleApiError } from "@/server/google/api";
+import { decryptRefreshToken } from "@/server/google/crypto";
 import { updateLeadStatus } from "@/server/services/leads";
+import { createAdminClient } from "@/server/supabase/admin";
+
+/** Title of the secondary calendar the app writes meetings to (design §3), matching src/server/http/google-oauth.ts. */
+const APP_CALENDAR_TITLE = "Funnel McQueen meetings";
 
 const CACHE_TTL_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -85,9 +93,88 @@ function parseId(value: unknown): string {
   return parsed.data;
 }
 
-async function defaultCalendar(ctx: RequestContext): Promise<CalendarClient | null> {
+async function closerTimeZone(ctx: RequestContext): Promise<string> {
   const { data } = await ctx.supabase.from("settings").select("default_timezone").limit(1).maybeSingle();
-  return resolveCalendarClient(data?.default_timezone ?? "America/New_York");
+  return data?.default_timezone ?? "America/New_York";
+}
+
+interface GoogleConnectionRow {
+  googleEmail: string;
+  refreshTokenCiphertext: string;
+  appCalendarId: string | null;
+}
+
+/**
+ * The raw connection row, ciphertext included. `calendar_connection` is locked down from every API role (see
+ * the migration), so this is the one place in the booking path that needs the service role rather than the
+ * caller's own session (docs/DEVIATIONS.md D47).
+ */
+async function loadGoogleConnection(): Promise<GoogleConnectionRow | null> {
+  const { data, error } = await createAdminClient()
+    .from("calendar_connection")
+    .select("google_email, refresh_token_ciphertext, app_calendar_id")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) fail(error);
+  if (!data) return null;
+  return { googleEmail: data.google_email, refreshTokenCiphertext: data.refresh_token_ciphertext, appCalendarId: data.app_calendar_id };
+}
+
+/** Any active user may read the bookable hours (RLS), so this runs with the caller's own session. */
+async function loadBookableRanges(ctx: RequestContext): Promise<BookableRange[]> {
+  const { data, error } = await ctx.supabase.from("bookable_hours").select("weekday, starts_minute, ends_minute");
+  if (error) fail(error);
+  return (data ?? []).map((row) => ({ weekday: row.weekday, startsMinute: row.starts_minute, endsMinute: row.ends_minute }));
+}
+
+/** Best effort: a failure here is logged, and the invalid_grant that triggered it still surfaces to the caller. */
+async function markCalendarBroken(ctx: RequestContext): Promise<void> {
+  const { error } = await ctx.supabase.rpc("mark_calendar_broken");
+  if (error) console.error("[booking] mark_calendar_broken failed", { code: error.code });
+}
+
+/**
+ * The Google deps for an already-connected account, or null when there is no connection row. Shared by the
+ * normal availability/booking path (through `resolveGoogleCalendar`) and `cancelAppointment`'s event delete
+ * (through `createGoogleCalendar` directly, for its `cancelMeeting`).
+ */
+async function buildGoogleDeps(ctx: RequestContext, timeZone: string): Promise<GoogleCalendarDeps | null> {
+  const row = await loadGoogleConnection();
+  if (!row) return null;
+  const ranges = await loadBookableRanges(ctx);
+  const connection = { googleEmail: row.googleEmail, refreshTokenCiphertext: row.refreshTokenCiphertext, appCalendarId: row.appCalendarId };
+  return {
+    connection,
+    ranges,
+    timeZone,
+    onInvalidGrant: () => markCalendarBroken(ctx),
+    ensureAppCalendar: async () => {
+      if (connection.appCalendarId) return connection.appCalendarId;
+      const accessToken = await accessTokenFor(decryptRefreshToken(connection.refreshTokenCiphertext));
+      const { id } = await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone);
+      const { error } = await ctx.supabase.rpc("connect_calendar", {
+        p_email: connection.googleEmail,
+        p_ciphertext: connection.refreshTokenCiphertext,
+        p_app_calendar_id: id,
+      });
+      if (error) fail(error);
+      connection.appCalendarId = id;
+      return id;
+    },
+  };
+}
+
+async function defaultCalendar(ctx: RequestContext): Promise<CalendarClient | null> {
+  const timeZone = await closerTimeZone(ctx);
+  let driver: ReturnType<typeof getCalendarDriver>;
+  try {
+    driver = getCalendarDriver();
+  } catch {
+    return null;
+  }
+  if (driver !== "google") return resolveCalendarClient(timeZone);
+  const deps = await buildGoogleDeps(ctx, timeZone);
+  return deps ? resolveGoogleCalendar(deps) : null;
 }
 
 export async function calendarFor(ctx: RequestContext, deps: CalendarDeps): Promise<CalendarClient> {
@@ -114,6 +201,11 @@ export async function readCalendar(
     read = await calendar.readAvailability({ from, to });
   } catch (error) {
     console.error("[booking] readAvailability failed", { code: error instanceof Error ? error.name : typeof error });
+    // invalid_grant already marked the connection broken (onInvalidGrant, above); the agent still just sees
+    // booking as unavailable, same as a not-yet-connected calendar.
+    if (error instanceof GoogleApiError && error.kind === "invalid_grant") {
+      throw new AppError("unavailable", BOOKING_UNAVAILABLE_MESSAGE, { cause: error });
+    }
     throw new AppError("unavailable", CALENDAR_LOAD_FAILED_MESSAGE, { cause: error });
   }
   const windows = read.windows.map((window) => ({ start: new Date(window.start), end: new Date(window.end) }));
@@ -293,7 +385,7 @@ async function createMeetingEvent(
 ): Promise<string> {
   const { data: lead, error } = await ctx.supabase
     .from("leads")
-    .select("business_name, contact_name, phone, city, state")
+    .select("business_name, contact_name, phone, city, state, email")
     .eq("id", leadId)
     .maybeSingle();
   if (error || !lead) {
@@ -303,7 +395,11 @@ async function createMeetingEvent(
   }
   const baseUrl = appBaseUrl();
   try {
-    const { eventId } = await calendar.createMeeting({
+    // A variable, not an inline literal: `leadEmail` is carried by GoogleCalendarClient's wider input type
+    // (src/server/calendar/google.ts) but not by the CalendarClient interface `calendar` is statically typed
+    // as, so an inline object literal would trip TypeScript's excess-property check. The mock calendar simply
+    // ignores the extra field.
+    const input = {
       start,
       end,
       title: meetingTitle(lead.business_name),
@@ -317,11 +413,16 @@ async function createMeetingEvent(
         note,
         leadUrl: baseUrl ? `${baseUrl}/leads/${leadId}` : null,
       }),
-    });
+      leadEmail: lead.email,
+    };
+    const { eventId } = await calendar.createMeeting(input);
     return eventId;
   } catch (cause) {
     console.error("[booking] createMeeting failed", { appointmentId, code: cause instanceof Error ? cause.name : typeof cause });
     await abandon(ctx, appointmentId);
+    if (cause instanceof GoogleApiError && cause.kind === "invalid_grant") {
+      throw new AppError("unavailable", BOOKING_UNAVAILABLE_MESSAGE, { cause });
+    }
     throw new AppError("unavailable", BOOKING_FAILED_MESSAGE, { cause });
   }
 }
@@ -400,11 +501,42 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
   return { ...(await bookedView(active, row.id, row.lead_id, start, end, now)), statusNeedsAttention };
 }
 
+/**
+ * Deletes the Google event for a just-cancelled appointment (design §7). Never fails the cancellation: any
+ * failure (including invalid_grant, which still marks the connection broken through onInvalidGrant) is only
+ * logged, since the CRM row is already cancelled by the time this runs.
+ */
+async function cancelGoogleEvent(ctx: RequestContext, appointmentId: string, eventId: string): Promise<void> {
+  const timeZone = await closerTimeZone(ctx);
+  const deps = await buildGoogleDeps(ctx, timeZone);
+  if (!deps) return;
+  try {
+    await createGoogleCalendar(deps).cancelMeeting(eventId);
+  } catch (error) {
+    console.error("[booking] cancelMeeting failed", {
+      appointmentId,
+      eventId,
+      code: error instanceof GoogleApiError ? error.reason : error instanceof Error ? error.name : typeof error,
+    });
+  }
+}
+
 export async function cancelAppointment(ctx: RequestContext | null, id: unknown): Promise<{ id: string }> {
   const admin = requireAdmin(ctx);
   const appointmentId = parseId(id);
   const { error } = await admin.supabase.rpc("cancel_appointment", { p_id: appointmentId });
   if (error) fail(error);
+
+  let driver: ReturnType<typeof getCalendarDriver>;
+  try {
+    driver = getCalendarDriver();
+  } catch {
+    driver = "unavailable";
+  }
+  if (driver === "google") {
+    const { data: row } = await admin.supabase.from("appointments").select("google_event_id").eq("id", appointmentId).maybeSingle();
+    if (row?.google_event_id) await cancelGoogleEvent(admin, appointmentId, row.google_event_id);
+  }
   return { id: appointmentId };
 }
 
