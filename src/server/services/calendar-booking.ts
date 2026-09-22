@@ -25,13 +25,9 @@ import type { CalendarClient } from "@/server/calendar/types";
 import { requireActive, requireAdmin, type RequestContext } from "@/server/context";
 import { getCalendarDriver, getServerEnv } from "@/server/env";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
-import { accessTokenFor, createAppCalendar, GoogleApiError } from "@/server/google/api";
-import { decryptRefreshToken } from "@/server/google/crypto";
+import { GoogleApiError } from "@/server/google/api";
 import { updateLeadStatus } from "@/server/services/leads";
 import { createAdminClient } from "@/server/supabase/admin";
-
-/** Title of the secondary calendar the app writes meetings to (design §3), matching src/server/http/google-oauth.ts. */
-const APP_CALENDAR_TITLE = "Funnel McQueen meetings";
 
 const CACHE_TTL_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -102,6 +98,7 @@ interface GoogleConnectionRow {
   googleEmail: string;
   refreshTokenCiphertext: string;
   appCalendarId: string | null;
+  brokenAt: string | null;
 }
 
 /**
@@ -112,12 +109,17 @@ interface GoogleConnectionRow {
 async function loadGoogleConnection(): Promise<GoogleConnectionRow | null> {
   const { data, error } = await createAdminClient()
     .from("calendar_connection")
-    .select("google_email, refresh_token_ciphertext, app_calendar_id")
+    .select("google_email, refresh_token_ciphertext, app_calendar_id, broken_at")
     .eq("id", true)
     .maybeSingle();
   if (error) fail(error);
   if (!data) return null;
-  return { googleEmail: data.google_email, refreshTokenCiphertext: data.refresh_token_ciphertext, appCalendarId: data.app_calendar_id };
+  return {
+    googleEmail: data.google_email,
+    refreshTokenCiphertext: data.refresh_token_ciphertext,
+    appCalendarId: data.app_calendar_id,
+    brokenAt: data.broken_at,
+  };
 }
 
 /** Any active user may read the bookable hours (RLS), so this runs with the caller's own session. */
@@ -134,13 +136,21 @@ async function markCalendarBroken(ctx: RequestContext): Promise<void> {
 }
 
 /**
- * The Google deps for an already-connected account, or null when there is no connection row. Shared by the
- * normal availability/booking path (through `resolveGoogleCalendar`) and `cancelAppointment`'s event delete
- * (through `createGoogleCalendar` directly, for its `cancelMeeting`).
+ * The Google deps for an already-connected, working account, or null when the calendar is not usable — no
+ * connection row, one already marked broken (short-circuited here so a connection known to be dead never pays
+ * a Google round trip that is guaranteed to fail — fix round 1), or, in principle, one connected without an app
+ * calendar id (the OAuth connect flow always stores one together with the connection, so this is only a
+ * defensive log for a state that should not exist). Shared by the normal availability/booking path (through
+ * `resolveGoogleCalendar`) and `cancelAppointment`'s / a failed `confirm_appointment`'s event delete (through
+ * `createGoogleCalendar` directly, for its `cancelMeeting`).
  */
 async function buildGoogleDeps(ctx: RequestContext, timeZone: string): Promise<GoogleCalendarDeps | null> {
   const row = await loadGoogleConnection();
-  if (!row) return null;
+  if (!row || row.brokenAt) return null;
+  if (!row.appCalendarId) {
+    console.error("[booking] Google connection has no app calendar id", { reason: "no_app_calendar" });
+    return null;
+  }
   const ranges = await loadBookableRanges(ctx);
   const connection = { googleEmail: row.googleEmail, refreshTokenCiphertext: row.refreshTokenCiphertext, appCalendarId: row.appCalendarId };
   return {
@@ -148,19 +158,6 @@ async function buildGoogleDeps(ctx: RequestContext, timeZone: string): Promise<G
     ranges,
     timeZone,
     onInvalidGrant: () => markCalendarBroken(ctx),
-    ensureAppCalendar: async () => {
-      if (connection.appCalendarId) return connection.appCalendarId;
-      const accessToken = await accessTokenFor(decryptRefreshToken(connection.refreshTokenCiphertext));
-      const { id } = await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone);
-      const { error } = await ctx.supabase.rpc("connect_calendar", {
-        p_email: connection.googleEmail,
-        p_ciphertext: connection.refreshTokenCiphertext,
-        p_app_calendar_id: id,
-      });
-      if (error) fail(error);
-      connection.appCalendarId = id;
-      return id;
-    },
   };
 }
 
@@ -494,6 +491,10 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
     const { error: confirmError } = await active.supabase.rpc("confirm_appointment", { p_id: row.id, p_google_event_id: eventId });
     if (confirmError) {
       console.error("[booking] confirm_appointment failed", { appointmentId: row.id, eventId, code: confirmError.code });
+      // The Google event already exists but no CRM row references it any more: delete it best effort so a
+      // failed booking does not leave an orphan meeting on the closer's calendar (fix round 1). The agent still
+      // sees confirmError's ordinary mapped message below — this cleanup never changes what they're told.
+      if (await isGoogleDriver()) await cancelGoogleEvent(active, row.id, eventId);
       fail(confirmError);
     }
     if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, row.lead_id));
@@ -501,10 +502,21 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
   return { ...(await bookedView(active, row.id, row.lead_id, start, end, now)), statusNeedsAttention };
 }
 
+/** Whether calendar_driver currently resolves to google, treating an unparseable environment as "no". */
+async function isGoogleDriver(): Promise<boolean> {
+  try {
+    return getCalendarDriver() === "google";
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Deletes the Google event for a just-cancelled appointment (design §7). Never fails the cancellation: any
- * failure (including invalid_grant, which still marks the connection broken through onInvalidGrant) is only
- * logged, since the CRM row is already cancelled by the time this runs.
+ * Deletes a Google event best effort — used both when an appointment is cancelled in the CRM (design §7) and
+ * when `confirm_appointment` fails after the event already exists, so neither path leaves an orphan meeting on
+ * the closer's calendar. Never throws: any failure (including invalid_grant, which still marks the connection
+ * broken through onInvalidGrant) is only logged, since by the time this runs the CRM side is already settled
+ * (the appointment row is either cancelled or about to fail regardless).
  */
 async function cancelGoogleEvent(ctx: RequestContext, appointmentId: string, eventId: string): Promise<void> {
   const timeZone = await closerTimeZone(ctx);
@@ -527,13 +539,7 @@ export async function cancelAppointment(ctx: RequestContext | null, id: unknown)
   const { error } = await admin.supabase.rpc("cancel_appointment", { p_id: appointmentId });
   if (error) fail(error);
 
-  let driver: ReturnType<typeof getCalendarDriver>;
-  try {
-    driver = getCalendarDriver();
-  } catch {
-    driver = "unavailable";
-  }
-  if (driver === "google") {
+  if (await isGoogleDriver()) {
     const { data: row } = await admin.supabase.from("appointments").select("google_event_id").eq("id", appointmentId).maybeSingle();
     if (row?.google_event_id) await cancelGoogleEvent(admin, appointmentId, row.google_event_id);
   }

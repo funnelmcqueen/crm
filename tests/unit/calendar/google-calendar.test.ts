@@ -53,17 +53,14 @@ function makeConnection(overrides: Partial<GoogleCalendarConnection> = {}): Goog
 
 function makeDeps(overrides: Partial<GoogleCalendarDeps> = {}) {
   const onInvalidGrant = vi.fn(async () => {});
-  // Never exercised by default (every test's connection already has an appCalendarId unless it overrides this).
-  const ensureAppCalendar = vi.fn(async () => "unused-default-app-cal-id");
   const deps: GoogleCalendarDeps = {
     connection: makeConnection(),
     ranges: RANGES,
     timeZone: TIME_ZONE,
     onInvalidGrant,
-    ensureAppCalendar,
     ...overrides,
   };
-  return { deps, onInvalidGrant, ensureAppCalendar };
+  return { deps, onInvalidGrant };
 }
 
 beforeEach(() => {
@@ -95,17 +92,12 @@ describe("createGoogleCalendar", () => {
       expect(Object.keys(result.windows[0] ?? {})).toEqual(["start", "end"]);
     });
 
-    it("queries free/busy for the account email and the app calendar id, and for the app calendar id only when it is set", async () => {
+    it("queries free/busy for the account email and the app calendar id", async () => {
       vi.mocked(freeBusy).mockResolvedValue([]);
       const { deps } = makeDeps();
 
       await createGoogleCalendar(deps).readAvailability({ from: FROM, to: TO });
       expect(freeBusy).toHaveBeenCalledWith(ACCESS_TOKEN, [GOOGLE_EMAIL, APP_CALENDAR_ID], FROM, TO);
-
-      vi.mocked(freeBusy).mockClear();
-      const { deps: depsNoAppCal } = makeDeps({ connection: makeConnection({ appCalendarId: null }) });
-      await createGoogleCalendar(depsNoAppCal).readAvailability({ from: FROM, to: TO });
-      expect(freeBusy).toHaveBeenCalledWith(ACCESS_TOKEN, [GOOGLE_EMAIL], FROM, TO);
     });
   });
 
@@ -149,20 +141,6 @@ describe("createGoogleCalendar", () => {
 
       const [, , event] = vi.mocked(insertEvent).mock.calls[0]!;
       expect(event.attendeeEmail).toBeNull();
-    });
-
-    it("creates the app calendar first when the connection has none, and uses the id that comes back", async () => {
-      vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-3" });
-      const ensureAppCalendar = vi.fn(async () => "created-cal-1");
-      const { deps } = makeDeps({ connection: makeConnection({ appCalendarId: null }), ensureAppCalendar });
-
-      const input = { start, end, title: "t", description: "d", leadEmail: null };
-      await createGoogleCalendar(deps).createMeeting(input);
-
-      expect(ensureAppCalendar).toHaveBeenCalledTimes(1);
-      expect(ensureAppCalendar).toHaveBeenCalledWith();
-      const [, calendarId] = vi.mocked(insertEvent).mock.calls[0]!;
-      expect(calendarId).toBe("created-cal-1");
     });
   });
 

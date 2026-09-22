@@ -1,8 +1,16 @@
 // The Google-backed CalendarClient (docs/DEVIATIONS.md D47). This is the privacy boundary for this milestone: it
 // must never call an events-listing endpoint (the granted scopes do not allow one) and must never return anything
 // from Google beyond bare busy start/end times and the created event's id — no title, description or attendee.
-// The database is out of scope here: the caller (src/server/services/calendar-connection.ts, Task 6/7) reads the
-// connection row and the bookable hours and passes them in through GoogleCalendarDeps.
+// The database is out of scope here: the caller (src/server/services/calendar-booking.ts) reads the connection
+// row and the bookable hours and passes them in through GoogleCalendarDeps.
+//
+// The app calendar is always already created by the time this module ever sees a connection: the OAuth connect
+// flow (src/server/http/google-oauth.ts) creates it and stores its id in the same write that creates the
+// connection row, so there is no "connection with no app calendar id" state for this module to handle. An
+// earlier version of this contract had this module create the calendar lazily on first use; that was dropped
+// (fix round 1) because a `connect_calendar` rejection after the calendar was created would orphan it on the
+// closer's account, and because the RPC is admin-only, so a lazy create triggered by an agent's own booking
+// session would just raise forbidden.
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { bookableWindows, type BookableRange } from "@/lib/domain/bookable-hours";
@@ -14,8 +22,8 @@ import type { CalendarAvailability, CalendarClient, CalendarInterval } from "./t
 export interface GoogleCalendarConnection {
   readonly refreshTokenCiphertext: string;
   readonly googleEmail: string;
-  /** The secondary calendar the app writes meetings to (design §3). Null until `ensureAppCalendar` creates one. */
-  readonly appCalendarId: string | null;
+  /** The secondary calendar the app writes meetings to (design §3), created before the connection is stored. */
+  readonly appCalendarId: string;
 }
 
 export interface GoogleCalendarDeps {
@@ -25,11 +33,6 @@ export interface GoogleCalendarDeps {
   timeZone: string;
   /** Called once when any Google call fails with GoogleApiError kind "invalid_grant" (access revoked). */
   onInvalidGrant: () => Promise<void>;
-  /**
-   * The connection's app calendar id, creating it (via `createAppCalendar` and `connect_calendar`, Task 7) when
-   * the connection has none yet, and just returning it when one already exists.
-   */
-  ensureAppCalendar: () => Promise<string>;
 }
 
 /** createMeeting's input, widened with the optional lead email the CalendarClient interface itself does not carry. */
@@ -59,12 +62,6 @@ async function withAccessToken<T>(deps: GoogleCalendarDeps, fn: (accessToken: st
   }
 }
 
-/** The connection's app calendar id, creating it through `ensureAppCalendar` first when there is none yet. */
-async function resolveAppCalendarId(deps: GoogleCalendarDeps): Promise<string> {
-  if (deps.connection.appCalendarId) return deps.connection.appCalendarId;
-  return deps.ensureAppCalendar();
-}
-
 export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient & { cancelMeeting(eventId: string): Promise<void> } {
   return {
     async readAvailability({ from, to }): Promise<CalendarAvailability> {
@@ -72,9 +69,7 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
         start: window.start,
         end: window.end,
       }));
-      const calendarIds = deps.connection.appCalendarId
-        ? [deps.connection.googleEmail, deps.connection.appCalendarId]
-        : [deps.connection.googleEmail];
+      const calendarIds = [deps.connection.googleEmail, deps.connection.appCalendarId];
       const busyTimes = await withAccessToken(deps, (accessToken) => freeBusy(accessToken, calendarIds, from, to));
       const busy: CalendarInterval[] = busyTimes.map((block) => ({ start: block.start, end: block.end }));
       return { windows, busy };
@@ -82,8 +77,7 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
 
     async createMeeting(input: CreateMeetingInput): Promise<{ eventId: string }> {
       return withAccessToken(deps, async (accessToken) => {
-        const calendarId = await resolveAppCalendarId(deps);
-        const { id } = await insertEvent(accessToken, calendarId, {
+        const { id } = await insertEvent(accessToken, deps.connection.appCalendarId, {
           summary: input.title,
           description: input.description,
           start: input.start,
@@ -98,8 +92,7 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
 
     async cancelMeeting(eventId: string): Promise<void> {
       return withAccessToken(deps, async (accessToken) => {
-        const calendarId = await resolveAppCalendarId(deps);
-        await deleteEvent(accessToken, calendarId, eventId);
+        await deleteEvent(accessToken, deps.connection.appCalendarId, eventId);
       });
     },
   };
