@@ -457,6 +457,7 @@ describe('booking against Google', () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', stack.url);
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', stack.anonKey);
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', stack.serviceRoleKey);
+    vi.stubEnv('APP_BASE_URL', APP_BASE_URL);
     vi.stubEnv('CALENDAR_DRIVER', 'google');
     vi.stubEnv('GOOGLE_CLIENT_ID', GOOGLE_CLIENT_ID);
     vi.stubEnv('GOOGLE_CLIENT_SECRET', GOOGLE_CLIENT_SECRET);

@@ -370,9 +370,9 @@ tests that mint their own JWTs. Nothing else changes: the same suite, the same a
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://abcdefgh.supabase.co` | public (browser) | yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIs…` | public (browser) | yes |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs…` | **server only** | yes |
-| `APP_BASE_URL` | `https://crm.example.com` | server only | yes in practice; required when `DIALER_DRIVER=twilio` |
+| `APP_BASE_URL` | `https://crm.example.com` | server only | yes in practice; required when `DIALER_DRIVER=twilio` or `CALENDAR_DRIVER=google` (or either's auto-detect) |
 | `DIALER_DRIVER` | `twilio` | server only | no (see [below](#switching-dialer_driver)) |
-| `CALENDAR_DRIVER` | `mock` | server only | no; `google` \| `mock`, unset resolves to `google` when the three `GOOGLE_*` variables below are all set, else `mock` outside production and "booking unavailable" in production, and `mock` with `NODE_ENV=production` is refused at startup |
+| `CALENDAR_DRIVER` | `mock` | server only | no; `google` \| `mock`, unset resolves to `google` when the three `GOOGLE_*` variables below and `APP_BASE_URL` are all set, else `mock` outside production and "booking unavailable" in production, and `mock` with `NODE_ENV=production` is refused at startup |
 | `GOOGLE_CLIENT_ID` | `1234567890-abc123.apps.googleusercontent.com` | **server only** | required for `CALENDAR_DRIVER=google` (or its auto-detect) |
 | `GOOGLE_CLIENT_SECRET` | `GOCSPX-…` | **server only** | required for `CALENDAR_DRIVER=google` (or its auto-detect) |
 | `GOOGLE_TOKEN_ENCRYPTION_KEY` | 32 random bytes, base64 | **server only** | required for `CALENDAR_DRIVER=google` (or its auto-detect) |
@@ -610,14 +610,27 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 > `GOOGLE_TOKEN_ENCRYPTION_KEY=<the printed value>`
 
-All three variables are server-only and must never carry a `NEXT_PUBLIC_` prefix. With all three set,
-`CALENDAR_DRIVER` resolves to `google` automatically — the same way `DIALER_DRIVER` resolves to `twilio`
-once the Twilio variables are all present. Set `CALENDAR_DRIVER=google` explicitly if you would rather not
-rely on that.
+All three variables are server-only and must never carry a `NEXT_PUBLIC_` prefix.
 
-### 5. Connect the account and set bookable hours
+### 5. Set `APP_BASE_URL`
 
-Deploy (or run locally) with the three variables set, then sign in to the CRM as an admin:
+The OAuth redirect (`/api/google/callback`, step 3 above) is built from `APP_BASE_URL`, the same variable
+Twilio's signature check uses. Without it, `/api/google/start` refuses with a bare `{"error":"unavailable"}`
+and startup itself refuses once the three `GOOGLE_*` variables above are set (env.ts requires
+`APP_BASE_URL` alongside them, exactly as it already does for `DIALER_DRIVER=twilio`). Use the deployed
+origin in production, and for local development:
+
+> `APP_BASE_URL=http://localhost:3000`
+
+If Twilio is also configured, this is the same variable — no need to set it twice.
+
+With all three Google variables and `APP_BASE_URL` set, `CALENDAR_DRIVER` resolves to `google`
+automatically — the same way `DIALER_DRIVER` resolves to `twilio` once the Twilio variables are all
+present. Set `CALENDAR_DRIVER=google` explicitly if you would rather not rely on that.
+
+### 6. Connect the account and set bookable hours
+
+Deploy (or run locally) with all four variables set, then sign in to the CRM as an admin:
 **Settings → Google Calendar → Connect Google Calendar**, sign in as the closer's Gmail account, and
 approve the consent screen. The app creates a secondary calendar named "Funnel McQueen meetings" on first
 connect — meetings live there, never on the primary calendar — and Settings then shows "Connected as
@@ -629,12 +642,13 @@ Testing — go back to step 2 and publish it.
 
 ### Summary
 
-After all five steps:
+After all six steps:
 
 ```bash
 GOOGLE_CLIENT_ID=….apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-…
 GOOGLE_TOKEN_ENCRYPTION_KEY=<32 random bytes, base64>
+APP_BASE_URL=https://crm.example.com
 CALENDAR_DRIVER=google
 ```
 

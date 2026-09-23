@@ -111,10 +111,29 @@ const serverEnvSchema = publicSupabaseSchema
         message: "must not be mock in production (the mock calendar invents availability)",
       });
     }
-    if (env.DIALER_DRIVER !== "twilio") return;
-    for (const key of [...TWILIO_KEYS, "APP_BASE_URL"] as const) {
-      if (env[key] === undefined) {
-        ctx.addIssue({ code: "custom", path: [key], message: "is required when DIALER_DRIVER=twilio" });
+    if (env.DIALER_DRIVER === "twilio") {
+      for (const key of [...TWILIO_KEYS, "APP_BASE_URL"] as const) {
+        if (env[key] === undefined) {
+          ctx.addIssue({ code: "custom", path: [key], message: "is required when DIALER_DRIVER=twilio" });
+        }
+      }
+    }
+
+    // Mirrors the Twilio check above: CALENDAR_DRIVER=google explicitly, or the same three-GOOGLE_*-variables
+    // auto-detect getCalendarDriver() itself uses (GOOGLE_KEYS only — APP_BASE_URL is deliberately not part of
+    // that auto-detect condition, since it is one of the variables being required here).
+    if (env.CALENDAR_DRIVER === "google" || (env.CALENDAR_DRIVER === undefined && GOOGLE_KEYS.every((key) => env[key] !== undefined))) {
+      for (const key of [...GOOGLE_KEYS, "APP_BASE_URL"] as const) {
+        if (env[key] === undefined) {
+          ctx.addIssue({ code: "custom", path: [key], message: "is required when CALENDAR_DRIVER=google" });
+        }
+      }
+      if (env.GOOGLE_TOKEN_ENCRYPTION_KEY !== undefined && Buffer.from(env.GOOGLE_TOKEN_ENCRYPTION_KEY, "base64").length !== 32) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["GOOGLE_TOKEN_ENCRYPTION_KEY"],
+          message: "must decode to 32 bytes, base64 encoded",
+        });
       }
     }
   });
@@ -184,7 +203,7 @@ export function isTwilioConfigured(env: ServerEnv = getServerEnv()): boolean {
 }
 
 export function isGoogleCalendarConfigured(env: ServerEnv = getServerEnv()): boolean {
-  return GOOGLE_KEYS.every((key) => env[key] !== undefined);
+  return GOOGLE_KEYS.every((key) => env[key] !== undefined) && env.APP_BASE_URL !== undefined;
 }
 
 /**
