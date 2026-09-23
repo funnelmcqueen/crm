@@ -743,7 +743,8 @@ milestone. Design: `docs/superpowers/specs/2026-09-17-closer-calendar-booking-de
 **Why:** the closer confirms meetings personally, agents need to offer concrete times mid-call, and the closer's calendar
 details are none of the agents' business.
 **Not built:** texts or emails to the lead, rescheduling or cancelling by agents, reminders, several closers. States
-spanning two time zones use their larger zone. Marking a meeting cancelled in the CRM leaves the Google event in place.
+spanning two time zones use their larger zone. Marking a meeting cancelled in the CRM leaves the Google event in place
+— superseded by D47 below, which deletes the Google event on cancel once a connection exists.
 
 ## D47. Google Calendar connection
 **Spec:** §15 lists Google Calendar under "Future-ready, not built". D46 shipped booking against an in-memory mock
@@ -778,7 +779,11 @@ least-privilege OAuth connection (`docs/superpowers/specs/2026-09-18-google-cale
   `conferenceDataVersion=1&sendUpdates=all`).
 - **Cancelling in the CRM deletes the Google event too** (`cancelAppointment` → `cancelMeeting`), so Google notifies
   the guest. A 404/410 from Google (already gone) counts as success; any other failure leaves the CRM row cancelled
-  and logs the appointment and event ids for manual reconciliation — the calendar can be tidied by hand.
+  and logs the appointment and event ids for manual reconciliation — the calendar can be tidied by hand. This
+  supersedes both D46's own "Not built" line above and the comment above `cancel_appointment` in
+  `supabase/migrations/20260915001900_calendar_booking.sql` ("CRM only: the event stays in Google Calendar until
+  the closer deletes it there") — that migration already ran elsewhere by the time this milestone shipped, so its
+  comment could not be edited in place and is stale as of this deviation.
 - **The refresh token is stored only as AES-256-GCM ciphertext** (`src/server/google/crypto.ts`,
   `calendar_connection.refresh_token_ciphertext`; no API role, admin included, may select that column — the one
   place that needs the plaintext, disconnecting to revoke it with Google, reads it with the service role). Access

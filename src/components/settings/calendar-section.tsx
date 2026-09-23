@@ -160,6 +160,11 @@ export function CalendarSection({ status, hours, timeZone }: CalendarSectionProp
       <ConnectionStatus status={status} />
       <div className="flex flex-col gap-3 border-t pt-4">
         <h3 className="text-sm font-bold">Bookable hours</h3>
+        {status.hoursSet ? null : (
+          <p role="alert" className="text-sm font-semibold text-destructive">
+            No bookable hours set, so agents cannot book.
+          </p>
+        )}
         <BookableHoursForm hours={hours} />
       </div>
     </SettingsSection>

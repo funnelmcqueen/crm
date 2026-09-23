@@ -17,6 +17,7 @@ const NO_HOURS: BookableRange[] = [];
 
 const NOT_CONNECTED: CalendarConnectionStatus = { connected: false, googleEmail: null, hoursSet: false, broken: false };
 const CONNECTED: CalendarConnectionStatus = { connected: true, googleEmail: "closer@example.com", hoursSet: true, broken: false };
+const CONNECTED_NO_HOURS: CalendarConnectionStatus = { connected: true, googleEmail: "closer@example.com", hoursSet: false, broken: false };
 const BROKEN: CalendarConnectionStatus = { connected: true, googleEmail: "closer@example.com", hoursSet: true, broken: true };
 
 function render(status: CalendarConnectionStatus, hours: BookableRange[] = NO_HOURS): string {
@@ -56,6 +57,16 @@ describe("CalendarSection", () => {
     expect(html).toContain("Reconnect");
     expect(html).toContain("closer@example.com");
     expect(html).not.toMatch(/token|ciphertext|ya29\./i);
+  });
+
+  it("warns that agents cannot book when no bookable hours are set at all", () => {
+    const html = render(CONNECTED_NO_HOURS);
+    expect(html).toContain("No bookable hours set, so agents cannot book.");
+  });
+
+  it("does not warn when bookable hours are set", () => {
+    const html = render(CONNECTED, [{ weekday: 1, startsMinute: 600, endsMinute: 720 }]);
+    expect(html).not.toContain("No bookable hours set");
   });
 
   it("renders each range under its weekday name, and Closed for a weekday with none", () => {

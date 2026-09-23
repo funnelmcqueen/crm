@@ -112,7 +112,13 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
                       value={range.endsMinute}
                       onChange={(value) => updateRange(range.id, { endsMinute: value })}
                     />
-                    <Button type="button" variant="outline" className="min-h-12" onClick={() => removeRange(range.id)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-12"
+                      aria-label={`Remove ${name} range ${index + 1}`}
+                      onClick={() => removeRange(range.id)}
+                    >
                       Remove
                     </Button>
                   </li>

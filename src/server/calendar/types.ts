@@ -1,4 +1,5 @@
-// The calendar booking reads and writes (docs/DEVIATIONS.md D46). Implementations: mock.ts now, Google in Plan 2.
+// The calendar booking reads and writes (docs/DEVIATIONS.md D46, D47). Implementations: mock.ts
+// (CALENDAR_DRIVER=mock) and google.ts (CALENDAR_DRIVER=google).
 //
 // Contract: readAvailability returns start and end times only. An implementation must never pass through an
 // event's title, description or attendees; the availability service rebuilds every interval regardless.
@@ -9,9 +10,9 @@ export interface CalendarInterval {
 }
 
 export interface CalendarAvailability {
-  /** Bookable windows (events on the closer's bookable-hours calendar) overlapping the range. */
+  /** Bookable windows, built from `bookable_hours` in the closer's time zone — not read from a Google calendar (D47). */
   windows: CalendarInterval[];
-  /** Busy time on the closer's main calendar overlapping the range. */
+  /** Busy time on the closer's primary Google calendar and the app's own calendar, overlapping the range. */
   busy: CalendarInterval[];
 }
 
