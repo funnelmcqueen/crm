@@ -12,7 +12,9 @@ export const PENDING_TEL_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 export interface PendingTel {
   /** The signed-in user who tapped CALL; another user in the same tab never restores it. */
   userId: string;
-  leadId: string;
+  leadId: string | null;
+  /** Server-created call ID for a no-lead manual phone call. Legacy lead calls omit this. */
+  callId?: string | null;
   label: string;
   clientRequestId: string;
   startedAt: number;
@@ -32,15 +34,18 @@ export function parsePendingTel(raw: string | null | undefined, now: number, use
   }
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
-  const { leadId, label, clientRequestId, startedAt, stage } = record;
+  const { leadId, callId, label, clientRequestId, startedAt, stage } = record;
   if (record.userId !== userId) return null;
-  if (typeof leadId !== "string" || !UUID.test(leadId)) return null;
+  if (leadId === null) {
+    if (typeof callId !== "string" || !UUID.test(callId)) return null;
+  } else if (typeof leadId !== "string" || !UUID.test(leadId)) return null;
+  if (callId !== undefined && callId !== null && (typeof callId !== "string" || !UUID.test(callId))) return null;
   if (typeof clientRequestId !== "string" || !UUID.test(clientRequestId)) return null;
   if (typeof label !== "string" || label.length > 500) return null;
   if (typeof startedAt !== "number" || !Number.isFinite(startedAt)) return null;
   if (stage !== "calling" && stage !== "wrap-up") return null;
   if (startedAt > now + 60_000 || now - startedAt > PENDING_TEL_MAX_AGE_MS) return null;
-  return { userId, leadId, label, clientRequestId, startedAt, stage };
+  return { userId, leadId: leadId as string | null, ...(callId === undefined ? {} : { callId: callId as string | null }), label, clientRequestId, startedAt, stage };
 }
 
 export function shouldOpenTelOutcome(pending: Pick<PendingTel, "startedAt">, now: number): boolean {
@@ -50,7 +55,7 @@ export function shouldOpenTelOutcome(pending: Pick<PendingTel, "startedAt">, now
 export function pendingTelWrapUp(pending: PendingTel): WrapUp {
   return {
     leadId: pending.leadId,
-    callId: null,
+    callId: pending.callId ?? null,
     clientRequestId: pending.clientRequestId,
     mode: "TEL",
     endReason: "completed",

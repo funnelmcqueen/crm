@@ -181,6 +181,18 @@ describe("dialerReducer: tel", () => {
     });
     expect(restored).toMatchObject({ kind: "wrap-up", mode: "TEL", clientRequestId: REQ });
   });
+
+  it("carries a manual phone call ID and no lead into wrap-up", () => {
+    const manual = dialerReducer(INITIAL_DIALER_STATE, {
+      type: "TEL_START", leadId: null, callId: CALL, label: "+1 (212) 555-0123", clientRequestId: REQ, startedAt: 50,
+    });
+    expect(manual).toMatchObject({ kind: "tel-pending", subject: { leadId: null }, callId: CALL });
+    expect(activeLeadId(manual)).toBeNull();
+    expect(dialerReducer(manual, { type: "TEL_RETURNED" })).toEqual({
+      kind: "wrap-up", leadId: null, callId: CALL, clientRequestId: REQ, mode: "TEL",
+      endReason: "completed", preselectedOutcome: null, label: "+1 (212) 555-0123",
+    });
+  });
 });
 
 describe("dialerReducer: incoming", () => {

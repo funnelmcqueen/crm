@@ -3,7 +3,7 @@
 // A live status left behind by a lost callback is checked against Twilio instead of locking the agent out.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { handleTwilioOutbound } from '@/server/http/twilio/outbound';
-import { fakeTwilioSid, type Lead } from '../helpers/fixtures';
+import { createCall, fakeTwilioSid, type Lead } from '../helpers/fixtures';
 import {
   WEBHOOK_PATHS,
   callRow,
@@ -52,6 +52,15 @@ beforeAll(async () => {
 });
 
 describe('outbound webhook: one live call per agent', () => {
+  it('refuses a manual row while another call remains live on Twilio', async () => {
+    const caller = await createAgent();
+    const callerLead = await createLeadFor(caller.user.id);
+    await createDialableCall(caller.user.id, callerLead, { provider_call_sid: fakeTwilioSid('CA'), call_status: 'in-progress', outcome: 'CONNECTED' });
+    const manual = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: caller.user.id, lead_id: null, remote_e164: '+12125550123' });
+    expectFailureTwiml(await dial(caller, manual.id, lookup(() => 'in-progress')));
+    expect((await callRow(manual.id)).provider_call_sid).toBeNull();
+  });
+
   it('refuses a second call while the first is still in progress on Twilio, even though its outcome was logged', async () => {
     const liveSid = fakeTwilioSid('CA');
     const live = await createDialableCall(agent.user.id, first, { provider_call_sid: liveSid, call_status: 'in-progress', outcome: 'CONNECTED' });

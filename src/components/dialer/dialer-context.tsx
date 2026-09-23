@@ -3,7 +3,7 @@
 import { createContext, useContext } from "react";
 import type { DialMode } from "@/lib/dialer/resolve-mode";
 import type { DialerState } from "@/lib/dialer/state";
-import type { DialableLead } from "@/lib/dialer/types";
+import type { DialableLead, ManualDialTarget } from "@/lib/dialer/types";
 
 export interface DialerContextValue {
   state: DialerState;
@@ -14,8 +14,12 @@ export interface DialerContextValue {
   connecting: boolean;
   /** In-app call. Ignored unless idle and the lead is dialable. */
   startCall(lead: DialableLead): void;
+  /** Starts a server-created call to a number entered in the keypad. */
+  startManualCall(target: ManualDialTarget): Promise<void>;
   /** Records a tapped tel: link. Returns false when the tap must be cancelled (not idle, or not dialable). */
   beginTelCall(lead: DialableLead): boolean;
+  /** Creates the manual call row before the caller opens the phone app. */
+  beginManualTelCall(target: ManualDialTarget): Promise<boolean>;
   hangup(): void;
   setMuted(muted: boolean): void;
   sendDigits(digits: string): void;

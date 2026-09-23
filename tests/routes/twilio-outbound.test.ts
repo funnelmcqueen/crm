@@ -41,6 +41,19 @@ beforeAll(async () => {
 });
 
 describe('outbound webhook: success', () => {
+  it('dials a manual row from its stored destination without a lead', async () => {
+    const call = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: agent.user.id, lead_id: null, remote_e164: '+12125550123' });
+    const xml = await dial(outboundParams(agent.user.id, call.id));
+    expect(twimlParts.number(xml)).toBe('+12125550123');
+    expect(twimlParts.callerId(xml)).toBe(agent.number?.e164);
+    expect(await callRow(call.id)).toMatchObject({ lead_id: null, remote_e164: '+12125550123', call_status: 'queued' });
+  });
+
+  it('continues to resolve a lead-linked row from the lead phone', async () => {
+    const call = await createDialableCall(agent.user.id, lead, { remote_e164: '+12125550124' });
+    expect(twimlParts.number(await dial(outboundParams(agent.user.id, call.id)))).toBe(lead.phone);
+  });
+
   it("returns Dial TwiML with the lead's exact E.164 number and the agent's assigned caller ID, and claims the row", async () => {
     const call = await createDialableCall(agent.user.id, lead);
     const callSid = fakeTwilioSid('CA');
@@ -73,6 +86,33 @@ describe('outbound webhook: success', () => {
 });
 
 describe('outbound webhook: refusals return failure TwiML and never claim the row', () => {
+  it('refuses an expired manual row', async () => {
+    const call = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: agent.user.id, lead_id: null, remote_e164: '+12125550123', created_at: new Date(Date.now() - 11 * 60_000).toISOString() });
+    expectFailureTwiml(await dial(outboundParams(agent.user.id, call.id)));
+    await expectUnclaimed(call.id);
+  });
+
+  it('refuses claimed, wrong-identity, and disabled-user manual rows', async () => {
+    const claimed = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: agent.user.id, lead_id: null, remote_e164: '+12125550123', provider_call_sid: fakeTwilioSid('CA'), call_status: 'queued' });
+    expectFailureTwiml(await dial(outboundParams(agent.user.id, claimed.id)));
+
+    const wrongIdentity = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: agent.user.id, lead_id: null, remote_e164: '+12125550123' });
+    expectFailureTwiml(await dial({ ...outboundParams(agent.user.id, wrongIdentity.id), From: `client:${other.user.id}` }));
+    await expectUnclaimed(wrongIdentity.id);
+
+    const disabled = await createAgent();
+    const disabledCall = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: disabled.user.id, lead_id: null, remote_e164: '+12125550123' });
+    await disableUser(disabled.user.id);
+    expectFailureTwiml(await dial(outboundParams(disabled.user.id, disabledCall.id)));
+    await expectUnclaimed(disabledCall.id);
+  });
+
+  it('refuses a manual row with an invalid stored destination', async () => {
+    const call = await createCall({ direction: 'OUTBOUND', mode: 'IN_APP', user_id: agent.user.id, lead_id: null, remote_e164: 'not-a-number' });
+    expectFailureTwiml(await dial(outboundParams(agent.user.id, call.id)));
+    await expectUnclaimed(call.id);
+  });
+
   it('refuses a replayed webhook for an already-claimed row (same or new CallSid)', async () => {
     const call = await createDialableCall(agent.user.id, lead);
     const callSid = fakeTwilioSid('CA');

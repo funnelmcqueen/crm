@@ -603,6 +603,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      create_manual_outbound_call: {
+        Args: {
+          p_mode: Database["public"]["Enums"]["call_mode"]
+          p_remote_e164: string
+        }
+        Returns: string
+      }
       create_outbound_call: {
         Args: {
           p_lead_id: string

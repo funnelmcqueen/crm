@@ -92,6 +92,14 @@ describe("buildLogCallPayload", () => {
     });
   });
 
+  it("logs a manual phone call against its existing call ID without a lead", () => {
+    const result = buildLogCallPayload(
+      { ...EMPTY_OUTCOME_FORM, outcome: "CONNECTED", durationMinutes: "2" },
+      { ...tel, leadId: null, callId: CALL },
+    );
+    expect(result).toEqual({ ok: true, payload: { outcome: "CONNECTED", leadId: null, callId: CALL, durationSeconds: 120 } });
+  });
+
   it("rejects a bad manual duration on phone calls", () => {
     expect(buildLogCallPayload({ ...EMPTY_OUTCOME_FORM, outcome: "CONNECTED", durationSeconds: "75" }, tel)).toMatchObject({
       ok: false,

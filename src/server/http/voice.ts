@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { normalizePhone } from "@/lib/domain/phone";
 import { getRouteAuth, requireActive } from "@/server/context";
 import { getDialerDriver, getServerEnv, isTwilioConfigured, type ServerEnv } from "@/server/env";
 import { AppError, httpError, mapPostgrestError, toHttpResponse } from "@/server/errors";
@@ -84,6 +85,10 @@ export async function handleVoicePresence(req: Request, deps: Partial<BrowserRou
 }
 
 const outboundBodySchema = z.object({ leadId: z.uuid() });
+const manualOutboundBodySchema = z.object({
+  phone: z.string().trim().min(1).max(100),
+  mode: z.enum(["IN_APP", "TEL"]),
+});
 
 /**
  * POST /api/calls/outbound { leadId } → 201 { callId }. A body that is not JSON is 400; any well-formed
@@ -111,6 +116,47 @@ export async function handleCallsOutbound(req: Request, deps: Partial<BrowserRou
     if (!parsed.success) throw new AppError("not_found");
 
     const { data: callId, error } = await active.supabase.rpc("create_outbound_call", { p_lead_id: parsed.data.leadId });
+    if (error) {
+      const appError = mapPostgrestError(error);
+      if (appError.code === "conflict" && appError.reason) {
+        return applyCookies(jsonResponse({ error: "conflict", reason: appError.reason }, 409));
+      }
+      throw appError;
+    }
+    if (typeof callId !== "string") throw new AppError("internal");
+    return applyCookies(jsonResponse({ callId }, 201));
+  } catch (error) {
+    return applyCookies(toHttpResponse(error));
+  }
+}
+
+/** POST /api/calls/manual-outbound { phone, mode } → 201 { callId }. */
+export async function handleManualCallsOutbound(req: Request, deps: Partial<BrowserRouteDeps> = {}): Promise<Response> {
+  const resolved = resolveEnv(deps, "/api/calls/manual-outbound");
+  if ("response" in resolved) return resolved.response;
+  const result = await authenticate(req, resolved.env);
+  if ("response" in result) return result.response;
+  const { ctx, applyCookies } = result.auth;
+  try {
+    const active = requireActive(ctx);
+
+    let body: unknown;
+    try {
+      const text = await req.text();
+      if (text.trim() === "") throw new AppError("validation");
+      body = JSON.parse(text);
+    } catch {
+      throw new AppError("validation");
+    }
+    const parsed = manualOutboundBodySchema.safeParse(body);
+    if (!parsed.success) throw new AppError("validation");
+    const normalized = normalizePhone(parsed.data.phone, "US");
+    if (!normalized.ok) throw new AppError("validation");
+
+    const { data: callId, error } = await active.supabase.rpc("create_manual_outbound_call", {
+      p_remote_e164: normalized.e164,
+      p_mode: parsed.data.mode,
+    });
     if (error) {
       const appError = mapPostgrestError(error);
       if (appError.code === "conflict" && appError.reason) {

@@ -49,7 +49,7 @@ export type DialerState =
     }
   | ({ kind: "wrap-up" } & WrapUp)
   | { kind: "incoming"; callId: string | null; context: IncomingContext }
-  | { kind: "tel-pending"; subject: CallSubject & { leadId: string }; clientRequestId: string; startedAt: number };
+  | { kind: "tel-pending"; subject: CallSubject; callId: string | null; clientRequestId: string; startedAt: number };
 
 export type DialerAction =
   | { type: "OUTBOUND_START"; subject: CallSubject }
@@ -62,7 +62,7 @@ export type DialerAction =
   /** An empty message clears the warning. */
   | { type: "WARNING"; message: string }
   | { type: "MUTED"; muted: boolean }
-  | { type: "TEL_START"; leadId: string; label: string; clientRequestId: string; startedAt: number }
+  | { type: "TEL_START"; leadId: string | null; callId?: string | null; label: string; clientRequestId: string; startedAt: number }
   | { type: "TEL_RETURNED" }
   | { type: "TEL_CANCELED" }
   | { type: "INCOMING"; callId: string | null }
@@ -158,6 +158,7 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
       return {
         kind: "tel-pending",
         subject: { leadId: action.leadId, label: action.label },
+        callId: action.callId ?? null,
         clientRequestId: action.clientRequestId,
         startedAt: action.startedAt,
       };
@@ -167,7 +168,7 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
       return {
         kind: "wrap-up",
         leadId: state.subject.leadId,
-        callId: null,
+        callId: state.callId,
         clientRequestId: state.clientRequestId,
         mode: "TEL",
         endReason: "completed",

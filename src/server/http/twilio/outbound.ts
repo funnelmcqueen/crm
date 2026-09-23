@@ -85,7 +85,7 @@ export async function respondOutbound(ctx: WebhookContext): Promise<string> {
 
   const { data: call, error: callError } = await admin
     .from("calls")
-    .select("id, lead_id, user_id, direction, mode, provider_call_sid, call_status, outcome")
+    .select("id, lead_id, user_id, direction, mode, remote_e164, provider_call_sid, call_status, outcome")
     .eq("id", callId.data)
     .gte("created_at", new Date(now.getTime() - OUTBOUND_ROW_MAX_AGE_MS).toISOString())
     .maybeSingle();
@@ -97,8 +97,7 @@ export async function respondOutbound(ctx: WebhookContext): Promise<string> {
     call.provider_call_sid !== null ||
     call.call_status !== null ||
     call.outcome !== null ||
-    call.user_id === null ||
-    call.lead_id === null
+    call.user_id === null
   ) {
     return refuse("call_not_dialable");
   }
@@ -112,16 +111,23 @@ export async function respondOutbound(ctx: WebhookContext): Promise<string> {
   if (profileError) throw profileError;
   if (!profile || !profile.active || !profile.in_app_calling_enabled) return refuse("user_not_allowed");
 
-  const { data: lead, error: leadError } = await admin
-    .from("leads")
-    .select("id, phone, status, assigned_to")
-    .eq("id", call.lead_id)
-    .maybeSingle();
-  if (leadError) throw leadError;
-  if (!lead || (lead.assigned_to !== call.user_id && profile.role !== "ADMIN") || !isE164(lead.phone)) {
-    return refuse("lead_not_allowed");
+  let destination: string;
+  if (call.lead_id === null) {
+    if (!isE164(call.remote_e164)) return refuse("call_not_dialable");
+    destination = call.remote_e164;
+  } else {
+    const { data: lead, error: leadError } = await admin
+      .from("leads")
+      .select("id, phone, status, assigned_to")
+      .eq("id", call.lead_id)
+      .maybeSingle();
+    if (leadError) throw leadError;
+    if (!lead || (lead.assigned_to !== call.user_id && profile.role !== "ADMIN") || !isE164(lead.phone)) {
+      return refuse("lead_not_allowed");
+    }
+    if (lead.status === "DO_NOT_CONTACT") return refuse("do_not_contact");
+    destination = lead.phone;
   }
-  if (lead.status === "DO_NOT_CONTACT") return refuse("do_not_contact");
 
   if (!(await noOtherLiveCall(ctx, call.id, call.user_id))) return refuse("call_in_progress");
 
@@ -144,7 +150,7 @@ export async function respondOutbound(ctx: WebhookContext): Promise<string> {
   }
   if (!claimed || claimed.length !== 1) return refuse("already_claimed");
 
-  return outboundDialTwiml({ appBaseUrl, callerId: callerId.e164, to: lead.phone });
+  return outboundDialTwiml({ appBaseUrl, callerId: callerId.e164, to: destination });
 }
 
 /** TwiML App Voice URL. Numbers point at the TwiML App too, so non-client callers are inbound (D7). */

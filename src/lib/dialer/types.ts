@@ -62,3 +62,9 @@ export interface DialableLead {
   phone: string;
   status: LeadStatus;
 }
+
+/** A number entered in the persistent keypad; the server validates and normalizes it. */
+export interface ManualDialTarget {
+  phone: string;
+  label: string;
+}

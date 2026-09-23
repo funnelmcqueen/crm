@@ -15,6 +15,7 @@ import {
 } from "@/lib/dialer/drivers/tel";
 import { notifyVoicemailsChanged } from "@/lib/dialer/events";
 import { DIALER_MESSAGES, microphoneErrorMessage, outboundErrorMessage } from "@/lib/dialer/messages";
+import { canStartManualDial, requestManualCallId, type ManualCallRequest } from "@/lib/dialer/manual-dial";
 import { isUnansweredCallStatus } from "@/lib/dialer/outcome-form";
 import { recoverWrapUp, wrapUpForRecovery } from "@/lib/dialer/recover-wrap-up";
 import { draftKey, readDraft, removeDraft, wrapUpDraftSchema, writeDraft } from "@/lib/dialer/workspace-drafts";
@@ -27,6 +28,7 @@ import {
   type DialerAction,
   type DialerState,
   type IncomingContext,
+  type CallSubject,
 } from "@/lib/dialer/state";
 import type {
   ActiveCall,
@@ -36,6 +38,7 @@ import type {
   DialerDriverName,
   InAppDriver,
   IncomingCall,
+  ManualDialTarget,
 } from "@/lib/dialer/types";
 import { preselectOutcomeForEndReason } from "@/lib/domain/outcomes";
 import { isDialable } from "@/lib/domain/statuses";
@@ -50,6 +53,7 @@ import {
 import { InCallBar } from "./in-call-bar";
 import { IncomingCallDialog } from "./incoming-call-dialog";
 import { OutcomeSheet } from "./outcome-sheet";
+import { PersistentKeypad } from "./persistent-keypad";
 import { TelPendingBar } from "./tel-pending-bar";
 
 export interface DialerProviderProps {
@@ -82,6 +86,23 @@ async function fetchVoiceToken(): Promise<{ token: string; ttl: number }> {
   const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
   if (typeof record.token !== "string" || record.token === "") throw new Error("voice token missing");
   return { token: record.token, ttl: typeof record.ttl === "number" ? record.ttl : 3600 };
+}
+
+async function requestLeadCallId(leadId: string): Promise<ManualCallRequest> {
+  try {
+    const response = await fetch("/api/calls/outbound", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId }),
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) return { ok: false, status: response.status, message: outboundErrorMessage(response.status, body) };
+    const id = typeof body === "object" && body !== null ? (body as { callId?: unknown }).callId : undefined;
+    return typeof id === "string" && UUID.test(id)
+      ? { ok: true, callId: id }
+      : { ok: false, message: DIALER_MESSAGES.startFailed };
+  } catch {
+    return { ok: false, message: DIALER_MESSAGES.startFailed };
+  }
 }
 
 /** Asks for the microphone once. Returns an error message, or null when access was granted. */
@@ -131,6 +152,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   const callTokenRef = useRef(0);
   const cancelTokenRef = useRef(-1);
   const micGrantedRef = useRef(false);
+  const manualTelStartingRef = useRef(false);
 
   const ensureMicrophone = useCallback(async (driver: InAppDriver): Promise<string | null> => {
     // The mock driver plays no audio, so it never prompts (keeps automated browsers prompt-free).
@@ -171,7 +193,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
         writePendingTel({ ...pending, stage: "wrap-up" });
         dispatch({ type: "RESTORE_WRAP_UP", wrapUp: pendingTelWrapUp(pending) });
       } else {
-        dispatch({ type: "TEL_START", leadId: pending.leadId, label: pending.label,
+        dispatch({ type: "TEL_START", leadId: pending.leadId, callId: pending.callId, label: pending.label,
           clientRequestId: pending.clientRequestId, startedAt: pending.startedAt });
       }
     }
@@ -194,7 +216,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
 
   const handleIncoming = useCallback(
     (call: IncomingCall) => {
-      if (recoveringRef.current || stateRef.current.kind !== "idle") {
+      if (recoveringRef.current || manualTelStartingRef.current || stateRef.current.kind !== "idle") {
         call.reject();
         return;
       }
@@ -282,14 +304,14 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     [dispatch],
   );
 
-  const startCall = useCallback(
-    async (lead: DialableLead) => {
+  const startOutboundCall = useCallback(
+    async (subject: CallSubject, requestCallId: () => Promise<ManualCallRequest>) => {
       const driver = sessionRef.current?.readyDriver() ?? null;
-      if (recoveringRef.current || !driver || stateRef.current.kind !== "idle" || !isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return;
+      if (!canStartManualDial(stateRef.current, recoveringRef.current) || manualTelStartingRef.current || !driver) return;
 
       const token = callTokenRef.current + 1;
       callTokenRef.current = token;
-      dispatch({ type: "OUTBOUND_START", subject: { leadId: lead.id, label: lead.businessName } });
+      dispatch({ type: "OUTBOUND_START", subject });
       const isCurrent = () => callTokenRef.current === token;
       const abort = (message: string | null) => {
         if (!isCurrent()) return;
@@ -301,32 +323,18 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       if (micError) return abort(micError);
       if (cancelTokenRef.current === token) return abort(null);
 
-      let callId: string;
-      try {
-        const response = await fetch("/api/calls/outbound", {
-          method: "POST",
-          credentials: "same-origin",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leadId: lead.id }),
-        });
-        const body: unknown = await response.json().catch(() => null);
-        if (!response.ok) {
-          // The toast says calls will use the phone, so make that true: stop offering in-app CALL.
-          if (response.status === 403) {
-            sessionRef.current?.turnOff();
-            router.refresh();
-          } else if (response.status === 503) {
-            sessionRef.current?.markUnavailable();
-          }
-          return abort(outboundErrorMessage(response.status, body));
+      const result = await requestCallId();
+      if (!result.ok) {
+        // A disabled or unavailable device should stop offering browser calls.
+        if (result.status === 403) {
+          sessionRef.current?.turnOff();
+          router.refresh();
+        } else if (result.status === 503) {
+          sessionRef.current?.markUnavailable();
         }
-        const id = typeof body === "object" && body !== null ? (body as { callId?: unknown }).callId : undefined;
-        if (typeof id !== "string" || !UUID.test(id)) return abort(DIALER_MESSAGES.startFailed);
-        callId = id;
-      } catch {
-        return abort(DIALER_MESSAGES.startFailed);
+        return abort(result.message);
       }
+      const callId = result.callId;
       if (cancelTokenRef.current === token) return abort(null);
       if (!isCurrent()) return;
 
@@ -373,9 +381,18 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     [dispatch, ensureMicrophone, recheckServerStatus, router],
   );
 
+  const startCall = useCallback((lead: DialableLead) => {
+    if (!isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return;
+    return startOutboundCall({ leadId: lead.id, label: lead.businessName }, () => requestLeadCallId(lead.id));
+  }, [startOutboundCall]);
+
+  const startManualCall = useCallback(async (target: ManualDialTarget): Promise<void> => {
+    await startOutboundCall({ leadId: null, label: target.label }, () => requestManualCallId(target, "IN_APP"));
+  }, [startOutboundCall]);
+
   const beginTelCall = useCallback(
     (lead: DialableLead): boolean => {
-      if (recoveringRef.current || stateRef.current.kind !== "idle" || !isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return false;
+      if (manualTelStartingRef.current || recoveringRef.current || stateRef.current.kind !== "idle" || !isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return false;
       const pending = {
         userId,
         leadId: lead.id,
@@ -397,12 +414,38 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     [dispatch, userId],
   );
 
+  const beginManualTelCall = useCallback(async (target: ManualDialTarget): Promise<boolean> => {
+    if (!canStartManualDial(stateRef.current, recoveringRef.current) || manualTelStartingRef.current) return false;
+    manualTelStartingRef.current = true;
+    try {
+      const result = await requestManualCallId(target, "TEL");
+      if (!result.ok) {
+        toast.error(result.message);
+        return false;
+      }
+      if (!canStartManualDial(stateRef.current, recoveringRef.current)) return false;
+      const pending = {
+        userId, leadId: null, callId: result.callId, label: target.label,
+        clientRequestId: newClientRequestId(), startedAt: Date.now(), stage: "calling" as const,
+      };
+      writePendingTel(pending);
+      dispatch({
+        type: "TEL_START", leadId: null, callId: pending.callId, label: pending.label,
+        clientRequestId: pending.clientRequestId, startedAt: pending.startedAt,
+      });
+      return stateRef.current.kind === "tel-pending" && stateRef.current.callId === result.callId;
+    } finally {
+      manualTelStartingRef.current = false;
+    }
+  }, [dispatch, userId]);
+
   const openTelOutcome = useCallback(() => {
     const current = stateRef.current;
     if (current.kind !== "tel-pending") return;
     writePendingTel({
       userId,
       leadId: current.subject.leadId,
+      callId: current.callId,
       label: current.subject.label,
       clientRequestId: current.clientRequestId,
       startedAt: current.startedAt,
@@ -601,7 +644,9 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       dialMode,
       connecting,
       startCall: (lead) => void startCall(lead),
+      startManualCall,
       beginTelCall,
+      beginManualTelCall,
       hangup,
       setMuted,
       sendDigits,
@@ -616,7 +661,9 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       dialMode,
       connecting,
       startCall,
+      startManualCall,
       beginTelCall,
+      beginManualTelCall,
       hangup,
       setMuted,
       sendDigits,
@@ -630,6 +677,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   return (
     <DialerContext.Provider value={value}>
       {children}
+      <PersistentKeypad />
       {recoveryError ? (
         <section role="alert" className="fixed inset-x-4 bottom-24 z-50 rounded-xl border bg-card p-4 shadow-lg md:left-64">
           <p className="font-bold">Your unfinished call could not be recovered.</p>

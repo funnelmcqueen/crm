@@ -103,10 +103,11 @@ export function buildLogCallPayload(values: OutcomeFormValues, target: OutcomeFo
   if (target.mode === "IN_APP") {
     if (!target.callId) return { ok: false, error: "This call can't be logged. Close the sheet and try again." };
     payload.callId = target.callId;
+  } else if (target.leadId === null) {
+    if (!target.callId) return { ok: false, error: "This call can't be logged. Close the sheet and try again." };
+    payload.callId = target.callId;
   } else {
-    if (!target.leadId || !target.clientRequestId) {
-      return { ok: false, error: "This call can't be logged. Close the sheet and try again." };
-    }
+    if (!target.clientRequestId) return { ok: false, error: "This call can't be logged. Close the sheet and try again." };
     payload.clientRequestId = target.clientRequestId;
   }
 

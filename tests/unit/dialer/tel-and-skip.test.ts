@@ -21,6 +21,7 @@ import {
 
 const LEAD = "11111111-1111-4111-8111-111111111111";
 const REQ = "33333333-3333-4333-8333-333333333333";
+const CALL = "22222222-2222-4222-8222-222222222222";
 const NOW = 1_800_000_000_000;
 
 function memoryStore() {
@@ -121,6 +122,20 @@ describe("pending tel call", () => {
       preselectedOutcome: null,
       label: "Acme",
     });
+  });
+
+  it("restores a manual phone call with its server call ID and no lead", () => {
+    const manual = { ...pending, leadId: null, callId: CALL, label: "+1 (212) 555-0123" };
+    const restored = parsePendingTel(JSON.stringify(manual), NOW, USER);
+    expect(restored).toEqual(manual);
+    expect(pendingTelWrapUp(restored!)).toMatchObject({ leadId: null, callId: CALL, mode: "TEL" });
+  });
+
+  it("rejects a no-lead phone call without a valid server call ID", () => {
+    for (const callId of [undefined, null, "not-a-uuid"]) {
+      expect(parsePendingTel(JSON.stringify({ ...pending, leadId: null, callId }), NOW, USER)).toBeNull();
+    }
+    expect(parsePendingTel(JSON.stringify({ ...pending, callId: "not-a-uuid" }), NOW, USER)).toBeNull();
   });
 });
 

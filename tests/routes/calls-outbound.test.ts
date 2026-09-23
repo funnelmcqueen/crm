@@ -1,6 +1,6 @@
 // SPEC 7a.3 / 12 / 13: POST /api/calls/outbound pre-creates the in-app call row for an accessible lead.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { handleCallsOutbound } from '@/server/http/voice';
+import { handleCallsOutbound, handleManualCallsOutbound } from '@/server/http/voice';
 import { serviceClient, signInAs, type SignedInUser } from '../helpers/clients';
 import { createCall, createLead, createUser, disableUser, fakeTwilioSid, type FixtureUser } from '../helpers/fixtures';
 import { browserRequest, routeEnv, stubSessionEnv, unstubSessionEnv } from './_helpers';
@@ -21,6 +21,10 @@ afterAll(() => unstubSessionEnv());
 
 function post(token: string | undefined, body: string | undefined, origin?: string): Promise<Response> {
   return handleCallsOutbound(browserRequest(PATH, { token, body, origin }), { env: routeEnv() });
+}
+
+function postManual(token: string | undefined, body: string | undefined, origin?: string): Promise<Response> {
+  return handleManualCallsOutbound(browserRequest('/api/calls/manual-outbound', { token, body, origin }), { env: routeEnv() });
 }
 
 async function rawBody(res: Response): Promise<{ status: number; text: string }> {
@@ -116,5 +120,44 @@ describe('POST /api/calls/outbound', () => {
     expect(await rawBody(crossSite)).toEqual({ status: 403, text: '{"error":"forbidden"}' });
     const rows = await serviceClient().from('calls').select('id').in('lead_id', [lead.id, disabledLead.id, noInAppLead.id]);
     expect(rows.data).toEqual([]);
+  });
+});
+
+describe('POST /api/calls/manual-outbound', () => {
+  it.each(['IN_APP', 'TEL'] as const)('creates a %s row with the normalized server destination and no lead', async (mode) => {
+    const res = await postManual(a.accessToken, JSON.stringify({ phone: '(212) 555-0123', mode }));
+    expect(res.status).toBe(201);
+    const body = await res.json() as { callId: string };
+    expect(Object.keys(body)).toEqual(['callId']);
+    const { data } = await serviceClient().from('calls')
+      .select('id, lead_id, user_id, direction, mode, remote_e164')
+      .eq('id', body.callId).single();
+    expect(data).toEqual({
+      id: body.callId, lead_id: null, user_id: userA.id, direction: 'OUTBOUND', mode, remote_e164: '+12125550123',
+    });
+  });
+
+  it.each([
+    { phone: '123', mode: 'IN_APP' },
+    { phone: '', mode: 'IN_APP' },
+    { phone: '(212) 555-0123', mode: 'WRONG' },
+  ])('rejects invalid manual input before creating a row: %j', async (input) => {
+    const { count: before } = await serviceClient().from('calls').select('id', { count: 'exact', head: true }).eq('user_id', userA.id);
+    expect(await rawBody(await postManual(a.accessToken, JSON.stringify(input)))).toEqual({ status: 400, text: '{"error":"validation"}' });
+    const { count: after } = await serviceClient().from('calls').select('id', { count: 'exact', head: true }).eq('user_id', userA.id);
+    expect(after).toBe(before);
+  });
+
+  it('rejects missing JSON, unauthenticated callers, disabled callers, and cross-site Origin', async () => {
+    const body = JSON.stringify({ phone: '(212) 555-0123', mode: 'IN_APP' });
+    expect((await postManual(a.accessToken, undefined)).status).toBe(400);
+    expect((await postManual(a.accessToken, '{')).status).toBe(400);
+    expect((await postManual(undefined, body)).status).toBe(401);
+    expect(await rawBody(await postManual(a.accessToken, body, 'https://evil.example')))
+      .toEqual({ status: 403, text: '{"error":"forbidden"}' });
+    const disabled = await createUser();
+    const session = await signInAs(disabled.email, disabled.password);
+    await disableUser(disabled.id);
+    expect((await postManual(session.accessToken, body)).status).toBe(401);
   });
 });

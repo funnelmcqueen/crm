@@ -61,4 +61,7 @@ export const wrapUpDraftSchema = z.object({
   leadId: z.uuid().nullable(), callId: z.uuid().nullable(), clientRequestId: z.uuid().nullable(),
   mode: z.enum(["IN_APP", "TEL"]), endReason: z.enum(["completed", "busy", "no-answer", "failed", "canceled"]),
   preselectedOutcome: z.enum(CALL_OUTCOMES).nullable(), label: z.string().max(500),
-}).refine((v) => v.mode === "IN_APP" ? v.callId !== null : v.leadId !== null && v.clientRequestId !== null);
+}).refine((v) => {
+  if (v.mode === "IN_APP" || v.leadId === null) return v.callId !== null;
+  return v.clientRequestId !== null;
+});
