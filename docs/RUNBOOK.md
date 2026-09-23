@@ -166,6 +166,15 @@ otherwise-working connection.
 Settings → Google Calendar → **Reconnect** — this re-encrypts the refresh token under whichever key is
 current.
 
+### Reconnecting with a different Google account
+
+Connecting a second account is allowed and starts a fresh "Funnel McQueen meetings" calendar under it, but
+meetings booked before the switch keep event ids that live in the old account's calendar, which the new
+token cannot reach. Cancelling one of those in the CRM marks the row cancelled and logs
+`[booking] cancelMeeting failed` — the Google event survives, so delete it by hand in the old account.
+Reconnecting the same account, which is the ordinary recovery after a revoked token, reuses the existing
+calendar and has none of this.
+
 ---
 
 ## Data

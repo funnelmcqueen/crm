@@ -874,9 +874,10 @@ outside memory. `src/server/calendar/google.ts` (`createGoogleCalendar`) impleme
 modules: `readAvailability` builds windows from `bookable_hours` and busy time from `freeBusy` on the closer's
 primary calendar (addressed by email) plus the app calendar; `createMeeting` inserts a Meet-conferenced event with
 the lead as an attendee when they have an email address; `cancelMeeting` deletes it. **It never creates the app
-calendar itself** — only `GET /api/google/callback` (`src/server/http/google-oauth.ts`) does, once, on first
-connect, storing the new calendar's id in `calendar_connection.app_calendar_id` in the same write that stores the
-connection; a connection without an app calendar id is treated as booking-unavailable rather than triggering a lazy
+calendar itself** — only `GET /api/google/callback` (`src/server/http/google-oauth.ts`) does, storing the id in
+`calendar_connection.app_calendar_id` in the same write that stores the connection. It creates one only when the
+connection has none, or when the account being connected differs from the one already stored, so an ordinary
+reconnect reuses the existing calendar while switching accounts starts a fresh one; a connection without an app calendar id is treated as booking-unavailable rather than triggering a lazy
 create (D47 amends the original design here — see `docs/DEVIATIONS.md`).
 
 Environment: `CALENDAR_DRIVER` = `google` | `mock` (see driver resolution above); `mock` in production is refused at

@@ -59,7 +59,7 @@ interface CreateMeetingInput {
  * is deliberately treated the same as invalid_grant: it also reports the connection broken. Otherwise Settings
  * keeps showing "Connected" while booking is silently unavailable and nothing ever points the owner at the real
  * cause — reconnecting genuinely is the fix either way, since it re-encrypts the refresh token under whatever
- * key is current (fix round N). The decrypt call is isolated in its own try/catch so this only ever fires for a
+ * key is current. The decrypt call is isolated in its own try/catch so this only ever fires for a
  * decrypt failure, never for a later, unrelated error from accessTokenFor or `fn`.
  */
 async function withAccessToken<T>(deps: GoogleCalendarDeps, fn: (accessToken: string) => Promise<T>): Promise<T> {

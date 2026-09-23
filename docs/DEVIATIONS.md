@@ -732,7 +732,8 @@ longest column.
 ## D46. Closer calendar booking
 **Spec:** §15 lists Google Calendar under "Future-ready, not built".
 **Built:** agents book 30-minute meetings with a lead into one closer calendar from the lead page or the in-call bar.
-The panel shows open slots inside the closer's bookable windows, plain **Busy** blocks for everything else, full
+The panel shows open slots inside the closer's bookable windows, plain **Busy** blocks for the rest of those windows
+(D47 narrows this: busy time outside the bookable hours never reaches the browser at all), full
 details only of meetings the agent booked, and the three best slots for the lead's business type phrased in the lead's
 local time ("Tomorrow at 5 pm EDT"). Booking writes go through guarded SECURITY DEFINER RPCs; a unique index on live
 start times makes a double booking impossible; failures abandon the pending appointment until the meeting event is created. A booking during

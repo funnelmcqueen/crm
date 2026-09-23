@@ -159,7 +159,8 @@ One new admin card, above the company settings:
 - Unit: hours → windows including a daylight-saving weekend and a week with no hours set; encryption round
   trip and rejection of a wrong key; Google error classification; free/busy response mapping.
 - Database: `bookable_hours` RLS and grants; `set_bookable_hours` validation and atomic replacement;
-  `connect_calendar` / `disconnect_calendar` / `mark_calendar_broken` admin-only; `get_calendar_status`
+  `connect_calendar` / `disconnect_calendar` admin-only and `mark_calendar_broken` service-role only (the
+  implementation narrowed it: an agent able to call it could take booking offline for everyone); `get_calendar_status`
   still never returns the token.
 - Integration: availability and booking through the stubbed Google client, including the invited guest, the
   Meet link, a cancel that deletes the event, and `invalid_grant` marking the connection broken.

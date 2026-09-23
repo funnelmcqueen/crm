@@ -119,9 +119,10 @@ const serverEnvSchema = publicSupabaseSchema
       }
     }
 
-    // Mirrors the Twilio check above: CALENDAR_DRIVER=google explicitly, or the same three-GOOGLE_*-variables
-    // auto-detect getCalendarDriver() itself uses (GOOGLE_KEYS only — APP_BASE_URL is deliberately not part of
-    // that auto-detect condition, since it is one of the variables being required here).
+    // Mirrors the Twilio check above: CALENDAR_DRIVER=google explicitly, or an unset driver with all three
+    // GOOGLE_* variables present. The trigger deliberately reads GOOGLE_KEYS directly rather than calling
+    // isGoogleCalendarConfigured(), which also requires APP_BASE_URL: that is one of the variables this block
+    // exists to demand, so testing for it here would silently skip the very configuration that needs the error.
     if (env.CALENDAR_DRIVER === "google" || (env.CALENDAR_DRIVER === undefined && GOOGLE_KEYS.every((key) => env[key] !== undefined))) {
       for (const key of [...GOOGLE_KEYS, "APP_BASE_URL"] as const) {
         if (env[key] === undefined) {

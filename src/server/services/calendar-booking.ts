@@ -278,7 +278,7 @@ export async function getAgentAvailability(
   ]);
   // freeSlots below always uses this unclipped busy list. Only the browser-facing `busy` field further down is
   // narrowed to the bookable windows — the picker has no use for the closer's evenings, nights and weekends,
-  // and a real calendar's busy time is otherwise unbounded (fix round N).
+  // and a real calendar's busy time is otherwise unbounded.
   const slots = freeSlots({ windows: read.windows, busy, now });
   const busyInBookableWindows = intersectIntervals(busy, read.windows);
 

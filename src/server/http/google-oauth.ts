@@ -106,7 +106,7 @@ function constantTimeEqual(a: string, b: string): boolean {
  * account gets a fresh calendar instead — the old id was created under the previous account's own
  * `calendar.app.created` grant, so it is not reachable under the new account's grant, and reusing it would make
  * every free/busy read and event insert fail with a `permanent` GoogleApiError that never marks the connection
- * broken (fix round N).
+ * broken.
  */
 async function existingAppCalendarId(email: string): Promise<string | null> {
   const { data, error } = await createAdminClient()
