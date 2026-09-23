@@ -2,6 +2,7 @@ import { PhoneIncoming, PhoneOutgoing, Voicemail } from "lucide-react";
 import Link from "next/link";
 import { DateTime, formatDuration } from "@/components/common/datetime";
 import { CallButton } from "@/components/dialer/call-button";
+import { ManualCallbackButton } from "@/components/calls/manual-callback-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { OUTCOME_LABELS } from "@/lib/domain/outcomes";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
@@ -19,8 +20,11 @@ function titleFor(row: CallHistoryRow): string {
 }
 
 function resultFor(row: CallHistoryRow): string {
+  if (row.hasVoicemail) {
+    const duration = row.voicemailDurationSeconds === null ? "" : ` · ${formatDuration(row.voicemailDurationSeconds)}`;
+    return `${row.handledAt ? "Heard" : "Unheard"} voicemail${duration}`;
+  }
   if (row.outcome) return OUTCOME_LABELS[row.outcome];
-  if (row.hasVoicemail) return "Voicemail";
   if (row.callStatus === "no-answer") return "No answer";
   if (row.callStatus === "busy") return "Busy";
   if (row.callStatus === "failed") return "Failed";
@@ -50,7 +54,8 @@ function Caller({ row, mobile = false }: { row: CallHistoryRow; mobile?: boolean
 }
 
 function Callback({ row }: { row: CallHistoryRow }) {
-  if (!row.leadId || !row.remoteE164 || !row.leadStatus) return null;
+  if (!row.remoteE164) return null;
+  if (!row.leadId || !row.leadStatus) return <ManualCallbackButton phone={row.remoteE164} />;
   return (
     <CallButton
       lead={{ id: row.leadId, businessName: titleFor(row), contactName: row.contactName, phone: row.remoteE164, status: row.leadStatus }}

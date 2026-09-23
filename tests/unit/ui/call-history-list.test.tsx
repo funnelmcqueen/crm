@@ -21,15 +21,21 @@ describe("calls workspace UI", () => {
     expect(admin).toContain("min-h-12");
   });
 
-  it("links known callers, keeps unknown callers unlinked, and has mobile-sized callback controls", () => {
+  it("links known callers, lets an unknown caller dial through the manual path, and shows voicemail state", () => {
     const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(CallHistoryList, {
-      rows: [row, { ...row, id: "call-2", leadId: null, leadStatus: null, businessName: null, contactName: null, remoteE164: "+19415550124" }],
+      rows: [
+        row,
+        { ...row, id: "call-2", leadId: null, leadStatus: null, businessName: null, contactName: null, remoteE164: "+19415550124", hasVoicemail: true, voicemailDurationSeconds: 21 },
+        { ...row, id: "call-3", leadId: null, leadStatus: null, businessName: null, contactName: null, remoteE164: "+19415550125", hasVoicemail: true, voicemailDurationSeconds: 34, handledAt: "2026-09-23T14:00:00.000Z" },
+      ],
       tz: "America/New_York", now: Date.parse("2026-09-23T15:00:00.000Z"), isAdmin: true,
     })));
     expect(html).toContain('href="/leads/lead-1"');
     expect(html).toContain("Palm Table");
     expect(html).toContain("Unknown caller");
-    expect(html).toContain("Call back");
+    expect(html).toContain('aria-label="Call back (941) 555-0124"');
+    expect(html).toContain("Unheard voicemail · 0:21");
+    expect(html).toContain("Heard voicemail · 0:34");
     expect(html).toContain("min-h-12");
     expect(html).toContain("hidden overflow-x-auto");
     expect(html).toContain("xl:hidden");
