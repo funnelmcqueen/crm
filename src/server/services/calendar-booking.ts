@@ -182,7 +182,7 @@ async function defaultCalendar(ctx: RequestContext, ownerId: string): Promise<Ca
   } catch {
     return null;
   }
-  if (driver !== "google") return resolveCalendarClient(timeZone);
+  if (driver !== "google") return resolveCalendarClient(timeZone, ownerId);
   const deps = await buildGoogleDeps(ctx, timeZone, ownerId);
   return deps ? resolveGoogleCalendar(deps) : null;
 }

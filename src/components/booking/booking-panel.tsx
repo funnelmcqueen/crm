@@ -212,7 +212,7 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
             Book {chosen.phrase} {chosen.zone} with {availability.businessName}?
           </p>
           <div className="flex flex-col gap-2">
-            <Label htmlFor={`booking-note-${leadId}`}>Note for the closer (optional)</Label>
+            <Label htmlFor={`booking-note-${leadId}`}>Note on the meeting (optional)</Label>
             <Textarea id={`booking-note-${leadId}`} value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
           </div>
           <div className="flex flex-wrap gap-2">

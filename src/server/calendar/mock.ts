@@ -4,6 +4,10 @@ import type { CalendarAvailability, CalendarClient, CalendarInterval } from "./t
 
 // In-memory calendar for development, tests and Playwright (CALENDAR_DRIVER=mock). Refused in production by
 // src/server/env.ts. Meetings it creates live for the life of the server process.
+//
+// One calendar per owner (docs/DEVIATIONS.md D48), matching the Google driver: created meetings are kept per
+// owner id, so one agent's booking never shows as busy in another's picker and the same clock time is free for
+// each of them. They were a single shared list until D48, when every meeting was the one closer's.
 
 interface MockEvent extends CalendarInterval {
   id: string;
@@ -21,11 +25,11 @@ const SEEDED_BUSY: ReadonlyArray<readonly [string, string, string]> = [
   ["15:00", "16:00", "SECRET: school run"],
 ];
 
-const created: MockEvent[] = [];
+const createdByOwner = new Map<string, MockEvent[]>();
 let sequence = 0;
 
 export function resetMockCalendar(): void {
-  created.length = 0;
+  createdByOwner.clear();
   sequence = 0;
 }
 
@@ -41,8 +45,16 @@ function overlaps(interval: CalendarInterval, from: Date, to: Date): boolean {
   return interval.start < to && interval.end > from;
 }
 
-export function createMockCalendar(timeZone: string): CalendarClient {
+/** `ownerId` is whose calendar this is. Every owner gets the same windows and seeded busy, their own meetings. */
+export function createMockCalendar(timeZone: string, ownerId: string): CalendarClient {
   const at = (date: string, time: string) => zonedLocalInputToUtc(`${date}T${time}`, timeZone);
+  const created = (): MockEvent[] => {
+    const existing = createdByOwner.get(ownerId);
+    if (existing) return existing;
+    const fresh: MockEvent[] = [];
+    createdByOwner.set(ownerId, fresh);
+    return fresh;
+  };
 
   return {
     async readAvailability({ from, to }): Promise<CalendarAvailability> {
@@ -53,7 +65,7 @@ export function createMockCalendar(timeZone: string): CalendarClient {
       );
       return {
         windows: windows.filter((window) => overlaps(window, from, to)),
-        busy: [...seeded, ...created]
+        busy: [...seeded, ...created()]
           .filter((event) => overlaps(event, from, to))
           .map((event) => ({ start: event.start, end: event.end })),
       };
@@ -62,7 +74,7 @@ export function createMockCalendar(timeZone: string): CalendarClient {
     async createMeeting({ start, end, title }) {
       sequence += 1;
       const id = `mock-event-${sequence}`;
-      created.push({ id, title, start, end });
+      created().push({ id, title, start, end });
       return { eventId: id };
     },
   };

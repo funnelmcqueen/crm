@@ -55,7 +55,7 @@ export function BookMeetingButton({ leadId, businessName, triggerClassName }: Bo
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>Book a meeting with {businessName}</SheetTitle>
-          <SheetDescription>30 minutes with the closer. Times are shown in the lead&apos;s time zone.</SheetDescription>
+          <SheetDescription>30 minutes in your calendar. Times are shown in the lead&apos;s time zone.</SheetDescription>
         </SheetHeader>
         <BookingPanel leadId={leadId} state={state} onReload={load} onBooked={() => setOpen(false)} />
       </SheetContent>

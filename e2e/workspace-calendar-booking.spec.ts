@@ -2,8 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { signIn } from './helpers';
 
 /**
- * Closer calendar booking on the mock calendar (docs/DEVIATIONS.md D46), in the `workspace` project. Casey books a
- * suggested slot; Blair then finds that time gone from their own panel and nothing of Casey's lead anywhere in it.
+ * Calendar booking on the mock calendar (docs/DEVIATIONS.md D46, D48), in the `workspace` project. Casey books a
+ * suggested slot; Blair then finds that same time still open in their own panel, because each agent books into a
+ * calendar of their own — and nothing of Casey's lead appears anywhere in it either way.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -37,7 +38,7 @@ test('an agent books a suggested slot and the lead shows the next meeting', asyn
   await expect(page.getByText('Next meeting:', { exact: true })).toBeVisible();
 });
 
-test("another agent finds that time taken, with nothing of the first agent's lead", async ({ page }) => {
+test("another agent still has that time, with nothing of the first agent's lead", async ({ page }) => {
   test.skip(bookedStart === '', 'depends on the booking above');
   await signIn(page, 'blair');
   const name = await openFirstCallableLead(page);
@@ -51,6 +52,11 @@ test("another agent finds that time taken, with nothing of the first agent's lea
   const day = panel.locator(`[data-day="${dayKey}"]`);
   if (await day.isEnabled()) await day.click();
 
-  await expect(panel.locator(`[data-slot-start="${bookedStart}"]`)).toHaveCount(0);
+  // Casey's meeting is on Casey's calendar, so it neither blocks Blair's picker (D48) nor reveals anything
+  // about Casey's lead — the privacy rule from D46 is unchanged.
+  await expect(panel.locator(`[data-slot-start="${bookedStart}"]`)).toHaveCount(1);
   await expect(panel).not.toContainText(bookedLead);
+  // Blair taking it as well is covered in tests/integration/calendar/booking.test.ts and the unique index in
+  // tests/db/calendar-booking.test.ts; booking here would move this lead to Appointment and disturb the specs
+  // that run after this one against the same seeded workspace.
 });

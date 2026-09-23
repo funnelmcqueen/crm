@@ -10,14 +10,14 @@ import type { CalendarClient } from "./types";
  * This resolver never queries the database: the Google path is reached through `resolveGoogleCalendar` below,
  * once the caller (src/server/services/calendar-connection.ts, Task 6) has loaded a connection and hours.
  */
-export function resolveCalendarClient(timeZone: string, env?: ServerEnv): CalendarClient | null {
+export function resolveCalendarClient(timeZone: string, ownerId: string, env?: ServerEnv): CalendarClient | null {
   let driver: ReturnType<typeof getCalendarDriver>;
   try {
     driver = getCalendarDriver(env);
   } catch {
     return null;
   }
-  return driver === "mock" ? createMockCalendar(timeZone) : null;
+  return driver === "mock" ? createMockCalendar(timeZone, ownerId) : null;
 }
 
 /**
