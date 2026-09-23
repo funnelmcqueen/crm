@@ -32,6 +32,7 @@ export interface CallHistoryRow {
   id: string;
   createdAt: string;
   leadId: string | null;
+  leadStatus: LeadStatus | null;
   businessName: string | null;
   contactName: string | null;
   remoteE164: string | null;
@@ -82,6 +83,7 @@ export async function listCallHistory(ctx: RequestContext | null, input: unknown
       id: row.call_id,
       createdAt: row.created_at,
       leadId: row.lead_id,
+      leadStatus: row.lead_status,
       businessName: row.business_name,
       contactName: row.contact_name,
       remoteE164: row.remote_e164,

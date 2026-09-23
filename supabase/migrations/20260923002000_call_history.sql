@@ -10,6 +10,7 @@ returns table (
   call_id uuid,
   created_at timestamptz,
   lead_id uuid,
+  lead_status public.lead_status,
   business_name text,
   contact_name text,
   remote_e164 text,
@@ -32,7 +33,7 @@ as $$
   with me as (
     select public.is_active_user() as active, public.is_admin() as admin, auth.uid() as uid
   )
-  select c.id, c.created_at, c.lead_id, l.business_name, l.contact_name,
+  select c.id, c.created_at, c.lead_id, l.status, l.business_name, l.contact_name,
     coalesce(c.remote_e164, l.phone), c.user_id,
     case when me.admin then p.name end,
     c.direction, c.outcome, c.call_status, c.duration_seconds,

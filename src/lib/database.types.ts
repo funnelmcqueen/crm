@@ -791,6 +791,7 @@ export type Database = {
           handled_at: string | null
           has_voicemail: boolean
           lead_id: string | null
+          lead_status: Database["public"]["Enums"]["lead_status"] | null
           outcome: Database["public"]["Enums"]["call_outcome"] | null
           remote_e164: string | null
           total_count: number

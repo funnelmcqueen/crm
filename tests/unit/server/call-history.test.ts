@@ -12,6 +12,7 @@ const row = {
   call_id: callId,
   created_at: '2026-09-23T12:00:00+00:00',
   lead_id: leadId,
+  lead_status: 'NEW',
   business_name: 'Acme Roofing',
   contact_name: 'Sam',
   remote_e164: '+12125550100',
@@ -39,7 +40,7 @@ describe('listCallHistory', () => {
     const result = await listCallHistory(ctx, { tab: 'all', agentId: otherId });
     expect(result).toMatchObject({ page: 1, pageSize: 50, total: 1, tab: 'all' });
     expect(result.rows[0]).toEqual({
-      id: callId, createdAt: '2026-09-23T12:00:00+00:00', leadId, businessName: 'Acme Roofing',
+      id: callId, createdAt: '2026-09-23T12:00:00+00:00', leadId, leadStatus: 'NEW', businessName: 'Acme Roofing',
       contactName: 'Sam', remoteE164: '+12125550100', userId: agentId, agentName: null,
       direction: 'INBOUND', outcome: null, callStatus: 'no-answer', durationSeconds: 0,
       hasVoicemail: false, voicemailDurationSeconds: null, handledAt: null,

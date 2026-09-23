@@ -16,7 +16,7 @@ let otherCall: string;
 let adminOnly: string;
 
 const sql = `select * from public.list_call_history($1::text, $2::uuid, $3::int, $4::int)`;
-type HistoryRow = { call_id: string; user_id: string | null; agent_name: string | null; lead_id: string | null;
+type HistoryRow = { call_id: string; user_id: string | null; agent_name: string | null; lead_id: string | null; lead_status: string | null;
   business_name: string | null; remote_e164: string | null; direction: string; has_voicemail: boolean; total_count: number };
 const history = (userId: string, tab = 'all', agentId: string | null = null, limit = 50, offset = 0) =>
   userRows<HistoryRow>(db, userId, sql, [tab, agentId, limit, offset]);
@@ -47,14 +47,14 @@ describe('list_call_history', () => {
     const rows = await history(agent, 'all', other);
     expect(rows.map((row) => row.call_id).sort()).toEqual([ownMissed, ownAnswered, ownVoicemail].sort());
     expect(rows.every((row) => row.user_id === agent)).toBe(true);
-    expect(rows.find((row) => row.call_id === ownMissed)).toMatchObject({ business_name: 'Moved Lead', remote_e164: '+12125550101' });
+    expect(rows.find((row) => row.call_id === ownMissed)).toMatchObject({ business_name: 'Moved Lead', lead_status: 'NEW', remote_e164: '+12125550101' });
   });
 
   it('lets an admin see all calls and filter by agent, including unknown callers', async () => {
     const all = await history(admin);
     expect(all.map((row) => row.call_id).sort()).toEqual([ownMissed, ownAnswered, ownVoicemail, otherCall, adminOnly].sort());
     expect(all.find((row) => row.call_id === ownMissed)?.agent_name).toBe('History Agent');
-    expect(all.find((row) => row.call_id === adminOnly)).toMatchObject({ lead_id: null, user_id: null, remote_e164: '+12125550103' });
+    expect(all.find((row) => row.call_id === adminOnly)).toMatchObject({ lead_id: null, lead_status: null, user_id: null, remote_e164: '+12125550103' });
     expect((await history(admin, 'all', other)).map((row) => row.call_id)).toEqual([otherCall]);
   });
 
