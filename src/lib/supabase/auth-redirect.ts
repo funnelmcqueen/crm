@@ -1,9 +1,20 @@
 export const LOGIN_PATH = "/login";
 export const DEFAULT_AUTHENTICATED_PATH = "/dashboard";
 
-/** Pages reachable without a session. Everything else under the proxy matcher requires one. */
+/**
+ * Pages reachable without a session. Everything else under the proxy matcher requires one.
+ *
+ * `/privacy` and `/terms` are public because Google will not publish an OAuth consent screen whose privacy
+ * policy and terms links need a login to read, and its reviewers fetch both while signed out.
+ */
 export function isPublicPath(pathname: string): boolean {
-  return pathname === LOGIN_PATH || pathname === "/auth" || pathname.startsWith("/auth/");
+  return (
+    pathname === LOGIN_PATH ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname === "/auth" ||
+    pathname.startsWith("/auth/")
+  );
 }
 
 export function isAdminPath(pathname: string): boolean {
