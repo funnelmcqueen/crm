@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   type LucideIcon,
   Phone,
+  PhoneCall,
   Settings,
   SquareKanban,
   UsersRound,
@@ -22,6 +23,7 @@ export type NavKey =
   | "dashboard"
   | "leads"
   | "pipeline"
+  | "calls"
   | "follow-ups"
   | "agents"
   | "phone-numbers"
@@ -45,6 +47,7 @@ const AGENT_NAV: readonly NavItem[] = [
   item("dashboard", "Dashboard", "/dashboard", LayoutDashboard),
   item("leads", "My Leads", "/leads", Contact),
   item("pipeline", "Pipeline", "/pipeline", SquareKanban),
+  item("calls", "Calls", "/calls", PhoneCall),
   item("follow-ups", "Follow-ups", "/follow-ups", CalendarClock),
   item("settings", "Settings", "/settings", Settings),
 ];
@@ -53,6 +56,7 @@ const ADMIN_NAV: readonly NavItem[] = [
   item("dashboard", "Dashboard", "/dashboard", LayoutDashboard),
   item("leads", "All Leads", "/leads", Contact, ["/admin/import"]),
   item("pipeline", "Pipeline", "/pipeline", SquareKanban),
+  item("calls", "Calls", "/calls", PhoneCall),
   item("follow-ups", "Follow-ups", "/follow-ups", CalendarClock),
   item("agents", "Agents", "/admin/agents", UsersRound),
   item("phone-numbers", "Phone Numbers", "/admin/phone-numbers", Phone),
