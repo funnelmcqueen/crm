@@ -2,6 +2,7 @@
 // docs/DEVIATIONS.md D47): hours are admin-set and replace the whole week atomically, the connection
 // singleton is admin-guarded, mark_calendar_broken is service-role only (no API-role session, admin
 // included, may call it directly), and nobody reads the stored refresh token through the API.
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adminSqlRows, anonRows, bootDb, createAuthUser, pgError, serviceRows, userRows, type PGlite } from '../helpers/pglite';
 
@@ -13,6 +14,7 @@ const CONNECT = 'select public.connect_calendar($1, $2, $3)';
 const DISCONNECT = 'select public.disconnect_calendar()';
 const MARK_BROKEN = 'select public.mark_calendar_broken()';
 const STATUS = 'select * from public.get_calendar_status()';
+const SET_AGENT_CALENDAR = 'select public.set_agent_calendar_id($1, $2)';
 
 interface BookableHourRow {
   weekday: number;
@@ -35,6 +37,15 @@ async function setHours(caller: string, rows: unknown[]): Promise<void> {
 async function hourCount(): Promise<number> {
   const [row] = await adminSqlRows<{ n: number }>(db, 'select count(*)::int as n from public.bookable_hours');
   return row.n;
+}
+
+async function calendarIdOf(userId: string): Promise<string | null> {
+  const [row] = await adminSqlRows<{ google_calendar_id: string | null }>(
+    db,
+    'select google_calendar_id from public.profiles where id = $1',
+    [userId],
+  );
+  return row?.google_calendar_id ?? null;
 }
 
 beforeAll(async () => {
@@ -174,5 +185,41 @@ describe('calendar_connection lifecycle', () => {
 
     const [status] = await userRows<CalendarStatusRow>(db, admin, STATUS);
     expect(status.connected).toBe(false);
+  });
+});
+
+describe('set_agent_calendar_id (D48)', () => {
+  it('is service role only: an agent and an admin session both raise 42501', async () => {
+    const agent = await createAuthUser(db, { name: 'Calendar Agent' });
+    expect((await pgError(userRows(db, agent, SET_AGENT_CALENDAR, [agent, 'cal-a']))).code).toBe('42501');
+    expect((await pgError(userRows(db, admin, SET_AGENT_CALENDAR, [agent, 'cal-a']))).code).toBe('42501');
+    expect(await calendarIdOf(agent)).toBeNull();
+  });
+
+  it('stores a trimmed calendar id for the service role, and replaces it on reconnect', async () => {
+    const agent = await createAuthUser(db, { name: 'Provisioned Agent' });
+    await serviceRows(db, SET_AGENT_CALENDAR, [agent, '  cal-provisioned  ']);
+    expect(await calendarIdOf(agent)).toBe('cal-provisioned');
+
+    await serviceRows(db, SET_AGENT_CALENDAR, [agent, 'cal-second']);
+    expect(await calendarIdOf(agent)).toBe('cal-second');
+  });
+
+  it('refuses a blank or oversized id, and an unknown or deleted agent', async () => {
+    const agent = await createAuthUser(db, { name: 'Rejected Agent' });
+    expect((await pgError(serviceRows(db, SET_AGENT_CALENDAR, [agent, '   ']))).code).toBe('22023');
+    expect((await pgError(serviceRows(db, SET_AGENT_CALENDAR, [agent, 'x'.repeat(1025)]))).code).toBe('22023');
+    expect((await pgError(serviceRows(db, SET_AGENT_CALENDAR, [randomUUID(), 'cal-x']))).code).toBe('P0002');
+
+    // A deleted agent never owns work again (20260915001400_delete_agent.sql).
+    await adminSqlRows(db, 'update public.profiles set deleted_at = now(), active = false where id = $1', [agent]);
+    expect((await pgError(serviceRows(db, SET_AGENT_CALENDAR, [agent, 'cal-y']))).code).toBe('P0002');
+  });
+
+  it('is refused to an agent through a direct profile update, so the grant is not the only guard', async () => {
+    const agent = await createAuthUser(db, { name: 'Self Serve Agent' });
+    const update = "update public.profiles set google_calendar_id = 'cal-self' where id = $1";
+    expect((await pgError(userRows(db, agent, update, [agent]))).code).toBe('42501');
+    expect(await calendarIdOf(agent)).toBeNull();
   });
 });

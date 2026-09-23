@@ -108,25 +108,28 @@ describe('begin_appointment and confirm_appointment', () => {
 });
 
 describe('one live booking per slot', () => {
-  it('refuses a second live booking of the same start with slot_taken, until the first is abandoned', async () => {
+  it('refuses one agent a second live booking of the same start, but lets another agent hold it', async () => {
     const a = await agentWithLead();
     const b = await agentWithLead();
     const start = nextSlot();
     const held = await begin(a.agent, a.leadId, start);
-    expect(await pgError(begin(b.agent, b.leadId, start))).toMatchObject({ code: 'P0001', message: 'slot_taken' });
+    // Nobody is in two meetings at once...
+    expect(await pgError(begin(a.agent, a.leadId, start))).toMatchObject({ code: 'P0001', message: 'slot_taken' });
+    // ...but each agent runs their own, so the same clock time is still free for someone else (D48).
+    expect((await begin(b.agent, b.leadId, start)).booked_by).toBe(b.agent);
 
     await userRows(db, a.agent, ABANDON, [held.id]);
-    expect((await begin(b.agent, b.leadId, start)).status).toBe('pending');
+    expect((await begin(a.agent, a.leadId, start)).status).toBe('pending');
   });
 
   it('clears pending bookings older than ten minutes before inserting', async () => {
     const a = await agentWithLead();
-    const b = await agentWithLead();
     const start = nextSlot();
     const stale = await begin(a.agent, a.leadId, start);
     await adminSqlRows(db, "update public.appointments set created_at = now() - interval '11 minutes' where id = $1", [stale.id]);
 
-    expect((await begin(b.agent, b.leadId, start)).booked_by).toBe(b.agent);
+    // The same agent and the same start: without the sweep this would raise slot_taken.
+    expect((await begin(a.agent, a.leadId, start)).booked_by).toBe(a.agent);
     expect(await adminSqlRows(db, 'select id from public.appointments where id = $1', [stale.id])).toHaveLength(0);
   });
 
@@ -142,17 +145,25 @@ describe('one live booking per slot', () => {
     expect(kept.status).toBe('scheduled');
   });
 
-  it('cancel is admin only, and a cancelled meeting frees the slot', async () => {
+  it('lets an agent cancel their own meeting and an admin cancel anyone\'s, freeing that agent\'s slot', async () => {
     const a = await agentWithLead();
     const b = await agentWithLead();
     const start = nextSlot();
     const row = await begin(a.agent, a.leadId, start);
     await confirm(a.agent, row.id, `evt-${randomUUID()}`);
 
-    expect((await pgError(userRows(db, a.agent, CANCEL, [row.id]))).code).toBe('42501');
-    await userRows(db, admin, CANCEL, [row.id]);
-    expect((await pgError(userRows(db, admin, CANCEL, [row.id]))).code).toBe('P0002');
-    expect((await begin(b.agent, b.leadId, start)).status).toBe('pending');
+    // Another agent's meeting is not theirs to cancel, and they are not told it exists.
+    expect((await pgError(userRows(db, b.agent, CANCEL, [row.id]))).code).toBe('P0002');
+    await userRows(db, a.agent, CANCEL, [row.id]);
+    expect((await pgError(userRows(db, a.agent, CANCEL, [row.id]))).code).toBe('P0002');
+    expect((await begin(a.agent, a.leadId, start)).status).toBe('pending');
+
+    // An admin still cancels any of them.
+    const theirs = await begin(b.agent, b.leadId, nextSlot());
+    await confirm(b.agent, theirs.id, `evt-${randomUUID()}`);
+    await userRows(db, admin, CANCEL, [theirs.id]);
+    const [cancelled] = await adminSqlRows<{ status: string }>(db, 'select status from public.appointments where id = $1', [theirs.id]);
+    expect(cancelled.status).toBe('cancelled');
   });
 
   it('rate limits bookings at 20 an hour per user', async () => {
@@ -177,7 +188,7 @@ describe('reading appointments', () => {
     expect((await pgError(anonRows(db, 'select id from public.appointments'))).code).toBe('42501');
   });
 
-  it('booked_intervals gives any active user the times of live bookings, and nothing else', async () => {
+  it("booked_intervals gives an agent the times of their own live bookings, and nothing else", async () => {
     const a = await agentWithLead();
     const b = await agentWithLead();
     const start = nextSlot();
@@ -188,11 +199,15 @@ describe('reading appointments', () => {
 
     const from = new Date(new Date(start).getTime() - 3_600_000).toISOString();
     const to = new Date(new Date(start).getTime() + 86_400_000).toISOString();
-    const rows = await userRows<Record<string, Date>>(db, b.agent, INTERVALS, [from, to]);
+    const rows = await userRows<Record<string, Date>>(db, a.agent, INTERVALS, [from, to]);
     expect(Object.keys(rows[0] ?? {}).sort()).toEqual(['ends_at', 'starts_at']);
     const starts = rows.map((r) => r.starts_at.toISOString());
     expect(starts).toContain(live.starts_at.toISOString());
     expect(starts).not.toContain(cancelled.starts_at.toISOString());
+
+    // Another agent's calendar is their own: a's meeting neither blocks b's picker nor shows in it (D48).
+    const seenByB = await userRows<{ starts_at: Date }>(db, b.agent, INTERVALS, [from, to]);
+    expect(seenByB.map((r) => r.starts_at.toISOString())).not.toContain(live.starts_at.toISOString());
 
     expect((await pgError(userRows(db, b.agent, INTERVALS, [to, from]))).code).toBe('22023');
     expect((await pgError(anonRows(db, INTERVALS, [from, to]))).code).toBe('42501');
