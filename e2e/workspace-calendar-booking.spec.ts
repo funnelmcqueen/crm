@@ -49,8 +49,12 @@ test("another agent still has that time, with nothing of the first agent's lead"
 
   const timeZone = (await panel.locator('[data-time-zone]').getAttribute('data-time-zone')) ?? 'America/New_York';
   const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(bookedStart));
+  // Selected explicitly, awaited at each step: a slot only renders once its day is the chosen tab, so a
+  // conditional click would let a still-rendering panel pass the assertion below for the wrong reason.
   const day = panel.locator(`[data-day="${dayKey}"]`);
-  if (await day.isEnabled()) await day.click();
+  await expect(day).toBeEnabled();
+  await day.click();
+  await expect(day).toHaveAttribute('aria-pressed', 'true');
 
   // Casey's meeting is on Casey's calendar, so it neither blocks Blair's picker (D48) nor reveals anything
   // about Casey's lead — the privacy rule from D46 is unchanged.

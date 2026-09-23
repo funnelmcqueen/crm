@@ -10,9 +10,9 @@ export interface CalendarInterval {
 }
 
 export interface CalendarAvailability {
-  /** Bookable windows, built from `bookable_hours` in the closer's time zone — not read from a Google calendar (D47). */
+  /** Bookable windows, built from `bookable_hours` in the company time zone — not read from a Google calendar (D47). */
   windows: CalendarInterval[];
-  /** Busy time on the closer's primary Google calendar and the app's own calendar, overlapping the range. */
+  /** Busy time on the booking agent's own calendar, overlapping the range (D48). */
   busy: CalendarInterval[];
 }
 

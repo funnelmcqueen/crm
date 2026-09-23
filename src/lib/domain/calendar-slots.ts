@@ -1,4 +1,4 @@
-// Free 30-minute slots inside the closer's bookable windows (docs/DEVIATIONS.md D46). Pure and instant-based; all
+// Free 30-minute slots inside the bookable windows (docs/DEVIATIONS.md D46). Pure and instant-based; all
 // intervals are half-open [start, end).
 
 export const SLOT_MINUTES = 30;

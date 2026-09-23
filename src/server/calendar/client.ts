@@ -6,7 +6,8 @@ import type { CalendarClient } from "./types";
 
 /**
  * The calendar for the configured driver, or null when booking is unavailable (no driver in production, an invalid
- * environment, or a Google driver with no usable connection). `timeZone` is the closer's zone for the mock calendar.
+ * environment, or a Google driver with no usable connection). `timeZone` is the company zone, `ownerId` whose
+ * calendar it is — the mock keeps one per owner, like the Google driver (D48).
  * This resolver never queries the database: the Google path is reached through `resolveGoogleCalendar` below,
  * once the caller (src/server/services/calendar-connection.ts, Task 6) has loaded a connection and hours.
  */

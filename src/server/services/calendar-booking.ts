@@ -89,7 +89,8 @@ function parseId(value: unknown): string {
   return parsed.data;
 }
 
-async function closerTimeZone(ctx: RequestContext): Promise<string> {
+/** The company zone (`settings.default_timezone`): bookable hours are one company-wide week read in it. */
+async function companyTimeZone(ctx: RequestContext): Promise<string> {
   const { data } = await ctx.supabase.from("settings").select("default_timezone").limit(1).maybeSingle();
   return data?.default_timezone ?? "America/New_York";
 }
@@ -175,7 +176,7 @@ async function buildGoogleDeps(ctx: RequestContext, timeZone: string, ownerId: s
 }
 
 async function defaultCalendar(ctx: RequestContext, ownerId: string): Promise<CalendarClient | null> {
-  const timeZone = await closerTimeZone(ctx);
+  const timeZone = await companyTimeZone(ctx);
   let driver: ReturnType<typeof getCalendarDriver>;
   try {
     driver = getCalendarDriver();
@@ -289,7 +290,7 @@ export async function getAgentAvailability(
     ...(booked ?? []).map((row) => ({ start: new Date(row.starts_at), end: new Date(row.ends_at) })),
   ]);
   // freeSlots below always uses this unclipped busy list. Only the browser-facing `busy` field further down is
-  // narrowed to the bookable windows — the picker has no use for the closer's evenings, nights and weekends,
+  // narrowed to the bookable windows — the picker has no use for the agent's evenings, nights and weekends,
   // and a real calendar's busy time is otherwise unbounded.
   const slots = freeSlots({ windows: read.windows, busy, now });
   const busyInBookableWindows = intersectIntervals(busy, read.windows);
@@ -356,7 +357,7 @@ const bookSchema = z.object({
   note: z
     .string()
     .trim()
-    .max(MAX_NOTE_LENGTH, `A note for the closer can be at most ${MAX_NOTE_LENGTH} characters.`)
+    .max(MAX_NOTE_LENGTH, `A note on the meeting can be at most ${MAX_NOTE_LENGTH} characters.`)
     .nullish(),
   clientRequestId: z.uuid(),
   inCall: z.boolean(),
@@ -519,7 +520,7 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
     if (confirmError) {
       console.error("[booking] confirm_appointment failed", { appointmentId: row.id, eventId, code: confirmError.code });
       // The Google event already exists but no CRM row references it any more: delete it best effort so a
-      // failed booking does not leave an orphan meeting on the closer's calendar (fix round 1). The agent still
+      // failed booking does not leave an orphan meeting on the agent's calendar (fix round 1). The agent still
       // sees confirmError's ordinary mapped message below — this cleanup never changes what they're told.
       if (isGoogleDriver()) await cancelGoogleEvent(active, active.userId, row.id, eventId);
       fail(confirmError);
@@ -532,7 +533,7 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
 /**
  * Deletes a Google event best effort — used both when an appointment is cancelled in the CRM (design §7) and
  * when `confirm_appointment` fails after the event already exists, so neither path leaves an orphan meeting on
- * the closer's calendar. Genuinely never throws: resolving the closer's time zone, loading the connection and
+ * the agent's calendar. Genuinely never throws: resolving the time zone, loading the connection and
  * hours, and the delete itself all run inside one try, so a database error reading either of those (not just a
  * Google failure) is caught here too (fix round 2) — by the time this runs the CRM side is already settled (the
  * appointment row is either cancelled or about to fail regardless), and the caller's own result or mapped error
@@ -540,7 +541,7 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
  */
 async function cancelGoogleEvent(ctx: RequestContext, ownerId: string, appointmentId: string, eventId: string): Promise<void> {
   try {
-    const timeZone = await closerTimeZone(ctx);
+    const timeZone = await companyTimeZone(ctx);
     // `ownerId`, not the caller: an admin cancelling an agent's meeting must delete it from that agent's
     // calendar, and the event id means nothing on anyone else's (D48).
     const deps = await buildGoogleDeps(ctx, timeZone, ownerId);

@@ -30,7 +30,7 @@ export interface GoogleCalendarConnection {
 export interface GoogleCalendarDeps {
   connection: GoogleCalendarConnection;
   ranges: readonly BookableRange[];
-  /** The closer's zone: bookable hours are interpreted in it, and it is sent with every created event. */
+  /** The company zone: bookable hours are interpreted in it, and it is sent with every created event. */
   timeZone: string;
   /** Called once when any Google call fails with GoogleApiError kind "invalid_grant" (access revoked). */
   onInvalidGrant: () => Promise<void>;

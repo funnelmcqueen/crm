@@ -1,5 +1,5 @@
-// Title and description of the meeting event on the closer's calendar (docs/DEVIATIONS.md D46). The closer confirms
-// with the lead personally, so the phone number is always there.
+// Title and description of the meeting event on the booking agent's own calendar (docs/DEVIATIONS.md D46, D48).
+// They confirm with the lead personally, so the phone number is always there.
 import { formatPhoneDisplay } from "./phone";
 
 export interface MeetingDescriptionInput {
