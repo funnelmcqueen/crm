@@ -19,7 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import type { BookableRange } from "@/lib/domain/bookable-hours";
 import { disconnectCalendarAction } from "@/server/actions/calendar-connection";
-import type { CalendarConnectionStatus } from "@/server/services/calendar-connection";
+import type { AgentCalendarRow, CalendarConnectionStatus } from "@/server/services/calendar-connection";
+import { AgentCalendarsList } from "./agent-calendars-list";
 import { BookableHoursForm } from "./bookable-hours-form";
 import { SettingsSection } from "./settings-section";
 
@@ -83,8 +84,8 @@ function DisconnectButton() {
         <AlertDialogHeader>
           <AlertDialogTitle>Disconnect Google Calendar?</AlertDialogTitle>
           <AlertDialogDescription>
-            Agents won&rsquo;t be able to book meetings until you reconnect. Meetings already on your Google Calendar are
-            not affected.
+            Nobody will be able to book meetings until you reconnect, and everyone will need a new calendar afterwards.
+            Meetings already on your Google Calendar are not affected.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -148,16 +149,21 @@ function ConnectionStatus({ status }: { status: CalendarConnectionStatus }) {
 export interface CalendarSectionProps {
   status: CalendarConnectionStatus;
   hours: BookableRange[];
+  /** Every active user and whether they have a calendar of their own yet (docs/DEVIATIONS.md D48). */
+  agentCalendars: AgentCalendarRow[];
   /** The company's default time zone (`settings.default_timezone`), named in this card's description. */
   timeZone: string;
 }
 
-export function CalendarSection({ status, hours, timeZone }: CalendarSectionProps) {
+export function CalendarSection({ status, hours, agentCalendars, timeZone }: CalendarSectionProps) {
   useCalendarQueryNotice();
 
   return (
     <SettingsSection id="calendar" title="Google Calendar" description={`Times are in ${timeZone}.`}>
       <ConnectionStatus status={status} />
+      <div className="border-t pt-4">
+        <AgentCalendarsList rows={agentCalendars} connected={status.connected && !status.broken} />
+      </div>
       <div className="flex flex-col gap-3 border-t pt-4">
         <h3 className="text-sm font-bold">Bookable hours</h3>
         {status.hoursSet ? null : (

@@ -3,25 +3,30 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { CalendarSection } from "@/components/settings/calendar-section";
 import type { BookableRange } from "@/lib/domain/bookable-hours";
-import type { CalendarConnectionStatus } from "@/server/services/calendar-connection";
+import type { AgentCalendarRow, CalendarConnectionStatus } from "@/server/services/calendar-connection";
 
 // The Disconnect and Save hours controls import server actions; rendering markup needs none of the server
 // code behind them (same approach as tests/unit/booking/next-meeting.test.tsx).
 vi.mock("@/server/actions/calendar-connection", () => ({
   saveBookableHoursAction: vi.fn(),
   disconnectCalendarAction: vi.fn(),
+  provisionCalendarForAgentAction: vi.fn(),
 }));
 
 const TIME_ZONE = "America/New_York";
 const NO_HOURS: BookableRange[] = [];
+const AGENTS: AgentCalendarRow[] = [
+  { userId: "11111111-1111-4111-8111-111111111111", name: "Maria Diaz", email: "maria@funnelmcqueen.test", hasCalendar: true },
+  { userId: "22222222-2222-4222-8222-222222222222", name: "Sam Cole", email: "sam@funnelmcqueen.test", hasCalendar: false },
+];
 
 const NOT_CONNECTED: CalendarConnectionStatus = { connected: false, googleEmail: null, hoursSet: false, broken: false };
 const CONNECTED: CalendarConnectionStatus = { connected: true, googleEmail: "closer@example.com", hoursSet: true, broken: false };
 const CONNECTED_NO_HOURS: CalendarConnectionStatus = { connected: true, googleEmail: "closer@example.com", hoursSet: false, broken: false };
 const BROKEN: CalendarConnectionStatus = { connected: true, googleEmail: "closer@example.com", hoursSet: true, broken: true };
 
-function render(status: CalendarConnectionStatus, hours: BookableRange[] = NO_HOURS): string {
-  return renderToStaticMarkup(createElement(CalendarSection, { status, hours, timeZone: TIME_ZONE }));
+function render(status: CalendarConnectionStatus, hours: BookableRange[] = NO_HOURS, agentCalendars: AgentCalendarRow[] = AGENTS): string {
+  return renderToStaticMarkup(createElement(CalendarSection, { status, hours, agentCalendars, timeZone: TIME_ZONE }));
 }
 
 describe("CalendarSection", () => {
@@ -77,5 +82,34 @@ describe("CalendarSection", () => {
     expect(html.indexOf("Monday")).toBeLessThan(html.indexOf("10:00 – 12:00"));
     expect(html).toContain("Sunday");
     expect(html).toContain("Closed");
+  });
+});
+
+describe("CalendarSection agent calendars (D48)", () => {
+  it("names everyone, says who still has no calendar, and never renders a calendar id", () => {
+    const html = render(CONNECTED);
+    expect(html).toContain("Maria Diaz");
+    expect(html).toContain("Sam Cole");
+    expect(html).toContain("Has a calendar");
+    expect(html).toContain("1 person has no calendar yet, so they cannot book meetings.");
+    expect(html).toContain("Create calendar");
+    expect(html).not.toContain("@group.calendar.google.com");
+  });
+
+  it("says nothing is outstanding when everyone has a calendar", () => {
+    const html = render(CONNECTED, NO_HOURS, [AGENTS[0]!]);
+    expect(html).not.toContain("cannot book meetings");
+    expect(html).not.toContain("Create calendar");
+  });
+
+  it("disables provisioning until an account is connected, and explains why", () => {
+    const html = render(NOT_CONNECTED);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Create calendar<\/button>/);
+    expect(html).toContain("Connect Google Calendar first, then give each person a calendar.");
+  });
+
+  it("disables provisioning while the connection is broken, since it would fail against Google", () => {
+    const html = render(BROKEN);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Create calendar<\/button>/);
   });
 });

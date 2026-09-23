@@ -8,7 +8,7 @@ import { EmailForm, NameForm, PasswordForm, type EmailChangeNotice } from "@/com
 import { SettingsSection } from "@/components/settings/settings-section";
 import { requireUserPage } from "@/server/context";
 import { getDialerDriver } from "@/server/env";
-import { getBookableHours, getCalendarConnectionStatus } from "@/server/services/calendar-connection";
+import { getBookableHours, getCalendarConnectionStatus, listAgentCalendars } from "@/server/services/calendar-connection";
 import { getSettingsPageData } from "@/server/services/settings";
 
 export const metadata: Metadata = {
@@ -39,7 +39,9 @@ export default async function SettingsPage({
   const [data, query, calendar] = await Promise.all([
     getSettingsPageData(ctx),
     searchParams,
-    isAdmin ? Promise.all([getCalendarConnectionStatus(ctx), getBookableHours(ctx)]) : Promise.resolve(null),
+    isAdmin
+      ? Promise.all([getCalendarConnectionStatus(ctx), getBookableHours(ctx), listAgentCalendars(ctx)])
+      : Promise.resolve(null),
   ]);
   const { profile } = data;
   const inAppAvailable = profile.inAppCallingEnabled && inAppDriverAvailable();
@@ -77,7 +79,12 @@ export default async function SettingsPage({
 
       {data.admin && calendar ? (
         <>
-          <CalendarSection status={calendar[0]} hours={calendar[1]} timeZone={data.admin.company.defaultTimezone} />
+          <CalendarSection
+            status={calendar[0]}
+            hours={calendar[1]}
+            agentCalendars={calendar[2]}
+            timeZone={data.admin.company.defaultTimezone}
+          />
           <SettingsSection id="company" title="Company" description="Admin only.">
             <CompanySettingsForm company={data.admin.company} />
           </SettingsSection>

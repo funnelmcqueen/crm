@@ -812,3 +812,56 @@ slot engine, and an agent could book over it. Enumerating the closer's calendars
 the four above allow, so the mitigation is to keep commitments on the primary calendar; the smallest fix if this
 bites is a Settings field listing extra calendar ids to treat as busy.
 
+
+## D48. A Google calendar per agent
+**Spec:** D46 and D47 were built around one closer: the owner ran every meeting, so every booking landed in one
+calendar and only an admin could cancel. The owner confirmed (2026-09-23) they do not attend these meetings —
+agents close their own — which makes that shape wrong rather than merely limiting. This supersedes D47's
+"Not built: several closers or per-agent calendars" and the "busy time is read from the closer's primary
+calendar" paragraph above it.
+**Built:** one Google account still, now hosting one secondary calendar per person. No new scopes, no per-agent
+OAuth: `calendar.app.created` already permits creating secondary calendars and reading and writing events on
+calendars this app created, so the one refresh token reaches every one of them.
+
+- **`profiles.google_calendar_id`** names each person's own calendar. Null means "not provisioned", and booking
+  is unavailable to that person with the ordinary "Booking isn't available right now" message
+  (`buildGoogleDeps`, `src/server/services/calendar-booking.ts`). It is written only by
+  `set_agent_calendar_id` and cleared only by `clear_agent_calendars`, both **service-role only** — the same
+  reasoning as `mark_calendar_broken` (D47): an agent's own session must not be able to create calendars on the
+  owner's account as a side effect of booking.
+- **Provisioning is always admin- or server-initiated:** with the agent's account (`createAgent`, best effort —
+  a failure warns and never fails the account), from the Settings card for anyone who predates the connection,
+  and at connect time for the admin connecting, who is assigned the calendar created then. That last one is why
+  the connect-time calendar is not left empty on the account now that meetings go elsewhere.
+- **Two agents may hold the same clock time.** `appointments_live_start_key` is unique on
+  `(booked_by, starts_at)` rather than `starts_at` alone, so nobody is in two meetings at once but parallel
+  closers are no longer mutually exclusive. `booked_intervals` is scoped to the caller, so another agent's
+  meetings neither block a picker nor appear in it, and the availability cache is keyed by owner as well as
+  range so one agent is never served another's windows and busy times.
+- **An agent cancels their own meeting; an admin still cancels any** (`cancel_appointment`). The Google event is
+  deleted from the calendar named by the appointment's `booked_by`, not the caller's — an admin cancelling an
+  agent's meeting would otherwise delete against the wrong calendar.
+- **Busy time is each agent's own calendar and nothing else.** The owner's primary calendar is no longer read at
+  all: they do not attend these meetings, so their dentist appointment must not block an agent. The app now
+  reads none of the owner's personal calendar data, which is stronger than D47's position.
+- **The agent is an attendee on every meeting**, beside the lead when the lead has an email. Google mails them
+  the invitation with the Meet link, which is also how the meeting reaches their own Google Calendar and phone —
+  the app never shares a calendar from the owner's account, which would need an ACL scope it does not hold.
+- **Reconnecting to an account that cannot be proved to be the same one clears every stored calendar id**
+  (`clear_agent_calendars`, called from the OAuth callback). Their old ids name calendars the new token cannot
+  reach, and the resulting failures classify as `permanent`, so nothing would mark the connection broken and
+  Settings would keep saying "Connected" while every booking failed — the D47 C1 failure, multiplied. Cleared,
+  Settings shows plainly who needs a new calendar.
+
+**Why:** separate Google accounts per agent would isolate failures better, but every agent would have to click
+through Google's unverified-app consent themselves, and an unverified published app has user caps — a
+verification project, for a team of a few. One account with many calendars needs no new consent from anyone and
+no new scopes.
+
+**Not built:** per-agent bookable hours (hours remain one company-wide week in the company time zone, though
+`profiles.timezone` already exists if that changes) or per-agent time zones; rescheduling; reminders; agents
+sharing calendars into their own Google accounts by ACL. **One broken connection still takes booking offline for
+everyone**, since the connection is still a singleton — isolating that needs the per-account model above.
+**Deleting an agent leaves their calendar on the account**, empty or not; `docs/RUNBOOK.md` says to remove
+strays by hand, next to the account-switch case. A failure to store a calendar id after Google created it
+likewise strands an empty calendar, and re-provisioning simply makes another.

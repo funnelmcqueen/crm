@@ -16,7 +16,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { cancelAppointmentAction } from "@/server/actions/calendar-booking";
 
-/** Admin only. Updates the CRM; the event stays in Google Calendar until the closer deletes it there. */
+/**
+ * Offered to the meeting's own booker and to an admin (D48). Cancelling deletes the Google event too (D47), so
+ * Google tells the guests — the copy below said the opposite until D48 and was stale from the moment D47 shipped.
+ */
 export function CancelAppointmentButton({ appointmentId }: { appointmentId: string }) {
   const [pending, startTransition] = useTransition();
 
@@ -31,8 +34,7 @@ export function CancelAppointmentButton({ appointmentId }: { appointmentId: stri
         <AlertDialogHeader>
           <AlertDialogTitle>Mark this meeting cancelled?</AlertDialogTitle>
           <AlertDialogDescription>
-            This only updates the CRM. The event stays in your Google Calendar, and that time stays busy, until you delete
-            it there.
+            The meeting is removed from Google Calendar too, and Google tells everyone invited. That time frees up again.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

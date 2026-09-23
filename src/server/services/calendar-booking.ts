@@ -346,6 +346,8 @@ export interface LeadMeeting {
   end: string;
   /** Admins only; null for agents. */
   bookedByName: string | null;
+  /** Whether the viewer booked it, so the page knows to offer Cancel (D48: an agent cancels their own). */
+  bookedByMe: boolean;
 }
 
 const bookSchema = z.object({
@@ -614,5 +616,11 @@ export async function getNextMeeting(ctx: RequestContext | null, leadId: unknown
     const { data: profile } = await active.supabase.from("profiles").select("name, email").eq("id", data.booked_by).maybeSingle();
     bookedByName = profile ? profile.name || profile.email : null;
   }
-  return { id: data.id, start: new Date(data.starts_at).toISOString(), end: new Date(data.ends_at).toISOString(), bookedByName };
+  return {
+    id: data.id,
+    start: new Date(data.starts_at).toISOString(),
+    end: new Date(data.ends_at).toISOString(),
+    bookedByName,
+    bookedByMe: data.booked_by === active.userId,
+  };
 }

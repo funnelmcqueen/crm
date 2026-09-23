@@ -21,7 +21,7 @@ export function NextMeeting({ meeting, timeZone, now, isAdmin }: NextMeetingProp
         <span className="font-bold">Next meeting:</span> {phraseSlot(start, timeZone, now)} {zoneAbbreviation(start, timeZone)}
         {isAdmin && meeting.bookedByName ? <span className="text-muted-foreground"> · Booked by {meeting.bookedByName}</span> : null}
       </p>
-      {isAdmin ? <CancelAppointmentButton appointmentId={meeting.id} /> : null}
+      {isAdmin || meeting.bookedByMe ? <CancelAppointmentButton appointmentId={meeting.id} /> : null}
     </div>
   );
 }

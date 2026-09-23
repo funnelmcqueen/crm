@@ -27,6 +27,21 @@ test('shows Not connected and a Connect link to Google, without following it', a
   expect(href).toMatch(/\/api\/google\/start$/);
 });
 
+test('lists who can book, and offers no way to create a calendar while nothing is connected', async ({ page }) => {
+  await signIn(page, 'admin');
+  await page.goto('/settings');
+
+  const calendar = page.locator('#calendar');
+  await expect(calendar.getByRole('heading', { level: 3, name: 'Who can book' })).toBeVisible();
+
+  // The e2e server runs CALENDAR_DRIVER=mock and never connects, so nobody has a calendar and every
+  // Create calendar button is disabled with the reason spelled out (docs/DEVIATIONS.md D48).
+  await expect(calendar.getByText('Connect Google Calendar first, then give each person a calendar.')).toBeVisible();
+  const create = calendar.getByRole('button', { name: 'Create calendar' }).first();
+  await expect(create).toBeVisible();
+  await expect(create).toBeDisabled();
+});
+
 test("the hours editor shows Monday's seeded ranges", async ({ page }) => {
   await signIn(page, 'admin');
   await page.goto('/settings');

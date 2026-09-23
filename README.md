@@ -628,14 +628,23 @@ With all three Google variables and `APP_BASE_URL` set, `CALENDAR_DRIVER` resolv
 automatically — the same way `DIALER_DRIVER` resolves to `twilio` once the Twilio variables are all
 present. Set `CALENDAR_DRIVER=google` explicitly if you would rather not rely on that.
 
-### 6. Connect the account and set bookable hours
+### 6. Connect the account, give everyone a calendar, set bookable hours
 
 Deploy (or run locally) with all four variables set, then sign in to the CRM as an admin:
-**Settings → Google Calendar → Connect Google Calendar**, sign in as the closer's Gmail account, and
-approve the consent screen. The app creates a secondary calendar named "Funnel McQueen meetings" on first
-connect — meetings live there, never on the primary calendar — and Settings then shows "Connected as
-name@gmail.com". Set **Bookable hours** underneath (seeded to weekdays 10:00-12:00 and 14:00-17:00, the
-same shape the mock calendar used, until you change it).
+**Settings → Google Calendar → Connect Google Calendar**, sign in to the Gmail account that will hold the
+calendars, and approve the consent screen. Settings then shows "Connected as name@gmail.com".
+
+Each person books into a **secondary calendar of their own** on that one account, never the primary
+calendar (docs/DEVIATIONS.md D48). The app creates one for the admin who connected, and creates one with
+each new agent's account from then on. Anyone created earlier needs one: under **Who can book**, press
+**Create calendar** beside each name. Until someone has a calendar they are told booking isn't available.
+
+Set **Bookable hours** underneath (seeded to weekdays 10:00-12:00 and 14:00-17:00, the same shape the mock
+calendar used, until you change it) — these apply to everyone.
+
+All the calendars appear in your own Google Calendar, one colour each, so you can see one person's
+meetings or all of them. Each meeting also invites the agent running it, so it reaches their own calendar
+and inbox; the lead is invited too when their record has an email address.
 
 If the connection needs reconnecting every few days, the consent screen was almost certainly left in
 Testing — go back to step 2 and publish it.
