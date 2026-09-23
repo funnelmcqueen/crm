@@ -659,7 +659,7 @@ describe('booking against Google', () => {
       expect(await appointmentRow(booked.id)).toMatchObject({ status: 'scheduled', google_event_id: eventId });
     });
 
-    it('includes an attendee only when the lead has an email', async () => {
+    it('always invites the booking agent, and the lead as well when they have an email', async () => {
       await connect();
       const leadEmail = `lead-${TAG}@example.test`;
       const withEmail = await agentAndLead('WithEmail', { email: leadEmail });
@@ -668,13 +668,16 @@ describe('booking against Google', () => {
       const calls1 = stubGoogle();
       await bookAppointment(withEmail.ctx, request(withEmail.lead.id, at(4.5)), { now: () => at(0) });
       const insert1 = calls1.find((call) => call.method === 'POST' && call.url.includes('/events?'));
-      expect((insert1?.body as { attendees?: unknown })?.attendees).toEqual([{ email: leadEmail }]);
+      expect((insert1?.body as { attendees?: unknown })?.attendees).toEqual([
+        { email: withEmail.agent.email },
+        { email: leadEmail },
+      ]);
 
+      // The agent closes the meeting (D48), so they are on the invite even with no lead to invite.
       const calls2 = stubGoogle();
       await bookAppointment(withoutEmail.ctx, request(withoutEmail.lead.id, at(5)), { now: () => at(0) });
       const insert2 = calls2.find((call) => call.method === 'POST' && call.url.includes('/events?'));
-      expect(insert2).toBeDefined();
-      expect(insert2?.body).not.toHaveProperty('attendees');
+      expect((insert2?.body as { attendees?: unknown })?.attendees).toEqual([{ email: withoutEmail.agent.email }]);
     });
 
     it('leaves nothing behind on a transient Google failure and does not mark the connection broken', async () => {

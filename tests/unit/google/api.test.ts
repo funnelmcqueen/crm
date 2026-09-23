@@ -200,7 +200,7 @@ describe("src/server/google/api", () => {
         start,
         end,
         timeZone: "America/Chicago",
-        attendeeEmail: "lead@example.com",
+        attendeeEmails: ["agent@funnelmcqueen.test", "lead@example.com"],
         conferenceRequestId: "booking-request-id-123",
       });
 
@@ -220,13 +220,13 @@ describe("src/server/google/api", () => {
       expect(body.description).toBe("Booked via Funnel McQueen CRM");
       expect(body.start).toEqual({ dateTime: start.toISOString(), timeZone: "America/Chicago" });
       expect(body.end).toEqual({ dateTime: end.toISOString(), timeZone: "America/Chicago" });
-      expect(body.attendees).toEqual([{ email: "lead@example.com" }]);
+      expect(body.attendees).toEqual([{ email: "agent@funnelmcqueen.test" }, { email: "lead@example.com" }]);
       const conferenceData = body.conferenceData as { createRequest: { requestId: string; conferenceSolutionKey: { type: string } } };
       expect(conferenceData.createRequest.requestId).toBe("booking-request-id-123");
       expect(conferenceData.createRequest.conferenceSolutionKey.type).toBe("hangoutsMeet");
     });
 
-    it("omits attendees when no email was given", async () => {
+    it("omits attendees when there are none", async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse({ id: "event-no-attendee" }));
 
       await insertEvent(ACCESS_TOKEN, "app-calendar@group.calendar.google.com", {
@@ -235,7 +235,7 @@ describe("src/server/google/api", () => {
         start: new Date("2026-09-22T15:00:00.000Z"),
         end: new Date("2026-09-22T15:30:00.000Z"),
         timeZone: "America/Chicago",
-        attendeeEmail: null,
+        attendeeEmails: [],
         conferenceRequestId: "req-id",
       });
 

@@ -134,8 +134,47 @@ describe("createGoogleCalendar", () => {
         start,
         end,
         timeZone: TIME_ZONE,
-        attendeeEmail: "lead@example.com",
+        attendeeEmails: ["lead@example.com"],
       });
+    });
+
+    it("invites the agent running the meeting alongside the lead, in that order", async () => {
+      vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-3" });
+      const { deps } = makeDeps();
+
+      const input = {
+        start,
+        end,
+        title: "t",
+        description: "d",
+        agentEmail: "agent@funnelmcqueen.test",
+        leadEmail: "lead@example.com",
+        clientRequestId: "44444444-4444-4444-8444-444444444444",
+      };
+      await createGoogleCalendar(deps).createMeeting(input);
+
+      // The agent closes the meeting (D48), so they need the Meet link in their own calendar and inbox.
+      const [, , event] = vi.mocked(insertEvent).mock.calls[0]!;
+      expect(event.attendeeEmails).toEqual(["agent@funnelmcqueen.test", "lead@example.com"]);
+    });
+
+    it("still invites the agent when the lead has no email", async () => {
+      vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-4" });
+      const { deps } = makeDeps();
+
+      const input = {
+        start,
+        end,
+        title: "t",
+        description: "d",
+        agentEmail: "agent@funnelmcqueen.test",
+        leadEmail: null,
+        clientRequestId: "55555555-5555-4555-8555-555555555555",
+      };
+      await createGoogleCalendar(deps).createMeeting(input);
+
+      const [, , event] = vi.mocked(insertEvent).mock.calls[0]!;
+      expect(event.attendeeEmails).toEqual(["agent@funnelmcqueen.test"]);
     });
 
     it("derives the Meet conference's request id from the booking's client request id, so a retry of the same booking cannot create a second conference", async () => {
@@ -150,7 +189,7 @@ describe("createGoogleCalendar", () => {
       expect(event.conferenceRequestId).toBe(clientRequestId);
     });
 
-    it("passes no attendee when the input carries no lead email", async () => {
+    it("passes no attendee at all when neither an agent nor a lead email is given", async () => {
       vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-2" });
       const { deps } = makeDeps();
 
@@ -158,7 +197,7 @@ describe("createGoogleCalendar", () => {
       await createGoogleCalendar(deps).createMeeting(input);
 
       const [, , event] = vi.mocked(insertEvent).mock.calls[0]!;
-      expect(event.attendeeEmail).toBeNull();
+      expect(event.attendeeEmails).toEqual([]);
     });
   });
 

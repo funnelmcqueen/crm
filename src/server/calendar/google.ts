@@ -49,6 +49,8 @@ interface CreateMeetingInput {
   title: string;
   description: string;
   leadEmail?: string | null;
+  /** The agent running the meeting: they need the Meet link in their own calendar and inbox (D48). */
+  agentEmail?: string | null;
   clientRequestId: string;
 }
 
@@ -108,7 +110,7 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
           start: input.start,
           end: input.end,
           timeZone: deps.timeZone,
-          attendeeEmail: input.leadEmail ?? null,
+          attendeeEmails: [input.agentEmail, input.leadEmail].filter((email): email is string => Boolean(email)),
           conferenceRequestId: input.clientRequestId,
         });
         return { eventId: id };

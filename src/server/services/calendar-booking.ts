@@ -434,6 +434,7 @@ async function createMeetingEvent(
         leadUrl: baseUrl ? `${baseUrl}/leads/${leadId}` : null,
       }),
       leadEmail: lead.email,
+      agentEmail: ctx.profile.email,
       clientRequestId,
     };
     const { eventId } = await calendar.createMeeting(input);

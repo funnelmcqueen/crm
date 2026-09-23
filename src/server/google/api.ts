@@ -30,7 +30,8 @@ export interface GoogleEventInput {
   start: Date;
   end: Date;
   timeZone: string;
-  attendeeEmail: string | null;
+  /** Everyone Google invites and mails: the agent running the meeting, and the lead when they have an address. */
+  attendeeEmails: readonly string[];
   conferenceRequestId: string;
 }
 
@@ -193,7 +194,7 @@ export async function freeBusy(
   return intervals;
 }
 
-/** Inserts a Meet-conferenced event, optionally inviting the lead. Never reads an event back. */
+/** Inserts a Meet-conferenced event, inviting its attendees. Never reads an event back. */
 export async function insertEvent(accessToken: string, calendarId: string, event: GoogleEventInput): Promise<{ id: string }> {
   const query = new URLSearchParams({ conferenceDataVersion: "1", sendUpdates: "all" });
   const url = `${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
@@ -210,8 +211,8 @@ export async function insertEvent(accessToken: string, calendarId: string, event
       },
     },
   };
-  if (event.attendeeEmail) {
-    body.attendees = [{ email: event.attendeeEmail }];
+  if (event.attendeeEmails.length > 0) {
+    body.attendees = event.attendeeEmails.map((email) => ({ email }));
   }
 
   const data = await request<{ id: string }>(url, {
