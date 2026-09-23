@@ -98,7 +98,7 @@ const MATRIX: Record<string, Access> = {
   set_bookable_hours: 'api',
   connect_calendar: 'api',
   disconnect_calendar: 'api',
-  mark_calendar_broken: 'api',
+  mark_calendar_broken: 'service',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',

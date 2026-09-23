@@ -1,9 +1,9 @@
 // Bookable hours and the Google Calendar connection (migration 20260915002000_google_calendar.sql,
 // docs/DEVIATIONS.md D47): hours are admin-set and replace the whole week atomically, the connection
-// singleton is admin-guarded, mark_calendar_broken is reachable by any active user, and nobody reads the
-// stored refresh token through the API.
+// singleton is admin-guarded, mark_calendar_broken is service-role only (no API-role session, admin
+// included, may call it directly), and nobody reads the stored refresh token through the API.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { adminSqlRows, anonRows, bootDb, createAuthUser, pgError, userRows, type PGlite } from '../helpers/pglite';
+import { adminSqlRows, anonRows, bootDb, createAuthUser, pgError, serviceRows, userRows, type PGlite } from '../helpers/pglite';
 
 let db: PGlite;
 let admin = '';
@@ -107,6 +107,21 @@ describe('set_bookable_hours', () => {
   });
 });
 
+describe('bookable_hours direct writes', () => {
+  it('an agent cannot insert, update or delete rows directly; only set_bookable_hours may write', async () => {
+    const agent = await createAuthUser(db, { name: 'Direct Write Agent' });
+    const [existing] = await adminSqlRows<{ id: string }>(db, 'select id from public.bookable_hours limit 1');
+
+    expect(
+      (await pgError(userRows(db, agent, 'insert into public.bookable_hours (weekday, starts_minute, ends_minute) values (3, 540, 600)'))).code,
+    ).toBe('42501');
+    expect(
+      (await pgError(userRows(db, agent, 'update public.bookable_hours set ends_minute = ends_minute + 30 where id = $1', [existing.id]))).code,
+    ).toBe('42501');
+    expect((await pgError(userRows(db, agent, 'delete from public.bookable_hours where id = $1', [existing.id]))).code).toBe('42501');
+  });
+});
+
 describe('calendar_connection lifecycle', () => {
   it('get_calendar_status with no connection returns connected=false and a null email; an agent raises 42501', async () => {
     const [status] = await userRows<CalendarStatusRow>(db, admin, STATUS);
@@ -137,9 +152,12 @@ describe('calendar_connection lifecycle', () => {
     expect(row.broken_at).toBeNull();
   });
 
-  it('mark_calendar_broken sets broken_at, reflected by get_calendar_status with no ciphertext in its columns', async () => {
+  it('mark_calendar_broken is service role only: an agent and an admin session both raise 42501, and the service role sets broken_at, reflected by get_calendar_status with no ciphertext in its columns', async () => {
     const agent = await createAuthUser(db, { name: 'Breaker Agent' });
-    await userRows(db, agent, MARK_BROKEN);
+    expect((await pgError(userRows(db, agent, MARK_BROKEN))).code).toBe('42501');
+    expect((await pgError(userRows(db, admin, MARK_BROKEN))).code).toBe('42501');
+
+    await serviceRows(db, MARK_BROKEN);
 
     const [status] = await userRows<CalendarStatusRow>(db, admin, STATUS);
     expect(Object.keys(status).sort()).toEqual(['app_calendar_id', 'broken', 'connected', 'google_email', 'hours_set'].sort());

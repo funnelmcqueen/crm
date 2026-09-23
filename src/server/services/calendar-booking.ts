@@ -129,9 +129,14 @@ async function loadBookableRanges(ctx: RequestContext): Promise<BookableRange[]>
   return (data ?? []).map((row) => ({ weekday: row.weekday, startsMinute: row.starts_minute, endsMinute: row.ends_minute }));
 }
 
-/** Best effort: a failure here is logged, and the invalid_grant that triggered it still surfaces to the caller. */
-async function markCalendarBroken(ctx: RequestContext): Promise<void> {
-  const { error } = await ctx.supabase.rpc("mark_calendar_broken");
+/**
+ * Best effort: a failure here is logged, and the invalid_grant that triggered it still surfaces to the caller.
+ * mark_calendar_broken is service-role only (any active user's booking attempt can trigger this call, but the
+ * call itself must not be reachable from an agent's own session — see the migration), so this runs through the
+ * admin client, the same way loadGoogleConnection does.
+ */
+async function markCalendarBroken(): Promise<void> {
+  const { error } = await createAdminClient().rpc("mark_calendar_broken");
   if (error) console.error("[booking] mark_calendar_broken failed", { code: error.code });
 }
 
@@ -157,7 +162,7 @@ async function buildGoogleDeps(ctx: RequestContext, timeZone: string): Promise<G
     connection,
     ranges,
     timeZone,
-    onInvalidGrant: () => markCalendarBroken(ctx),
+    onInvalidGrant: () => markCalendarBroken(),
   };
 }
 

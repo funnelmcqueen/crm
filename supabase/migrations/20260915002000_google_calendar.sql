@@ -17,6 +17,7 @@ create table public.bookable_hours (
 );
 
 alter table public.bookable_hours enable row level security;
+revoke all on public.bookable_hours from anon, authenticated;
 
 -- Every active user may read them: the booking panel needs the windows. Writes go through the RPC.
 create policy bookable_hours_select on public.bookable_hours
@@ -153,8 +154,13 @@ $$;
 revoke execute on function public.disconnect_calendar() from public, anon;
 grant execute on function public.disconnect_calendar() to authenticated, service_role;
 
--- Called by the server when Google refuses the refresh token. Any active user's booking attempt can
--- discover it, so this is not admin-only; it only ever sets a flag.
+-- Called by the server (with the service-role client, next to the rest of the connection-row access
+-- src/server/services/calendar-booking.ts already does) when Google refuses a refresh token. Any active
+-- user's booking attempt can trigger the call, but the call itself is service-role only: it only ever
+-- sets a flag, and that flag takes booking offline for every agent until an admin completes a full OAuth
+-- round trip, so an agent's own session must not be able to reach it directly (matches
+-- revoke_user_sessions in 20260915001500_revoke_user_sessions.sql — grants are the guard, not a
+-- role-derived check, since a service-role call carries no active user to check against).
 create or replace function public.mark_calendar_broken()
 returns void
 language plpgsql
@@ -163,14 +169,11 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not public.is_active_user() then
-    raise exception 'forbidden' using errcode = '42501';
-  end if;
   update public.calendar_connection set broken_at = now() where broken_at is null;
 end;
 $$;
-revoke execute on function public.mark_calendar_broken() from public, anon;
-grant execute on function public.mark_calendar_broken() to authenticated, service_role;
+revoke execute on function public.mark_calendar_broken() from public, anon, authenticated;
+grant execute on function public.mark_calendar_broken() to service_role;
 
 -- Replaces milestone 1's version: reports the hours and the app calendar, never the token.
 drop function if exists public.get_calendar_status();
