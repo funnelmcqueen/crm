@@ -53,6 +53,30 @@ describe('getAgentAvailability', () => {
     expect(availability.slots[0].phrase).toMatch(/^Today at /);
   });
 
+  it('never exposes busy time outside the bookable windows, and clips a block that straddles a window edge', async () => {
+    const lead = await createLead({ assigned_to: agent.id, business_name: `${TAG} OffHours`, state: 'FL', country: 'US' });
+    const calendar = leakyCalendar(
+      [hours(3, 8)],
+      [
+        { ...hours(20, 22), summary: 'SECRET: closer dinner' }, // entirely outside the one bookable window
+        { ...hours(2, 3.5), summary: 'SECRET: straddles the window opening' }, // half before it opens, half inside
+      ],
+    );
+
+    const availability = await getAgentAvailability(ctx, lead.id, { calendar, now: () => NOW });
+
+    // Off-hours busy time never reaches the browser at all -- not even clipped to nothing, just absent.
+    expect(availability.busy).not.toContainEqual({ start: hours(20, 22).start.toISOString(), end: hours(20, 22).end.toISOString() });
+    // The straddling block is clipped to the window's own bounds, not the closer's real (pre-window) start.
+    expect(availability.busy).toContainEqual({ start: hours(3, 3.5).start.toISOString(), end: hours(3, 3.5).end.toISOString() });
+    expect(availability.busy).not.toContainEqual({ start: hours(2, 3.5).start.toISOString(), end: hours(2, 3.5).end.toISOString() });
+    // Slot computation still used the real, unclipped busy time: the half hour the straddling block actually
+    // covers inside the window is excluded exactly as it would be without any clipping.
+    const starts = availability.slots.map((slot) => slot.start);
+    expect(starts).not.toContain(hours(3, 3.5).start.toISOString());
+    expect(starts).toContain(hours(3.5, 4).start.toISOString());
+  });
+
   it('answers not_found for a lead the agent cannot see, and unavailable without a calendar', async () => {
     const other = await createUser({ name: `Avail Other ${TAG}` });
     const theirs = await createLead({ assigned_to: other.id, business_name: `${TAG} Theirs` });

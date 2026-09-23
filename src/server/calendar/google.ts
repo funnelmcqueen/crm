@@ -12,7 +12,6 @@
 // closer's account, and because the RPC is admin-only, so a lazy create triggered by an agent's own booking
 // session would just raise forbidden.
 import "server-only";
-import { randomUUID } from "node:crypto";
 import { bookableWindows, type BookableRange } from "@/lib/domain/bookable-hours";
 import { accessTokenFor, deleteEvent, freeBusy, GoogleApiError, insertEvent } from "@/server/google/api";
 import { decryptRefreshToken } from "@/server/google/crypto";
@@ -35,13 +34,20 @@ export interface GoogleCalendarDeps {
   onInvalidGrant: () => Promise<void>;
 }
 
-/** createMeeting's input, widened with the optional lead email the CalendarClient interface itself does not carry. */
+/**
+ * createMeeting's input, widened with fields the CalendarClient interface itself does not carry: the optional
+ * lead email, and the booking's own client request id (design §7) — the Meet conference's request id is derived
+ * from it so that the mandated single retry of events.insert (src/server/google/api.ts) cannot create a second
+ * conference: a timed-out insert Google actually processed and a retry of the same booking attempt carry the
+ * same clientRequestId, so Google recognises the same conference request instead of creating another one.
+ */
 interface CreateMeetingInput {
   start: Date;
   end: Date;
   title: string;
   description: string;
   leadEmail?: string | null;
+  clientRequestId: string;
 }
 
 /**
@@ -84,7 +90,7 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
           end: input.end,
           timeZone: deps.timeZone,
           attendeeEmail: input.leadEmail ?? null,
-          conferenceRequestId: randomUUID(),
+          conferenceRequestId: input.clientRequestId,
         });
         return { eventId: id };
       });

@@ -109,10 +109,18 @@ describe("createGoogleCalendar", () => {
       vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-1" });
       const { deps } = makeDeps();
 
-      // A variable (not an inline literal) so the extra `leadEmail` field — carried by the Google client's own
-      // wider input type but not by the narrower CalendarClient interface this value is statically typed as —
-      // does not trip TypeScript's excess-property check; the real object still carries it at runtime.
-      const input = { start, end, title: "Meeting: Swan Motel", description: "Contact: Jane", leadEmail: "lead@example.com" };
+      // A variable (not an inline literal) so the extra `leadEmail`/`clientRequestId` fields — carried by the
+      // Google client's own wider input type but not by the narrower CalendarClient interface this value is
+      // statically typed as — do not trip TypeScript's excess-property check; the real object still carries
+      // them at runtime.
+      const input = {
+        start,
+        end,
+        title: "Meeting: Swan Motel",
+        description: "Contact: Jane",
+        leadEmail: "lead@example.com",
+        clientRequestId: "11111111-1111-4111-8111-111111111111",
+      };
       const result = await createGoogleCalendar(deps).createMeeting(input);
 
       expect(result).toEqual({ eventId: "event-1" });
@@ -128,15 +136,25 @@ describe("createGoogleCalendar", () => {
         timeZone: TIME_ZONE,
         attendeeEmail: "lead@example.com",
       });
-      expect(typeof event.conferenceRequestId).toBe("string");
-      expect(event.conferenceRequestId.length).toBeGreaterThan(0);
+    });
+
+    it("derives the Meet conference's request id from the booking's client request id, so a retry of the same booking cannot create a second conference", async () => {
+      vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-1" });
+      const { deps } = makeDeps();
+
+      const clientRequestId = "22222222-2222-4222-8222-222222222222";
+      const input = { start, end, title: "t", description: "d", leadEmail: null, clientRequestId };
+      await createGoogleCalendar(deps).createMeeting(input);
+
+      const [, , event] = vi.mocked(insertEvent).mock.calls[0]!;
+      expect(event.conferenceRequestId).toBe(clientRequestId);
     });
 
     it("passes no attendee when the input carries no lead email", async () => {
       vi.mocked(insertEvent).mockResolvedValueOnce({ id: "event-2" });
       const { deps } = makeDeps();
 
-      const input = { start, end, title: "t", description: "d", leadEmail: null };
+      const input = { start, end, title: "t", description: "d", leadEmail: null, clientRequestId: "33333333-3333-4333-8333-333333333333" };
       await createGoogleCalendar(deps).createMeeting(input);
 
       const [, , event] = vi.mocked(insertEvent).mock.calls[0]!;

@@ -29,6 +29,19 @@ export function mergeIntervals(intervals: readonly Interval[]): Interval[] {
   return merged;
 }
 
+/** Every overlap between an interval in a and one in b, clipped to the overlap's own bounds. Order-independent. */
+export function intersectIntervals(a: readonly Interval[], b: readonly Interval[]): Interval[] {
+  const result: Interval[] = [];
+  for (const x of a) {
+    for (const y of b) {
+      const start = Math.max(x.start.getTime(), y.start.getTime());
+      const end = Math.min(x.end.getTime(), y.end.getTime());
+      if (start < end) result.push({ start: new Date(start), end: new Date(end) });
+    }
+  }
+  return mergeIntervals(result);
+}
+
 export interface FreeSlotsInput {
   windows: readonly Interval[];
   busy: readonly Interval[];

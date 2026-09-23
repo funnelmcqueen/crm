@@ -13,7 +13,7 @@ import {
   SLOT_TAKEN_MESSAGE,
 } from "@/lib/domain/booking-messages";
 import { isBusinessType, resolveBusinessType, type BusinessType } from "@/lib/domain/business-type";
-import { BOOKING_HORIZON_DAYS, SLOT_MS, freeSlots, mergeIntervals, type Interval } from "@/lib/domain/calendar-slots";
+import { BOOKING_HORIZON_DAYS, SLOT_MS, freeSlots, intersectIntervals, mergeIntervals, type Interval } from "@/lib/domain/calendar-slots";
 import { leadTimeZone } from "@/lib/domain/lead-timezone";
 import { buildMeetingDescription, meetingTitle } from "@/lib/domain/meeting-description";
 import { phraseSlot, yourTimeLine, zoneAbbreviation } from "@/lib/domain/slot-phrase";
@@ -276,7 +276,11 @@ export async function getAgentAvailability(
     ...read.busy,
     ...(booked ?? []).map((row) => ({ start: new Date(row.starts_at), end: new Date(row.ends_at) })),
   ]);
+  // freeSlots below always uses this unclipped busy list. Only the browser-facing `busy` field further down is
+  // narrowed to the bookable windows — the picker has no use for the closer's evenings, nights and weekends,
+  // and a real calendar's busy time is otherwise unbounded (fix round N).
   const slots = freeSlots({ windows: read.windows, busy, now });
+  const busyInBookableWindows = intersectIntervals(busy, read.windows);
 
   const { type, isGuess } = resolveBusinessType(lead.business_type, lead.business_name);
   const zone = leadTimeZone({ state: lead.state, country: lead.country }, active.profile.timezone);
@@ -300,7 +304,7 @@ export async function getAgentAvailability(
     now: now.toISOString(),
     suggestions: suggestSlots(slots, type, zone.timeZone).map(view),
     slots: slots.map(view),
-    busy: busy.filter((block) => block.end > now).map((block) => ({ start: block.start.toISOString(), end: block.end.toISOString() })),
+    busy: busyInBookableWindows.filter((block) => block.end > now).map((block) => ({ start: block.start.toISOString(), end: block.end.toISOString() })),
     mine: await myMeetings(active, now),
   };
 }
@@ -384,6 +388,7 @@ async function createMeetingEvent(
   start: Date,
   end: Date,
   note: string | null,
+  clientRequestId: string,
 ): Promise<string> {
   const { data: lead, error } = await ctx.supabase
     .from("leads")
@@ -397,10 +402,10 @@ async function createMeetingEvent(
   }
   const baseUrl = appBaseUrl();
   try {
-    // A variable, not an inline literal: `leadEmail` is carried by GoogleCalendarClient's wider input type
-    // (src/server/calendar/google.ts) but not by the CalendarClient interface `calendar` is statically typed
-    // as, so an inline object literal would trip TypeScript's excess-property check. The mock calendar simply
-    // ignores the extra field.
+    // A variable, not an inline literal: `leadEmail` and `clientRequestId` are carried by GoogleCalendarClient's
+    // wider input type (src/server/calendar/google.ts) but not by the CalendarClient interface `calendar` is
+    // statically typed as, so an inline object literal would trip TypeScript's excess-property check. The mock
+    // calendar simply ignores the extra fields.
     const input = {
       start,
       end,
@@ -416,6 +421,7 @@ async function createMeetingEvent(
         leadUrl: baseUrl ? `${baseUrl}/leads/${leadId}` : null,
       }),
       leadEmail: lead.email,
+      clientRequestId,
     };
     const { eventId } = await calendar.createMeeting(input);
     return eventId;
@@ -492,14 +498,14 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
   let statusNeedsAttention = false;
   if (row.status === "pending") {
     await ensureStillFree(active, calendar, row.id, start, now);
-    const eventId = await createMeetingEvent(active, calendar, row.id, row.lead_id, start, end, note);
+    const eventId = await createMeetingEvent(active, calendar, row.id, row.lead_id, start, end, note, parsed.data.clientRequestId);
     const { error: confirmError } = await active.supabase.rpc("confirm_appointment", { p_id: row.id, p_google_event_id: eventId });
     if (confirmError) {
       console.error("[booking] confirm_appointment failed", { appointmentId: row.id, eventId, code: confirmError.code });
       // The Google event already exists but no CRM row references it any more: delete it best effort so a
       // failed booking does not leave an orphan meeting on the closer's calendar (fix round 1). The agent still
       // sees confirmError's ordinary mapped message below — this cleanup never changes what they're told.
-      if (await isGoogleDriver()) await cancelGoogleEvent(active, row.id, eventId);
+      if (isGoogleDriver()) await cancelGoogleEvent(active, row.id, eventId);
       fail(confirmError);
     }
     if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, row.lead_id));
@@ -508,7 +514,7 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
 }
 
 /** Whether calendar_driver currently resolves to google, treating an unparseable environment as "no". */
-async function isGoogleDriver(): Promise<boolean> {
+function isGoogleDriver(): boolean {
   try {
     return getCalendarDriver() === "google";
   } catch {
@@ -529,7 +535,12 @@ async function cancelGoogleEvent(ctx: RequestContext, appointmentId: string, eve
   try {
     const timeZone = await closerTimeZone(ctx);
     const deps = await buildGoogleDeps(ctx, timeZone);
-    if (!deps) return;
+    if (!deps) {
+      // No connection, or one already marked broken: the Google event survives and nothing else will ever log
+      // it, so this is the one place that can point the admin at the RUNBOOK's manual-reconciliation step.
+      console.error("[booking] cancelMeeting skipped", { appointmentId, eventId, reason: "no_connection" });
+      return;
+    }
     await createGoogleCalendar(deps).cancelMeeting(eventId);
   } catch (error) {
     console.error("[booking] cancelMeeting failed", {
@@ -546,7 +557,7 @@ export async function cancelAppointment(ctx: RequestContext | null, id: unknown)
   const { error } = await admin.supabase.rpc("cancel_appointment", { p_id: appointmentId });
   if (error) fail(error);
 
-  if (await isGoogleDriver()) {
+  if (isGoogleDriver()) {
     const { data: row } = await admin.supabase.from("appointments").select("google_event_id").eq("id", appointmentId).maybeSingle();
     if (row?.google_event_id) await cancelGoogleEvent(admin, appointmentId, row.google_event_id);
   }
