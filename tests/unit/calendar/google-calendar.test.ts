@@ -180,6 +180,15 @@ describe("createGoogleCalendar", () => {
       await expect(createGoogleCalendar(deps).readAvailability({ from: FROM, to: TO })).rejects.toBe(error);
       expect(onInvalidGrant).not.toHaveBeenCalled();
     });
+
+    it("invokes onInvalidGrant when the stored refresh token cannot be decrypted (wrong/rotated key), before ever calling Google", async () => {
+      const { deps, onInvalidGrant } = makeDeps({ connection: makeConnection({ refreshTokenCiphertext: "not-a-real-ciphertext" }) });
+
+      await expect(createGoogleCalendar(deps).readAvailability({ from: FROM, to: TO })).rejects.toThrow(/not readable/);
+      expect(onInvalidGrant).toHaveBeenCalledTimes(1);
+      expect(accessTokenFor).not.toHaveBeenCalled();
+      expect(freeBusy).not.toHaveBeenCalled();
+    });
   });
 
   describe("cancelMeeting", () => {

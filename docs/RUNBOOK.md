@@ -151,6 +151,21 @@ If Google refuses to complete the reconnect (an error page from Google, or Setti
 3. Confirm both redirect URIs are still registered on the OAuth client, the deployed one included
    (`https://<app-domain>/api/google/callback`).
 
+### Settings says Connected, but booking is unavailable and nothing is marked broken
+
+Symptom: Admin → Settings → Google Calendar shows "Connected as name@gmail.com" with no red banner, but
+every agent sees "Booking isn't available right now." and `get_calendar_status` reports `broken: false`.
+
+Check `GOOGLE_TOKEN_ENCRYPTION_KEY`. This happens when the stored refresh token can no longer be
+decrypted with the key currently deployed — it was rotated, differs between environments, or is missing or
+malformed. A decrypt failure is treated the same as a revoked grant (it marks the connection broken too),
+so seeing this symptom on an up-to-date deploy most likely means the key itself changed out from under an
+otherwise-working connection.
+
+**Fix:** restore the correct `GOOGLE_TOKEN_ENCRYPTION_KEY`, or, if it was rotated on purpose, Admin →
+Settings → Google Calendar → **Reconnect** — this re-encrypts the refresh token under whichever key is
+current.
+
 ---
 
 ## Data

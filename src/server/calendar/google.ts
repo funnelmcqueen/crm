@@ -53,11 +53,24 @@ interface CreateMeetingInput {
 /**
  * Runs one Google call chain: decrypts the refresh token, exchanges it for an access token, then `fn`. A
  * GoogleApiError with kind "invalid_grant" reports the connection broken through `onInvalidGrant` (once) before
- * rethrowing; every other error — including a plain decrypt failure — rethrows untouched.
+ * rethrowing; every other Google/network error rethrows untouched.
+ *
+ * A decrypt failure (GOOGLE_TOKEN_ENCRYPTION_KEY rotated or wrong in this environment, or a tampered ciphertext)
+ * is deliberately treated the same as invalid_grant: it also reports the connection broken. Otherwise Settings
+ * keeps showing "Connected" while booking is silently unavailable and nothing ever points the owner at the real
+ * cause — reconnecting genuinely is the fix either way, since it re-encrypts the refresh token under whatever
+ * key is current (fix round N). The decrypt call is isolated in its own try/catch so this only ever fires for a
+ * decrypt failure, never for a later, unrelated error from accessTokenFor or `fn`.
  */
 async function withAccessToken<T>(deps: GoogleCalendarDeps, fn: (accessToken: string) => Promise<T>): Promise<T> {
+  let refreshToken: string;
   try {
-    const refreshToken = decryptRefreshToken(deps.connection.refreshTokenCiphertext);
+    refreshToken = decryptRefreshToken(deps.connection.refreshTokenCiphertext);
+  } catch (err) {
+    await deps.onInvalidGrant();
+    throw err;
+  }
+  try {
     const accessToken = await accessTokenFor(refreshToken);
     return await fn(accessToken);
   } catch (err) {
