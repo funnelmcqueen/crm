@@ -772,6 +772,32 @@ export type Database = {
         }
         Returns: string
       }
+      list_call_history: {
+        Args: {
+          p_agent_id?: string
+          p_limit?: number
+          p_offset?: number
+          p_tab?: string
+        }
+        Returns: {
+          agent_name: string | null
+          business_name: string | null
+          call_id: string
+          call_status: string | null
+          contact_name: string | null
+          created_at: string
+          direction: Database["public"]["Enums"]["call_direction"]
+          duration_seconds: number | null
+          handled_at: string | null
+          has_voicemail: boolean
+          lead_id: string | null
+          outcome: Database["public"]["Enums"]["call_outcome"] | null
+          remote_e164: string | null
+          total_count: number
+          user_id: string | null
+          voicemail_duration_seconds: number | null
+        }[]
+      }
       list_follow_ups: {
         Args: {
           p_limit?: number

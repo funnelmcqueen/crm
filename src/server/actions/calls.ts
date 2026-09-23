@@ -6,6 +6,8 @@ import {
   getCallStatus,
   getIncomingCallContext,
   logCall,
+  listCallHistory,
+  type CallHistoryPage,
   type CallStatusResult,
   type IncomingCallContext,
   type LogCallResult,
@@ -16,6 +18,10 @@ import { unheardVoicemailCount } from "@/server/services/voicemails";
 
 export async function logCallAction(input: unknown): Promise<ActionResult<LogCallResult>> {
   return runAction(async () => logCall(requireActive(await getActionContext()), input));
+}
+
+export async function listCallHistoryAction(input: unknown): Promise<ActionResult<CallHistoryPage>> {
+  return runAction(async () => listCallHistory(await getActionContext(), input));
 }
 
 export async function getCallStatusAction(callId: unknown): Promise<ActionResult<CallStatusResult>> {

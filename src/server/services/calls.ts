@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageWindow, type PageWindow } from "@/components/leads/list-params";
 import type { Database } from "@/lib/database.types";
 import { CALL_OUTCOMES, type CallOutcome } from "@/lib/domain/outcomes";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
@@ -16,6 +17,86 @@ export const CALL_STATUSES = [
   "canceled",
 ] as const;
 export type CallStatus = (typeof CALL_STATUSES)[number];
+
+export const CALL_HISTORY_PAGE_SIZE = 50;
+export const CALL_HISTORY_TABS = ["all", "missed", "voicemail"] as const;
+export type CallHistoryTab = (typeof CALL_HISTORY_TABS)[number];
+
+const callHistoryInputSchema = z.strictObject({
+  tab: z.enum(CALL_HISTORY_TABS),
+  agentId: z.uuid().optional(),
+  page: z.number().int().min(1).max(100_000).optional().default(1),
+});
+
+export interface CallHistoryRow {
+  id: string;
+  createdAt: string;
+  leadId: string | null;
+  businessName: string | null;
+  contactName: string | null;
+  remoteE164: string | null;
+  userId: string | null;
+  agentName: string | null;
+  direction: Database["public"]["Enums"]["call_direction"];
+  outcome: CallOutcome | null;
+  callStatus: CallStatus | null;
+  durationSeconds: number | null;
+  hasVoicemail: boolean;
+  voicemailDurationSeconds: number | null;
+  handledAt: string | null;
+}
+
+export interface CallHistoryPage extends PageWindow {
+  tab: CallHistoryTab;
+  rows: CallHistoryRow[];
+}
+
+type CallHistoryDbRow = Database["public"]["Functions"]["list_call_history"]["Returns"][number];
+
+/** Calls are scoped by calls.user_id in SQL; agent filters apply only to admins. */
+export async function listCallHistory(ctx: RequestContext | null, input: unknown): Promise<CallHistoryPage> {
+  const active = requireActive(ctx);
+  const parsed = callHistoryInputSchema.safeParse(input);
+  if (!parsed.success) throw toAppError(parsed.error);
+  const { tab, page, agentId } = parsed.data;
+  const isAdmin = active.profile.role === "ADMIN";
+  const args: Database["public"]["Functions"]["list_call_history"]["Args"] = {
+    p_tab: tab,
+    p_limit: CALL_HISTORY_PAGE_SIZE,
+    p_offset: (page - 1) * CALL_HISTORY_PAGE_SIZE,
+  };
+  if (isAdmin && agentId) args.p_agent_id = agentId;
+  const { data, error } = await active.supabase.rpc("list_call_history", args);
+  if (error) throw mapPostgrestError(error);
+  const rows = (data ?? []) as CallHistoryDbRow[];
+  let total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  if (rows.length === 0 && page > 1) {
+    const probe = await active.supabase.rpc("list_call_history", { ...args, p_limit: 1, p_offset: 0 });
+    if (probe.error) throw mapPostgrestError(probe.error);
+    total = Number(probe.data?.[0]?.total_count ?? 0);
+  }
+  return {
+    ...pageWindow(page, CALL_HISTORY_PAGE_SIZE, total, rows.length),
+    tab,
+    rows: rows.map((row) => ({
+      id: row.call_id,
+      createdAt: row.created_at,
+      leadId: row.lead_id,
+      businessName: row.business_name,
+      contactName: row.contact_name,
+      remoteE164: row.remote_e164,
+      userId: row.user_id,
+      agentName: isAdmin ? row.agent_name : null,
+      direction: row.direction,
+      outcome: row.outcome,
+      callStatus: toCallStatus(row.call_status),
+      durationSeconds: row.duration_seconds,
+      hasVoicemail: row.has_voicemail,
+      voicemailDurationSeconds: row.voicemail_duration_seconds,
+      handledAt: row.handled_at,
+    })),
+  };
+}
 
 const FOLLOW_UP_CLOCK_SKEW_MS = 60_000;
 const FOLLOW_UP_MAX_AHEAD_MS = 5 * 365 * 86_400_000;
