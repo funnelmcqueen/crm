@@ -111,6 +111,8 @@ const MATRIX: Record<string, Access> = {
   // stage 9 (import/export)
   find_duplicate_leads: 'api',
   export_leads: 'api',
+  // call history (20260923002000)
+  list_call_history: 'api',
   // stage 10 (agents, numbers, reports)
   admin_agent_activity: 'api',
   admin_phone_number_rows: 'api',
