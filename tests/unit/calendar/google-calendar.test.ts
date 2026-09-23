@@ -34,8 +34,7 @@ const ENCRYPTION_KEY = Buffer.alloc(32, 0).toString("base64");
 const REFRESH_TOKEN = "test-refresh-token";
 const ACCESS_TOKEN = "test-access-token";
 const TIME_ZONE = "America/New_York";
-const GOOGLE_EMAIL = "closer@example.com";
-const APP_CALENDAR_ID = "app-cal-1";
+const AGENT_CALENDAR_ID = "agent-cal-1";
 
 // Monday 2026-09-21, 10:00-12:00 local (same shape mock-calendar.test.ts's WEEK/WINDOWS use).
 const RANGES: readonly BookableRange[] = [{ weekday: 1, startsMinute: 600, endsMinute: 720 }];
@@ -45,8 +44,7 @@ const TO = new Date("2026-09-22T04:00:00Z");
 function makeConnection(overrides: Partial<GoogleCalendarConnection> = {}): GoogleCalendarConnection {
   return {
     refreshTokenCiphertext: encryptRefreshToken(REFRESH_TOKEN, ENCRYPTION_KEY),
-    googleEmail: GOOGLE_EMAIL,
-    appCalendarId: APP_CALENDAR_ID,
+    calendarId: AGENT_CALENDAR_ID,
     ...overrides,
   };
 }
@@ -92,12 +90,14 @@ describe("createGoogleCalendar", () => {
       expect(Object.keys(result.windows[0] ?? {})).toEqual(["start", "end"]);
     });
 
-    it("queries free/busy for the account email and the app calendar id", async () => {
+    it("queries free/busy for the booking agent's own calendar and nothing else", async () => {
       vi.mocked(freeBusy).mockResolvedValue([]);
       const { deps } = makeDeps();
 
       await createGoogleCalendar(deps).readAvailability({ from: FROM, to: TO });
-      expect(freeBusy).toHaveBeenCalledWith(ACCESS_TOKEN, [GOOGLE_EMAIL, APP_CALENDAR_ID], FROM, TO);
+      // Not the owner's primary calendar: they do not attend these meetings, so their commitments must not
+      // block an agent, and the app must not read their personal calendar at all (D48).
+      expect(freeBusy).toHaveBeenCalledWith(ACCESS_TOKEN, [AGENT_CALENDAR_ID], FROM, TO);
     });
   });
 
@@ -127,7 +127,7 @@ describe("createGoogleCalendar", () => {
       expect(insertEvent).toHaveBeenCalledTimes(1);
       const [accessToken, calendarId, event] = vi.mocked(insertEvent).mock.calls[0]!;
       expect(accessToken).toBe(ACCESS_TOKEN);
-      expect(calendarId).toBe(APP_CALENDAR_ID);
+      expect(calendarId).toBe(AGENT_CALENDAR_ID);
       expect(event).toMatchObject({
         summary: "Meeting: Swan Motel",
         description: "Contact: Jane",
@@ -198,7 +198,7 @@ describe("createGoogleCalendar", () => {
 
       await createGoogleCalendar(deps).cancelMeeting("event-9");
 
-      expect(deleteEvent).toHaveBeenCalledWith(ACCESS_TOKEN, APP_CALENDAR_ID, "event-9");
+      expect(deleteEvent).toHaveBeenCalledWith(ACCESS_TOKEN, AGENT_CALENDAR_ID, "event-9");
     });
   });
 });

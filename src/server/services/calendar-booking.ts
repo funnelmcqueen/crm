@@ -19,10 +19,10 @@ import { buildMeetingDescription, meetingTitle } from "@/lib/domain/meeting-desc
 import { phraseSlot, yourTimeLine, zoneAbbreviation } from "@/lib/domain/slot-phrase";
 import type { LeadStatus } from "@/lib/domain/statuses";
 import { formatInTz } from "@/lib/domain/time";
-import { resolveCalendarClient, resolveGoogleCalendar } from "@/server/calendar/client";
+import { isGoogleDriver, resolveCalendarClient, resolveGoogleCalendar } from "@/server/calendar/client";
 import { createGoogleCalendar, type GoogleCalendarDeps } from "@/server/calendar/google";
 import type { CalendarClient } from "@/server/calendar/types";
-import { requireActive, requireAdmin, type RequestContext } from "@/server/context";
+import { requireActive, type RequestContext } from "@/server/context";
 import { getCalendarDriver, getServerEnv } from "@/server/env";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
 import { GoogleApiError } from "@/server/google/api";
@@ -95,10 +95,22 @@ async function closerTimeZone(ctx: RequestContext): Promise<string> {
 }
 
 interface GoogleConnectionRow {
-  googleEmail: string;
   refreshTokenCiphertext: string;
-  appCalendarId: string | null;
   brokenAt: string | null;
+}
+
+/**
+ * The agent's own calendar on the connected account (D48), or null when they have none yet — every agent who
+ * predates D48, and anyone whose calendar could not be created with their account. Runs with the caller's own
+ * session: under profiles_select an agent reads their own row and an admin reads all, which covers both callers
+ * this has (an agent booking for themselves, and an admin cancelling someone else's meeting).
+ */
+async function loadAgentCalendarId(ctx: RequestContext, ownerId: string): Promise<string | null> {
+  // Read, not taken from ctx.profile: that is a snapshot from the start of the request, and a calendar cleared
+  // or provisioned in between must take effect on the next booking rather than the next sign-in.
+  const { data, error } = await ctx.supabase.from("profiles").select("google_calendar_id").eq("id", ownerId).maybeSingle();
+  if (error) fail(error);
+  return data?.google_calendar_id ?? null;
 }
 
 /**
@@ -109,17 +121,12 @@ interface GoogleConnectionRow {
 async function loadGoogleConnection(): Promise<GoogleConnectionRow | null> {
   const { data, error } = await createAdminClient()
     .from("calendar_connection")
-    .select("google_email, refresh_token_ciphertext, app_calendar_id, broken_at")
+    .select("refresh_token_ciphertext, broken_at")
     .eq("id", true)
     .maybeSingle();
   if (error) fail(error);
   if (!data) return null;
-  return {
-    googleEmail: data.google_email,
-    refreshTokenCiphertext: data.refresh_token_ciphertext,
-    appCalendarId: data.app_calendar_id,
-    brokenAt: data.broken_at,
-  };
+  return { refreshTokenCiphertext: data.refresh_token_ciphertext, brokenAt: data.broken_at };
 }
 
 /** Any active user may read the bookable hours (RLS), so this runs with the caller's own session. */
@@ -141,32 +148,33 @@ async function markCalendarBroken(): Promise<void> {
 }
 
 /**
- * The Google deps for an already-connected, working account, or null when the calendar is not usable — no
- * connection row, one already marked broken (short-circuited here so a connection known to be dead never pays
- * a Google round trip that is guaranteed to fail — fix round 1), or, in principle, one connected without an app
- * calendar id (the OAuth connect flow always stores one together with the connection, so this is only a
- * defensive log for a state that should not exist). Shared by the normal availability/booking path (through
- * `resolveGoogleCalendar`) and `cancelAppointment`'s / a failed `confirm_appointment`'s event delete (through
- * `createGoogleCalendar` directly, for its `cancelMeeting`).
+ * The Google deps for `ownerId`'s calendar on an already-connected, working account, or null when it is not
+ * usable — no connection row, one already marked broken (short-circuited here so a connection known to be dead
+ * never pays a Google round trip that is guaranteed to fail — fix round 1), or an agent with no calendar of
+ * their own yet (D48). Shared by the normal availability/booking path (through `resolveGoogleCalendar`) and
+ * `cancelAppointment`'s / a failed `confirm_appointment`'s event delete (through `createGoogleCalendar`
+ * directly, for its `cancelMeeting`).
  */
-async function buildGoogleDeps(ctx: RequestContext, timeZone: string): Promise<GoogleCalendarDeps | null> {
+async function buildGoogleDeps(ctx: RequestContext, timeZone: string, ownerId: string): Promise<GoogleCalendarDeps | null> {
   const row = await loadGoogleConnection();
   if (!row || row.brokenAt) return null;
-  if (!row.appCalendarId) {
-    console.error("[booking] Google connection has no app calendar id", { reason: "no_app_calendar" });
+  const calendarId = await loadAgentCalendarId(ctx, ownerId);
+  if (!calendarId) {
+    // Booking is simply unavailable to this agent until an admin provisions their calendar in Settings. Logged
+    // because it is the one cause of "booking isn't available" that an otherwise healthy connection can produce.
+    console.error("[booking] agent has no calendar", { ownerId, reason: "no_agent_calendar" });
     return null;
   }
   const ranges = await loadBookableRanges(ctx);
-  const connection = { googleEmail: row.googleEmail, refreshTokenCiphertext: row.refreshTokenCiphertext, appCalendarId: row.appCalendarId };
   return {
-    connection,
+    connection: { refreshTokenCiphertext: row.refreshTokenCiphertext, calendarId },
     ranges,
     timeZone,
     onInvalidGrant: () => markCalendarBroken(),
   };
 }
 
-async function defaultCalendar(ctx: RequestContext): Promise<CalendarClient | null> {
+async function defaultCalendar(ctx: RequestContext, ownerId: string): Promise<CalendarClient | null> {
   const timeZone = await closerTimeZone(ctx);
   let driver: ReturnType<typeof getCalendarDriver>;
   try {
@@ -175,26 +183,30 @@ async function defaultCalendar(ctx: RequestContext): Promise<CalendarClient | nu
     return null;
   }
   if (driver !== "google") return resolveCalendarClient(timeZone);
-  const deps = await buildGoogleDeps(ctx, timeZone);
+  const deps = await buildGoogleDeps(ctx, timeZone, ownerId);
   return deps ? resolveGoogleCalendar(deps) : null;
 }
 
-export async function calendarFor(ctx: RequestContext, deps: CalendarDeps): Promise<CalendarClient> {
-  const calendar = deps.calendar !== undefined ? deps.calendar : await defaultCalendar(ctx);
+/** `ownerId` is whose calendar this is — the booking agent, which is the caller on every path that books. */
+export async function calendarFor(ctx: RequestContext, ownerId: string, deps: CalendarDeps): Promise<CalendarClient> {
+  const calendar = deps.calendar !== undefined ? deps.calendar : await defaultCalendar(ctx, ownerId);
   if (!calendar) throw new AppError("unavailable", BOOKING_UNAVAILABLE_MESSAGE);
   return calendar;
 }
 
-// Best effort and per server instance: correctness comes from the re-check when booking.
+// Best effort and per server instance: correctness comes from the re-check when booking. Keyed by the owner as
+// well as the range since D48 — each agent reads their own calendar, so a single range-keyed entry would serve
+// one agent another's windows and busy times, which is both wrong and a leak.
 let cache: { key: string; expires: number; windows: Interval[]; busy: Interval[] } | null = null;
 
 export async function readCalendar(
   calendar: CalendarClient,
+  ownerId: string,
   from: Date,
   to: Date,
   useCache: boolean,
 ): Promise<{ windows: Interval[]; busy: Interval[] }> {
-  const key = `${from.toISOString()}|${to.toISOString()}`;
+  const key = `${ownerId}|${from.toISOString()}|${to.toISOString()}`;
   if (useCache && cache && cache.key === key && cache.expires > Date.now()) {
     return { windows: cache.windows, busy: cache.busy };
   }
@@ -259,12 +271,12 @@ export async function getAgentAvailability(
   if (error) fail(error);
   if (!lead) throw new AppError("not_found");
 
-  const calendar = await calendarFor(active, deps);
+  const calendar = await calendarFor(active, active.userId, deps);
   const now = deps.now?.() ?? new Date();
   // Whole-hour range: requests within the same hour share one cache entry.
   const from = new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS);
   const to = new Date(from.getTime() + (BOOKING_HORIZON_DAYS + 1) * DAY_MS);
-  const read = await readCalendar(calendar, from, to, deps.calendar === undefined);
+  const read = await readCalendar(calendar, active.userId, from, to, deps.calendar === undefined);
 
   const { data: booked, error: bookedError } = await active.supabase.rpc("booked_intervals", {
     p_from: from.toISOString(),
@@ -360,7 +372,8 @@ async function abandon(ctx: RequestContext, appointmentId: string): Promise<void
 async function ensureStillFree(ctx: RequestContext, calendar: CalendarClient, appointmentId: string, start: Date, now: Date): Promise<void> {
   let read: { windows: Interval[]; busy: Interval[] };
   try {
-    read = await readCalendar(calendar, new Date(start.getTime() - SLOT_MS), new Date(start.getTime() + 2 * SLOT_MS), false);
+    // Never cached, so the owner here only completes the key; the re-check must always hit the calendar.
+    read = await readCalendar(calendar, ctx.userId, new Date(start.getTime() - SLOT_MS), new Date(start.getTime() + 2 * SLOT_MS), false);
   } catch (error) {
     await abandon(ctx, appointmentId);
     throw error;
@@ -481,7 +494,7 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
   if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Pick a time and try again.");
   const leadId = parseId(parsed.data.leadId);
   const note = parsed.data.note ? parsed.data.note : null;
-  const calendar = await calendarFor(active, deps);
+  const calendar = await calendarFor(active, active.userId, deps);
   const now = deps.now?.() ?? new Date();
 
   const { data: row, error } = await active.supabase.rpc("begin_appointment", {
@@ -505,21 +518,12 @@ export async function bookAppointment(ctx: RequestContext | null, input: unknown
       // The Google event already exists but no CRM row references it any more: delete it best effort so a
       // failed booking does not leave an orphan meeting on the closer's calendar (fix round 1). The agent still
       // sees confirmError's ordinary mapped message below — this cleanup never changes what they're told.
-      if (isGoogleDriver()) await cancelGoogleEvent(active, row.id, eventId);
+      if (isGoogleDriver()) await cancelGoogleEvent(active, active.userId, row.id, eventId);
       fail(confirmError);
     }
     if (!parsed.data.inCall) statusNeedsAttention = !(await moveToAppointment(active, row.lead_id));
   }
   return { ...(await bookedView(active, row.id, row.lead_id, start, end, now)), statusNeedsAttention };
-}
-
-/** Whether calendar_driver currently resolves to google, treating an unparseable environment as "no". */
-function isGoogleDriver(): boolean {
-  try {
-    return getCalendarDriver() === "google";
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -531,14 +535,17 @@ function isGoogleDriver(): boolean {
  * appointment row is either cancelled or about to fail regardless), and the caller's own result or mapped error
  * must not be replaced by an unrelated failure from this best-effort cleanup.
  */
-async function cancelGoogleEvent(ctx: RequestContext, appointmentId: string, eventId: string): Promise<void> {
+async function cancelGoogleEvent(ctx: RequestContext, ownerId: string, appointmentId: string, eventId: string): Promise<void> {
   try {
     const timeZone = await closerTimeZone(ctx);
-    const deps = await buildGoogleDeps(ctx, timeZone);
+    // `ownerId`, not the caller: an admin cancelling an agent's meeting must delete it from that agent's
+    // calendar, and the event id means nothing on anyone else's (D48).
+    const deps = await buildGoogleDeps(ctx, timeZone, ownerId);
     if (!deps) {
-      // No connection, or one already marked broken: the Google event survives and nothing else will ever log
-      // it, so this is the one place that can point the admin at the RUNBOOK's manual-reconciliation step.
-      console.error("[booking] cancelMeeting skipped", { appointmentId, eventId, reason: "no_connection" });
+      // No connection, one already marked broken, or an agent with no calendar: the Google event survives and
+      // nothing else will ever log it, so this is the one place that can point the admin at the RUNBOOK's
+      // manual-reconciliation step.
+      console.error("[booking] cancelMeeting skipped", { appointmentId, eventId, ownerId, reason: "no_calendar" });
       return;
     }
     await createGoogleCalendar(deps).cancelMeeting(eventId);
@@ -551,15 +558,23 @@ async function cancelGoogleEvent(ctx: RequestContext, appointmentId: string, eve
   }
 }
 
+/**
+ * An agent cancels their own meeting, an admin cancels any (D48) — the RPC is the guard, and RLS decides which
+ * row the follow-up read can see, so an agent can never reach another agent's event id through this.
+ */
 export async function cancelAppointment(ctx: RequestContext | null, id: unknown): Promise<{ id: string }> {
-  const admin = requireAdmin(ctx);
+  const active = requireActive(ctx);
   const appointmentId = parseId(id);
-  const { error } = await admin.supabase.rpc("cancel_appointment", { p_id: appointmentId });
+  const { error } = await active.supabase.rpc("cancel_appointment", { p_id: appointmentId });
   if (error) fail(error);
 
   if (isGoogleDriver()) {
-    const { data: row } = await admin.supabase.from("appointments").select("google_event_id").eq("id", appointmentId).maybeSingle();
-    if (row?.google_event_id) await cancelGoogleEvent(admin, appointmentId, row.google_event_id);
+    const { data: row } = await active.supabase
+      .from("appointments")
+      .select("google_event_id, booked_by")
+      .eq("id", appointmentId)
+      .maybeSingle();
+    if (row?.google_event_id) await cancelGoogleEvent(active, row.booked_by, appointmentId, row.google_event_id);
   }
   return { id: appointmentId };
 }

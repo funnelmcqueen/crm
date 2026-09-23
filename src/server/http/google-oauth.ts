@@ -108,15 +108,15 @@ function constantTimeEqual(a: string, b: string): boolean {
  * every free/busy read and event insert fail with a `permanent` GoogleApiError that never marks the connection
  * broken.
  */
-async function existingAppCalendarId(email: string): Promise<string | null> {
+async function existingAppCalendarId(email: string): Promise<{ appCalendarId: string | null; sameAccount: boolean }> {
   const { data, error } = await createAdminClient()
     .from("calendar_connection")
     .select("google_email, app_calendar_id")
     .eq("id", true)
     .maybeSingle();
   if (error) throw mapPostgrestError(error);
-  if (!data || data.google_email !== email) return null;
-  return data.app_calendar_id;
+  const sameAccount = Boolean(data) && data?.google_email === email;
+  return { appCalendarId: sameAccount ? (data?.app_calendar_id ?? null) : null, sameAccount };
 }
 
 /** Never a code, token or secret — just enough to see where a connection attempt broke. */
@@ -226,9 +226,11 @@ export async function handleGoogleCallback(req: Request): Promise<Response> {
   const timeZone = settingsRow?.default_timezone ?? "America/New_York";
 
   let appCalendarId: string;
+  let sameAccount: boolean;
   try {
     const existing = await existingAppCalendarId(email);
-    appCalendarId = existing ?? (await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone)).id;
+    sameAccount = existing.sameAccount;
+    appCalendarId = existing.appCalendarId ?? (await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone)).id;
   } catch (error) {
     if (isNextControlFlowError(error)) throw error;
     logGoogleOAuthError("create_app_calendar", error);
@@ -247,6 +249,28 @@ export async function handleGoogleCallback(req: Request): Promise<Response> {
     if (isNextControlFlowError(error)) throw error;
     logGoogleOAuthError("connect_calendar", error);
     return toSettings("error");
+  }
+
+  // Everything below is best effort: the connection itself is stored and working, and Settings can finish the
+  // job by hand. A failure here must not tell the admin the connection failed when it did not.
+  try {
+    // Unless this is provably the same account as before, every stored agent calendar id now names a calendar
+    // the new token cannot reach, so they are cleared and Settings shows who needs a new one (D48).
+    if (!sameAccount) {
+      const { error: clearError } = await createAdminClient().rpc("clear_agent_calendars");
+      if (clearError) throw mapPostgrestError(clearError);
+    }
+
+    // The calendar created at connect belongs to the admin who connected: they book like anyone else, and
+    // without this it would sit on the account empty, since every meeting goes to its own agent's calendar.
+    const { error: calendarError } = await createAdminClient().rpc("set_agent_calendar_id", {
+      p_user_id: active.userId,
+      p_calendar_id: appCalendarId,
+    });
+    if (calendarError) throw mapPostgrestError(calendarError);
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    logGoogleOAuthError("agent_calendars", error);
   }
 
   return toSettings("connected");

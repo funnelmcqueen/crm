@@ -538,7 +538,10 @@ describe('booking against Google', () => {
         return json({ access_token: ACCESS_TOKEN, expires_in: 3600, token_type: 'Bearer' });
       }
       if (url === FREEBUSY_URL) {
-        return json({ calendars: { [GOOGLE_EMAIL]: { busy: options.busy ?? [] }, [APP_CALENDAR_ID]: { busy: [] } } });
+        // Answers for exactly the calendars the request asked about, so the assertions about WHICH calendar is
+        // queried live in the tests rather than here (D48: each agent's own, never the owner's primary).
+        const items = (parseBody(init.body) as { items?: Array<{ id: string }> } | null)?.items ?? [];
+        return json({ calendars: Object.fromEntries(items.map((item) => [item.id, { busy: options.busy ?? [] }])) });
       }
       const method = init.method ?? 'GET';
       if (url.startsWith(`${CALENDAR_API_BASE}/calendars/`) && url.includes('/events?') && method === 'POST') {
@@ -576,11 +579,19 @@ describe('booking against Google', () => {
     if (error) throw new Error(`connect failed: ${error.message}`);
   }
 
+  /** Provisioned by default: without a calendar of their own an agent cannot book at all (D48). */
   async function agentAndLead(name: string, overrides: Parameters<typeof createLead>[0] = {}) {
     const agent = await createUser({ name: `${name} ${TAG}` });
+    const calendarId = `agent-cal-${randomUUID()}`;
+    await giveCalendar(agent.id, calendarId);
     const ctx = await contextForUser(agent);
     const lead = await createLead({ assigned_to: agent.id, business_name: `${TAG} ${name}`, state: 'FL', country: 'US', ...overrides });
-    return { agent, ctx, lead };
+    return { agent, ctx, lead, calendarId };
+  }
+
+  async function giveCalendar(userId: string, calendarId: string | null): Promise<void> {
+    const { error } = await serviceClient().from('profiles').update({ google_calendar_id: calendarId }).eq('id', userId);
+    if (error) throw new Error(`giveCalendar failed: ${error.message}`);
   }
 
   const request = (leadId: string, start: Date, extra: { inCall?: boolean; clientRequestId?: string; note?: string } = {}) => ({
@@ -762,10 +773,11 @@ describe('booking against Google', () => {
     });
   });
 
-  describe('a connection with no app calendar id', () => {
-    it('is unavailable and calls no Google endpoint', async () => {
-      await connect({ appCalendarId: null });
-      const { ctx, lead } = await agentAndLead('NoAppCal');
+  describe('an agent with no calendar of their own', () => {
+    it('is unavailable and calls no Google endpoint, even on a healthy connection', async () => {
+      await connect();
+      const { ctx, lead, agent } = await agentAndLead('NoAgentCal');
+      await giveCalendar(agent.id, null);
       const calls = stubGoogle();
 
       await expect(getAgentAvailability(ctx, lead.id, { now: () => at(4) })).rejects.toMatchObject({
@@ -780,15 +792,20 @@ describe('booking against Google', () => {
     it('deletes the Google event, and still marks the appointment cancelled when the delete fails', async () => {
       await connect();
 
-      const { ctx, lead } = await agentAndLead('Cancel');
+      const { ctx, lead, calendarId } = await agentAndLead('Cancel');
       const eventId = `evt-${randomUUID()}`;
-      stubGoogle({ insertResult: { id: eventId } });
+      const insertCalls = stubGoogle({ insertResult: { id: eventId } });
       const booked = await bookAppointment(ctx, request(lead.id, at(8)), { now: () => at(0) });
+      // The meeting is written to the booking agent's own calendar, not a shared one (D48).
+      expect(insertCalls.find((call) => call.method === 'POST' && call.url.includes('/events?'))?.url).toContain(
+        `/calendars/${encodeURIComponent(calendarId)}/events`,
+      );
 
       const deleteCalls = stubGoogle();
       await cancelAppointment(admin, booked.id);
       const deleteCall = deleteCalls.find((call) => call.method === 'DELETE');
-      expect(deleteCall?.url).toBe(`${CALENDAR_API_BASE}/calendars/${APP_CALENDAR_ID}/events/${eventId}`);
+      // Cancelled by an ADMIN, so the calendar has to come from the appointment's booked_by, not the caller.
+      expect(deleteCall?.url).toBe(`${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`);
       expect(await appointmentRow(booked.id)).toMatchObject({ status: 'cancelled' });
 
       const failing = await agentAndLead('CancelFail');

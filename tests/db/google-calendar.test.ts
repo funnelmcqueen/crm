@@ -15,6 +15,7 @@ const DISCONNECT = 'select public.disconnect_calendar()';
 const MARK_BROKEN = 'select public.mark_calendar_broken()';
 const STATUS = 'select * from public.get_calendar_status()';
 const SET_AGENT_CALENDAR = 'select public.set_agent_calendar_id($1, $2)';
+const CLEAR_AGENT_CALENDARS = 'select public.clear_agent_calendars()';
 
 interface BookableHourRow {
   weekday: number;
@@ -214,6 +215,21 @@ describe('set_agent_calendar_id (D48)', () => {
     // A deleted agent never owns work again (20260915001400_delete_agent.sql).
     await adminSqlRows(db, 'update public.profiles set deleted_at = now(), active = false where id = $1', [agent]);
     expect((await pgError(serviceRows(db, SET_AGENT_CALENDAR, [agent, 'cal-y']))).code).toBe('P0002');
+  });
+
+  it('clear_agent_calendars is service role only, and wipes every provisioned calendar', async () => {
+    const one = await createAuthUser(db, { name: 'Cleared One' });
+    const two = await createAuthUser(db, { name: 'Cleared Two' });
+    await serviceRows(db, SET_AGENT_CALENDAR, [one, 'cal-one']);
+    await serviceRows(db, SET_AGENT_CALENDAR, [two, 'cal-two']);
+
+    expect((await pgError(userRows(db, one, CLEAR_AGENT_CALENDARS))).code).toBe('42501');
+    expect((await pgError(userRows(db, admin, CLEAR_AGENT_CALENDARS))).code).toBe('42501');
+    expect(await calendarIdOf(one)).toBe('cal-one');
+
+    await serviceRows(db, CLEAR_AGENT_CALENDARS);
+    expect(await calendarIdOf(one)).toBeNull();
+    expect(await calendarIdOf(two)).toBeNull();
   });
 
   it('is refused to an agent through a direct profile update, so the grant is not the only guard', async () => {

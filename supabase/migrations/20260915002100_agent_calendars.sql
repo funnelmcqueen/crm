@@ -48,6 +48,34 @@ $$;
 revoke execute on function public.set_agent_calendar_id(uuid, text) from public, anon, authenticated;
 grant execute on function public.set_agent_calendar_id(uuid, text) to service_role;
 
+-- Called when the app cannot confirm the newly connected Google account is the one these calendars were
+-- created on — a different account, or a connect after a disconnect. Their ids would then name calendars the
+-- new token cannot reach, and every booking against them would fail while Settings said "Connected", which is
+-- the failure this clears: with no calendar, Settings shows plainly who still needs one. Service-role only,
+-- like set_agent_calendar_id.
+create or replace function public.clear_agent_calendars()
+returns integer
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_count integer;
+begin
+  with cleared as (
+    update public.profiles p
+       set google_calendar_id = null
+     where p.google_calendar_id is not null
+    returning p.id
+  )
+  select count(*)::integer into v_count from cleared;
+  return v_count;
+end;
+$$;
+revoke execute on function public.clear_agent_calendars() from public, anon, authenticated;
+grant execute on function public.clear_agent_calendars() to service_role;
+
 -- ---------------------------------------------------------------------------------------------
 -- 2. Two agents may now hold the same clock time
 -- ---------------------------------------------------------------------------------------------

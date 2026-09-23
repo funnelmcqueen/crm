@@ -437,6 +437,7 @@ export type Database = {
           deleted_at: string | null
           device_seen_at: string | null
           email: string
+          google_calendar_id: string | null
           id: string
           in_app_calling_enabled: boolean
           name: string
@@ -450,6 +451,7 @@ export type Database = {
           deleted_at?: string | null
           device_seen_at?: string | null
           email: string
+          google_calendar_id?: string | null
           id: string
           in_app_calling_enabled?: boolean
           name?: string
@@ -463,6 +465,7 @@ export type Database = {
           deleted_at?: string | null
           device_seen_at?: string | null
           email?: string
+          google_calendar_id?: string | null
           id?: string
           in_app_calling_enabled?: boolean
           name?: string
@@ -756,6 +759,10 @@ export type Database = {
           e164: string
           phone_number_id: string
         }[]
+      }
+      clear_agent_calendars: {
+        Args: never
+        Returns: number
       }
       confirm_appointment: {
         Args: {
@@ -1150,6 +1157,13 @@ export type Database = {
           total_count: number
           website: string
         }[]
+      }
+      set_agent_calendar_id: {
+        Args: {
+          p_calendar_id: string
+          p_user_id: string
+        }
+        Returns: undefined
       }
       set_bookable_hours: {
         Args: {

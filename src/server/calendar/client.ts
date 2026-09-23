@@ -28,3 +28,12 @@ export function resolveCalendarClient(timeZone: string, env?: ServerEnv): Calend
 export function resolveGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient {
   return createGoogleCalendar(deps);
 }
+
+/** Whether the calendar driver currently resolves to google, treating an unparseable environment as "no". */
+export function isGoogleDriver(env?: ServerEnv): boolean {
+  try {
+    return getCalendarDriver(env) === "google";
+  } catch {
+    return false;
+  }
+}

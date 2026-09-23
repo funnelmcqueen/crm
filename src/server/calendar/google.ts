@@ -4,13 +4,13 @@
 // The database is out of scope here: the caller (src/server/services/calendar-booking.ts) reads the connection
 // row and the bookable hours and passes them in through GoogleCalendarDeps.
 //
-// The app calendar is always already created by the time this module ever sees a connection: the OAuth connect
-// flow (src/server/http/google-oauth.ts) creates it and stores its id in the same write that creates the
-// connection row, so there is no "connection with no app calendar id" state for this module to handle. An
-// earlier version of this contract had this module create the calendar lazily on first use; that was dropped
-// (fix round 1) because a `connect_calendar` rejection after the calendar was created would orphan it on the
-// closer's account, and because the RPC is admin-only, so a lazy create triggered by an agent's own booking
-// session would just raise forbidden.
+// Each agent has a calendar of their own on the one connected account (D48), and this module is always handed
+// the id of the booking agent's. Provisioning happens elsewhere and earlier — when the agent's account is
+// created, or from Settings for an agent who predates D48 — so there is no "agent with no calendar" state for
+// this module to handle; the caller refuses the booking before reaching here. An earlier version of this
+// contract had this module create a calendar lazily on first use; that was dropped (fix round 1) because a
+// rejected write after the calendar was created would orphan it on the account, and because the RPCs involved
+// are not callable from an agent's own session, so a lazy create would just raise forbidden.
 import "server-only";
 import { bookableWindows, type BookableRange } from "@/lib/domain/bookable-hours";
 import { accessTokenFor, deleteEvent, freeBusy, GoogleApiError, insertEvent } from "@/server/google/api";
@@ -20,9 +20,11 @@ import type { CalendarAvailability, CalendarClient, CalendarInterval } from "./t
 /** A connected account, as stored (ciphertext only — never the raw refresh token). */
 export interface GoogleCalendarConnection {
   readonly refreshTokenCiphertext: string;
-  readonly googleEmail: string;
-  /** The secondary calendar the app writes meetings to (design §3), created before the connection is stored. */
-  readonly appCalendarId: string;
+  /**
+   * The booking agent's own secondary calendar on the connected account (D48). One account hosts one of these
+   * per agent, all created by this app, so the single refresh token above reaches every one of them.
+   */
+  readonly calendarId: string;
 }
 
 export interface GoogleCalendarDeps {
@@ -88,15 +90,19 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
         start: window.start,
         end: window.end,
       }));
-      const calendarIds = [deps.connection.googleEmail, deps.connection.appCalendarId];
-      const busyTimes = await withAccessToken(deps, (accessToken) => freeBusy(accessToken, calendarIds, from, to));
+      // The agent's own calendar and nothing else (D48). The owner's primary calendar used to be read here,
+      // from when every meeting was theirs to run; they do not attend these meetings, so their own commitments
+      // must not block an agent — and the app no longer reads their personal calendar at all.
+      const busyTimes = await withAccessToken(deps, (accessToken) =>
+        freeBusy(accessToken, [deps.connection.calendarId], from, to),
+      );
       const busy: CalendarInterval[] = busyTimes.map((block) => ({ start: block.start, end: block.end }));
       return { windows, busy };
     },
 
     async createMeeting(input: CreateMeetingInput): Promise<{ eventId: string }> {
       return withAccessToken(deps, async (accessToken) => {
-        const { id } = await insertEvent(accessToken, deps.connection.appCalendarId, {
+        const { id } = await insertEvent(accessToken, deps.connection.calendarId, {
           summary: input.title,
           description: input.description,
           start: input.start,
@@ -111,7 +117,7 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient &
 
     async cancelMeeting(eventId: string): Promise<void> {
       return withAccessToken(deps, async (accessToken) => {
-        await deleteEvent(accessToken, deps.connection.appCalendarId, eventId);
+        await deleteEvent(accessToken, deps.connection.calendarId, eventId);
       });
     },
   };

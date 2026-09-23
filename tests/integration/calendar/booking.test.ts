@@ -99,26 +99,44 @@ describe('bookAppointment', () => {
     expect(calendar.created).toHaveLength(1);
   });
 
-  it("drops another agent's booking from the picker at once, with nothing of their lead", async () => {
+  it("leaves another agent's booking out of the picker entirely, and nothing of their lead in it", async () => {
     const a = await agentAndLead('First');
     const b = await agentAndLead('Second');
     const { now, at, window } = scenario();
     await bookAppointment(a.ctx, request(a.lead.id, at(3)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
 
-    // B's calendar has not seen the new event yet; booked_intervals covers the gap.
+    // Each agent runs their own meetings (D48), so A's booking neither blocks B's picker nor appears in it.
     const availability = await getAgentAvailability(b.ctx, b.lead.id, { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
-    expect(availability.slots.map((slot) => slot.start)).not.toContain(at(3).toISOString());
+    expect(availability.slots.map((slot) => slot.start)).toContain(at(3).toISOString());
     expect(JSON.stringify(availability)).not.toContain(a.lead.business_name);
     expect(availability.mine).toEqual([]);
   });
 
-  it('refuses a slot another agent already holds', async () => {
+  it("drops the agent's own fresh booking from their picker at once", async () => {
+    const { ctx, lead } = await agentAndLead('Mine');
+    const { now, at, window } = scenario();
+    await bookAppointment(ctx, request(lead.id, at(3)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
+
+    // The fake calendar has not seen the new event; booked_intervals covers the gap.
+    const availability = await getAgentAvailability(ctx, lead.id, { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
+    expect(availability.slots.map((slot) => slot.start)).not.toContain(at(3).toISOString());
+  });
+
+  it('lets two agents hold the same time, and refuses one agent a second meeting in it', async () => {
     const a = await agentAndLead('Holder');
-    const b = await agentAndLead('Latecomer');
+    const b = await agentAndLead('Parallel');
     const { now, at, window } = scenario();
     await bookAppointment(a.ctx, request(a.lead.id, at(4)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
+
+    // Two closers, two calendars, one clock time (D48).
     await expect(
       bookAppointment(b.ctx, request(b.lead.id, at(4)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now }),
+    ).resolves.toMatchObject({ start: at(4).toISOString() });
+
+    // Nobody is in two meetings at once, though: A's own second lead cannot have that time.
+    const second = await createLead({ assigned_to: a.agent.id, business_name: `${TAG} Holder Second` });
+    await expect(
+      bookAppointment(a.ctx, request(second.id, at(4)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now }),
     ).rejects.toMatchObject({ code: 'conflict', message: 'That time was just taken. Pick another.' });
   });
 
@@ -162,14 +180,20 @@ describe('business type and cancelling', () => {
     await expect(setLeadBusinessType(ctx, lead.id, 'dentist')).rejects.toMatchObject({ code: 'validation' });
   });
 
-  it('lets an admin cancel a meeting, and not an agent', async () => {
-    const { ctx, lead } = await agentAndLead('Cancel');
+  it("lets an agent cancel their own meeting, an admin cancel anyone's, and neither cancel a stranger's", async () => {
+    const a = await agentAndLead('Cancel');
+    const b = await agentAndLead('Bystander');
     const { now, at, window } = scenario();
-    const booked = await bookAppointment(ctx, request(lead.id, at(5)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
+    const mine = await bookAppointment(a.ctx, request(a.lead.id, at(5)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
 
-    await expect(cancelAppointment(ctx, booked.id)).rejects.toMatchObject({ code: 'forbidden' });
+    // Another agent's meeting is not theirs to cancel, and they are not told it exists (D48).
+    await expect(cancelAppointment(b.ctx, mine.id)).rejects.toMatchObject({ code: 'not_found' });
+    await cancelAppointment(a.ctx, mine.id);
+    expect(await getNextMeeting(a.ctx, a.lead.id, now)).toBeNull();
+
+    const theirs = await bookAppointment(b.ctx, request(b.lead.id, at(6)), { calendar: fakeCalendar({ windows: [window] }).client, now: () => now });
     const admin = await signInSeeded('admin').then(contextFor);
-    await cancelAppointment(admin, booked.id);
-    expect(await getNextMeeting(ctx, lead.id, now)).toBeNull();
+    await cancelAppointment(admin, theirs.id);
+    expect(await getNextMeeting(b.ctx, b.lead.id, now)).toBeNull();
   });
 });

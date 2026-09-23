@@ -150,7 +150,7 @@ prints a ready-to-paste env block:
 ```
 [localbase] applied bootstrap.sql
 [localbase] applied migration 20260915000100_core_schema.sql
-... (19 migrations)
+... (20 migrations)
 [localbase] listening on http://127.0.0.1:54321
 
 localbase is running (data: .../.localbase/data)

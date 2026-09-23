@@ -23,6 +23,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     device_seen_at: null,
     created_at: "2026-09-15T00:00:00Z",
     deleted_at: null,
+    google_calendar_id: null,
     ...overrides,
   };
 }
