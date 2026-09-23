@@ -25,6 +25,7 @@ describe('CRM_IMPORT_FIELDS', () => {
       'state',
       'country',
       'source',
+      'business_type',
       'notes',
     ]);
     expect(CRM_IMPORT_FIELDS.filter((field) => field.required).map((field) => field.key)).toEqual(['business_name', 'phone']);
@@ -161,7 +162,7 @@ describe('guessMapping', () => {
     expect(guessMapping([header])).toEqual({ [header]: field });
   });
 
-  it.each(['Zip', 'Rating', 'Category', 'Real Estate', 'Account Number', 'Last Name', ''])('leaves %j unmapped', (header) => {
+  it.each(['Zip', 'Rating', 'Real Estate', 'Account Number', 'Last Name', ''])('leaves %j unmapped', (header) => {
     expect(guessMapping([header])).toEqual({ [header]: null });
   });
 
@@ -273,6 +274,7 @@ describe('validateImportRow', () => {
         state: 'NY',
         country: 'USA',
         source: 'Trade show',
+        business_type: null,
         notes: 'Prefers mornings\nZip: 10001\nRating: 4.5',
         dedupe_name_key: 'acmeplumbingllc|newyork',
       },
@@ -303,6 +305,7 @@ describe('validateImportRow', () => {
         state: null,
         country: null,
         source: null,
+        business_type: null,
         notes: null,
         dedupe_name_key: 'acme|',
       },
@@ -417,6 +420,7 @@ describe('validateImportRow', () => {
         state: null,
         country: null,
         source: 'Referral',
+        business_type: null,
         notes: 'Call after 2pm\nZip: 94110',
         dedupe_name_key: 'bluedoorbakery|sanfrancisco',
       },

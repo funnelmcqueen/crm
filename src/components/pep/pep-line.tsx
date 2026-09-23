@@ -30,7 +30,7 @@ function choose(mood: GoalMood, dials: number, setting: PepSetting, date: string
 }
 
 /**
- * The dashboard's line under the goal (docs/DEVIATIONS.md D45). Renders nothing until hydration:
+ * The dashboard's line under the goal (docs/DEVIATIONS.md D49). Renders nothing until hydration:
  * the setting lives in this device's storage, so a server render would flash a line at an agent who
  * muted it, and would disagree with the client besides.
  */

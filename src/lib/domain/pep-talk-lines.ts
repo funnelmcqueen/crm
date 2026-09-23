@@ -1,4 +1,4 @@
-// The pep-talk pool (docs/DEVIATIONS.md D45). One-liners shown to an agent between calls.
+// The pep-talk pool (docs/DEVIATIONS.md D49). One-liners shown to an agent between calls.
 //
 // House rules for anything added here, because they are what keep this funny instead of grim:
 //   - The joke lands on the situation, the prospect's excuses, the job, or the universe. Never on the

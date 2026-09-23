@@ -133,6 +133,8 @@ e2e/                     Playwright specs (mock dialer)
 | `APP_BASE_URL` | server-only | exact public origin, no trailing slash; used for Twilio signature URLs |
 | `DIALER_DRIVER` | server-only | `twilio` \| `tel` \| `mock`. Unset: `twilio` when configured, else `mock` in development/test and `tel` in production (never silently fake calls in prod). `mock` with `NODE_ENV=production` is an invalid environment (D24) |
 | `TWILIO_ACCOUNT_SID` `TWILIO_AUTH_TOKEN` `TWILIO_API_KEY_SID` `TWILIO_API_KEY_SECRET` `TWILIO_TWIML_APP_SID` | server-only | required when `DIALER_DRIVER=twilio` |
+| `CALENDAR_DRIVER` | server-only | `google` \| `mock`. Unset: `google` when the three `GOOGLE_*` variables below are all set (mirroring how `DIALER_DRIVER` auto-detects `twilio`), else `mock` outside production, "booking unavailable" in production (never silently invent availability in prod). `mock` with `NODE_ENV=production` is refused at startup (D46) |
+| `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_TOKEN_ENCRYPTION_KEY` | server-only | required for `CALENDAR_DRIVER=google` (or its auto-detect above); `GOOGLE_TOKEN_ENCRYPTION_KEY` is 32 random bytes, base64, and encrypts the stored refresh token at rest (D47) |
 
 `src/server/env.ts` exports `getServerEnv()`, which parses lazily and caches (so importing never
 throws at build time). `DIALER_DRIVER` reaches the client only as a prop from the `(app)` layout.
@@ -385,7 +387,7 @@ PostgREST HTTP status: PostgREST returns 500 for P0002 and 400 for P0001/22023. 
 | `list_lead_sources() → setof text` | invoker | authenticated | Distinct non-null sources visible to the caller. |
 | `touch_device_presence() → void` | definer | authenticated | `device_seen_at = now()` for the active caller. |
 | `consume_rate_limit(p_bucket text) → boolean` | definer | authenticated | Keyed on `auth.uid()`; inactive or missing caller → `42501`. Only `voice_token` and `export` are accepted (else `22023`; `outbound_call` is enforced inside `create_outbound_call` and is still refused here). Delegates to `apply_rate_limit`. |
-| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min, `export` 30 per 10 min (D36); unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
+| `apply_rate_limit(p_user_id uuid, p_bucket text) → boolean` | definer | **none** (internal) | Fixed policy per bucket: `voice_token` 20 per 10 min, `outbound_call` 12 per min, `export` 30 per 10 min (D36), `book_appointment` 20 per hour (D46); unknown bucket → `22023`. Prunes hits older than that bucket's window, returns false when over the limit, otherwise records a hit (D14). |
 | `claim_caller_id(p_user_id uuid) → table(phone_number_id uuid, e164 text)` | definer | **service_role only** | Least recently used active number assigned to the user, else least recently used active pool number (`last_used_at nulls first, created_at`), locking the assigned number with `for no key update` (without SKIP LOCKED, so the KEY SHARE lock of a concurrent calls insert never causes a pool fallback) and pool numbers with `for no key update skip locked`. Sets `last_used_at = now()`. |
 | `apply_call_status(p_call_sid text, p_status text, p_duration int default null) → boolean` | definer | service_role only | Idempotent. Finds the row by `provider_call_sid`. Terminal statuses (completed/busy/no-answer/failed/canceled) are never replaced by non-terminal ones, and a terminal status only changes if the duration is being filled. `duration_seconds = greatest(existing, p_duration)`. |
 | `record_voicemail(p_call_sid text, p_recording_sid text, p_duration int) → boolean` | definer | service_role only | Atomic: sets the recording where `voicemail_recording_sid is null`. On first set, if the lead has an owner, inserts follow-up (owner, `due_at = now()`, note 'Voicemail received'). Returns whether it was newly set. |
@@ -552,6 +554,8 @@ supabase/migrations/20260915001500_revoke_user_sessions.sql  end a user's Auth s
 supabase/migrations/20260915001600_bulk_leads.sql      bulk lead actions (D41)
 supabase/migrations/20260915001700_skipped_leads.sql   Skipped queue (D42)
 supabase/migrations/20260915001800_agent_today.sql     agent Today dashboard (D43)
+supabase/migrations/20260915001900_calendar_booking.sql closer calendar booking (D46)
+supabase/migrations/20260915002000_google_calendar.sql   Google Calendar connection (D47)
 ```
 Later migrations may `create or replace function`. After `npm run db:types`, commit the regenerated types.
 Migrations 000600-001100 create 13 distinct functions (no overlapping `create or replace`). `tests/db/stats-consistency.test.ts`
@@ -597,7 +601,7 @@ export function requireAdmin(ctx): RequestContext   // throws AppError('forbidde
 - `AppError` codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `validation` (400),
   `conflict` (409), `rate_limited` (429), `unavailable` (503), `internal` (500, unmapped errors).
   Route handlers that browsers call with cookies use `getRouteAuth(req) → { ctx, applyCookies }`. `mapPostgrestError(err)` maps P0002→not_found,
-  42501→forbidden, 22023/22P02/23514→validation, P0001 do_not_contact/call_in_progress→conflict, P0001 rate_limited→rate_limited.
+  42501→forbidden, 22023/22P02/23514→validation, P0001 do_not_contact/call_in_progress/slot_taken→conflict, P0001 rate_limited→rate_limited.
 - Server actions return `ActionResult<T> = { ok: true; data: T } | { ok: false; error: { code: AppErrorCode; message: string } }`
   and never throw to the client.
 - Route handler cores: `src/server/http/<name>.ts` exports `handle<Name>(req: Request, deps?: Partial<Deps>)`.
@@ -832,6 +836,84 @@ request's SQL as `postgres`.
 last 1h and carry Supabase claims (`aud, exp, iat, iss, sub, email, phone, app_metadata, user_metadata,
 role:'authenticated', aal, amr, session_id, is_anonymous`). Signup (`POST /signup`) → 422
 `signup_disabled`. `auth.users` and `auth.identities` columns mirror Supabase's so the same SQL works on both.
+
+---
+
+## Calendar booking (D46), the Google connection (D47) and a calendar per agent (D48)
+
+Tables: `appointments` (lead, `booked_by`, 30-minute `starts_at`/`ends_at`, `status` pending|scheduled|cancelled,
+`google_event_id`, `note` ≤ 500, `client_request_id`; unique index on `(booked_by, starts_at)` where live — D48: the
+slot belongs to the agent who booked it, so two agents may hold one clock time and nobody holds two; RLS select:
+booker or admin), `calendar_connection` (singleton, no API access — not even admin; `google_email`,
+`refresh_token_ciphertext`, `app_calendar_id`, `connected_by`, `connected_at`, `broken_at`),
+`profiles.google_calendar_id` (D48: that person's own secondary calendar on the connected account; null = not
+provisioned, and booking is unavailable to them), and `bookable_hours` (D47: `weekday` 0-6,
+`starts_minute`/`ends_minute` minutes from local midnight, both multiples of 30, `starts_minute < ends_minute`, no
+overlap within a weekday; RLS select: any active user; seeded Mon-Fri 10:00-12:00 and 14:00-17:00, the shape the mock
+calendar used). `leads.business_type` (enum, null = guess from name).
+
+| RPC | Security | Who | Notes |
+|---|---|---|---|
+| `set_lead_business_type(p_lead_id, p_type)` | definer | active; admin any lead, agent own | null clears |
+| `bulk_set_business_type(p_lead_ids, p_type)` | invoker | admin | 5,000 cap, `too_many_leads` |
+| `begin_appointment(p_lead_id, p_starts_at, p_note, p_client_request_id)` | definer | active; lead access | replay, boundary, DNC, `book_appointment` 20/hour, stale-pending cleanup, `slot_taken` |
+| `confirm_appointment(p_id, p_google_event_id)` | definer | booker | pending → scheduled, idempotent |
+| `abandon_appointment(p_id)` | definer | booker | deletes own pending row |
+| `cancel_appointment(p_id)` | definer | active; admin any, agent own | scheduled → cancelled. D48: an agent runs their own meetings, so an agent cancels their own; the Google event is then deleted from the calendar named by `booked_by`, not the caller's |
+| `booked_intervals(p_from, p_to)` | definer | active | times only, range ≤ 31 days. D48: scoped to the caller, so another agent's meetings neither block a picker nor appear in it |
+| `set_bookable_hours(p_rows)` | definer | admin | D47: replaces the whole week atomically; validates weekday/minute range, 30-minute granularity, ordering and overlap, else `invalid_hours` |
+| `connect_calendar(p_email, p_ciphertext, p_app_calendar_id)` | definer | admin | D47: upserts the singleton, clears `broken_at` |
+| `disconnect_calendar()` | definer | admin | D47: deletes the row |
+| `mark_calendar_broken()` | definer | service role | D47: any active user's booking attempt can trigger the *call*, but the RPC itself is service-role only (grants are the guard, matching `revoke_user_sessions`) — an agent's own session cannot reach it directly; only ever sets `broken_at` |
+| `get_calendar_status()` | definer | admin | returns `connected, google_email, hours_set, broken, app_calendar_id`, never the token. D47: `hours_set` now reflects whether any `bookable_hours` rows exist — previously a `bookable_calendar_id is not null` stand-in that was never populated |
+| `set_agent_calendar_id(p_user_id, p_calendar_id)` | definer | service role | D48: stores one person's calendar id, refusing a deleted profile. Service-role only for `mark_calendar_broken`'s reasoning — an agent's own session must not create calendars on the owner's account as a side effect of booking |
+| `clear_agent_calendars()` | definer | service role | D48: wipes every stored calendar id, called from the OAuth callback when the newly connected account cannot be proved to be the one those calendars were created on |
+
+**Driver resolution** (`getCalendarDriver`, `src/server/env.ts`): an explicit `CALENDAR_DRIVER` wins; otherwise
+`google` when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_TOKEN_ENCRYPTION_KEY` are all set (mirroring how
+`DIALER_DRIVER` auto-detects `twilio` from the Twilio variables), else `mock` in development/test and `unavailable`
+in production — a production deployment with no driver set and no Google configuration reports booking unavailable
+rather than inventing availability. `CALENDAR_DRIVER=mock` with `NODE_ENV=production` is still refused at startup.
+Whenever the driver resolves to `google` — `CALENDAR_DRIVER=google` explicit, or that auto-detect — `parseServerEnv`'s
+`superRefine` additionally requires `APP_BASE_URL` (the OAuth redirect is built from it, exactly like Twilio's
+webhook signature check) and validates `GOOGLE_TOKEN_ENCRYPTION_KEY` decodes to 32 bytes, mirroring the
+`DIALER_DRIVER=twilio` checks; `isGoogleCalendarConfigured` includes `APP_BASE_URL` for the same reason
+`isTwilioConfigured` does.
+
+**Google modules (D47).** `src/server/google/http.ts` is the shared timeout+retry primitive both Google HTTP callers
+use: an 8s timeout per attempt, one retry on a connection error or timeout only, never on an HTTP status Google
+returned. `src/server/google/oauth.ts` is the PKCE authorization-code exchange and best-effort token revocation.
+`src/server/google/api.ts` is every Calendar/OAuth2 REST call an access token can make (`accessTokenFor` refreshes
+and caches an access token per refresh token in memory, `freeBusy`, `insertEvent`, `deleteEvent`,
+`createAppCalendar`, `accountEmail`), and classifies every Google error as `invalid_grant` (access revoked — the
+only kind that marks the connection broken), `transient` (429, 5xx, a rate-limit reason) or `permanent` (everything
+else, `unauthorized_client` included: a bad or rotated client id/secret is not a revoked grant, and reconnecting
+would not fix it). `src/server/google/crypto.ts` is AES-256-GCM for the refresh token, the only form it takes
+outside memory. `src/server/calendar/google.ts` (`createGoogleCalendar`) implements `CalendarClient` against those
+modules: `readAvailability` builds windows from `bookable_hours` and busy time from `freeBusy` on **the booking
+agent's own calendar and nothing else** (D48 — the owner does not attend these meetings, so their primary calendar
+is no longer read at all); `createMeeting` inserts a Meet-conferenced event with the booking agent as an attendee,
+and the lead too when they have an email address; `cancelMeeting` deletes it. **It never creates a calendar
+itself** — provisioning is `provisionAgentCalendar` (`src/server/services/calendar-connection.ts`), reached from
+`createAgent`, the Settings card and the OAuth callback, never from a booking, and an agent with no calendar is
+treated as booking-unavailable rather than triggering a lazy create (D47 amends the original design here — see
+`docs/DEVIATIONS.md`).
+
+`GET /api/google/callback` (`src/server/http/google-oauth.ts`) creates the connect-time calendar and stores its id
+in `calendar_connection.app_calendar_id` in the same write that stores the connection. It creates one only when the
+connection has none, or when the account being connected differs from the one already stored, so an ordinary
+reconnect reuses the existing calendar while switching accounts starts a fresh one. D48: that calendar is also
+assigned to the admin who connected (`set_agent_calendar_id`), since every meeting now goes to its own agent's
+calendar and it would otherwise sit on the account empty; and unless the account is provably the same one as
+before, `clear_agent_calendars` wipes every stored id first, because they name calendars the new token cannot
+reach.
+
+Environment: `CALENDAR_DRIVER` = `google` | `mock` (see driver resolution above); `mock` in production is refused at
+startup. `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (32 random bytes, base64) are
+server-only and never `NEXT_PUBLIC_`. Code: `src/lib/domain/{business-type,lead-timezone,calendar-slots,business-rhythm,slot-phrase,meeting-description,bookable-hours}.ts`,
+`src/server/calendar/*`, `src/server/google/*`, `src/server/http/google-oauth.ts`,
+`src/server/services/{calendar-booking,calendar-connection}.ts`, `src/components/booking/*`,
+`src/components/settings/{calendar-section,bookable-hours-form,agent-calendars-list}.tsx`.
 
 ---
 

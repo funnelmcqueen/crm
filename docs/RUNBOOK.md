@@ -118,6 +118,86 @@ Twilio's usage triggers (README, Twilio step 8) should catch this first. When on
 
 ---
 
+## Calendar
+
+### The calendar connection broke
+
+Symptom: an agent tries to book a meeting and sees "Booking isn't available right now. Schedule a
+follow-up instead." Admin → Settings → Google Calendar shows a red banner — "The connection to Google
+broke. Reconnect to keep booking meetings." — instead of "Connected as name@gmail.com".
+
+This happens when Google revokes the refresh token: the owner changed their Google password, removed the
+app's access from their Google Account, or (the usual cause) the OAuth consent screen was left in
+*Testing* and Google expired the token after seven days (README, Google Calendar setup, step 2). The
+server only learns this the next time it tries to read availability or book a meeting — Google returns
+`invalid_grant`, `mark_calendar_broken()` sets `calendar_connection.broken_at`, and every agent sees
+booking as unavailable until it is fixed. A timeout, a 5xx or a Google rate limit is logged but does
+**not** set `broken_at` — that is treated as transient, not a revoked grant, and clears itself on the next
+successful call.
+
+**Fix:** Admin → Settings → Google Calendar → **Reconnect**, sign in as the same Gmail account, and
+approve the consent screen again.
+
+If Google refuses to complete the reconnect (an error page from Google, or Settings shows the toast
+"Couldn't connect Google Calendar. Try again." after redirecting back):
+
+1. Check all three variables are set and match what is in Google Cloud Console: `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`. A client secret rotated in the Console without
+   updating `GOOGLE_CLIENT_SECRET` here looks the same from the outside (Google reports
+   `unauthorized_client`), but the server does **not** treat that as a revoked grant — reconnecting will
+   not fix a wrong client secret; update the variable and redeploy instead.
+2. Confirm the OAuth consent screen is **Published**, not stuck in Testing (README, Google Calendar
+   setup, step 2).
+3. Confirm both redirect URIs are still registered on the OAuth client, the deployed one included
+   (`https://<app-domain>/api/google/callback`).
+
+### Settings says Connected, but booking is unavailable and nothing is marked broken
+
+Symptom: Admin → Settings → Google Calendar shows "Connected as name@gmail.com" with no red banner, but
+every agent sees "Booking isn't available right now." and `get_calendar_status` reports `broken: false`.
+
+Check `GOOGLE_TOKEN_ENCRYPTION_KEY`. This happens when the stored refresh token can no longer be
+decrypted with the key currently deployed — it was rotated, differs between environments, or is missing or
+malformed. A decrypt failure is treated the same as a revoked grant (it marks the connection broken too),
+so seeing this symptom on an up-to-date deploy most likely means the key itself changed out from under an
+otherwise-working connection.
+
+**Fix:** restore the correct `GOOGLE_TOKEN_ENCRYPTION_KEY`, or, if it was rotated on purpose, Admin →
+Settings → Google Calendar → **Reconnect** — this re-encrypts the refresh token under whichever key is
+current.
+
+### Reconnecting with a different Google account
+
+Connecting a second account is allowed and starts a fresh calendar under it, but meetings booked before the
+switch keep event ids that live in the old account's calendars, which the new token cannot reach. Cancelling
+one of those in the CRM marks the row cancelled and logs `[booking] cancelMeeting failed` — the Google event
+survives, so delete it by hand in the old account. Reconnecting the same account, which is the ordinary
+recovery after a revoked token, reuses the existing calendars and has none of this.
+
+Because those calendars are unreachable, connecting an account the app cannot prove is the same one **clears
+every person's calendar** (D48). Settings → Google Calendar → *Who can book* then lists everyone as needing
+one: press **Create calendar** for each. Nobody can book until you do, which is deliberate — the alternative
+is bookings failing against calendars that no longer exist while Settings still says "Connected".
+
+### One person cannot book, but everyone else can
+
+Symptom: one agent sees "Booking isn't available right now." while the rest book normally, and Settings
+shows the connection healthy. The server logs `[booking] agent has no calendar`.
+
+That agent has no calendar of their own — they were created before the account was connected, or their
+calendar could not be created with their account (the admin who created them would have seen a warning
+saying so). **Fix:** Admin → Settings → Google Calendar → *Who can book* → **Create calendar** beside their
+name.
+
+### Stray calendars on the Google account
+
+Deleting an agent leaves their meetings calendar on the account, and a calendar created by a provisioning
+attempt that then failed to store its id is left behind empty. Neither affects anything — the app only ever
+touches calendars it has an id for — but they accumulate. Delete them by hand in Google Calendar, alongside
+the account-switch case above. Check for booked meetings on one before deleting it.
+
+---
+
 ## Data
 
 ### Reassign leads

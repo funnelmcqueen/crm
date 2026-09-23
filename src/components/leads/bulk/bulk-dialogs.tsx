@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { BUSINESS_TYPES, BUSINESS_TYPE_LABELS, isBusinessType, type BusinessType } from "@/lib/domain/business-type";
 import { MAX_BULK_NOTE_LENGTH, leadCount } from "@/lib/domain/bulk-leads";
 import { followUpQuickPicks, tryZonedLocalInputToUtc, utcToZonedLocalInput } from "@/lib/domain/time";
 import { MAX_SOURCE_LENGTH } from "../list-params";
@@ -247,5 +249,63 @@ export function BulkConfirmDialog({ title, description, confirmLabel, destructiv
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+const GUESS_FROM_NAME = "guess";
+
+export interface BulkBusinessTypeDialogProps {
+  count: number;
+  onClose(): void;
+  onSubmit(type: BusinessType | null): void;
+}
+
+/** Pick one of the eight types, or go back to guessing from the name (clears the stored type). */
+export function BulkBusinessTypeDialog({ count, onClose, onSubmit }: BulkBusinessTypeDialogProps) {
+  const ids = useId();
+  const [value, setValue] = useState("");
+  const options = [...BUSINESS_TYPES, GUESS_FROM_NAME];
+
+  return (
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Set the business type of {leadCount(count)}</DialogTitle>
+          <DialogDescription>Meeting times are ranked by business type. Guess from name clears it, so the name decides again.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (value === GUESS_FROM_NAME) onSubmit(null);
+            else if (isBusinessType(value)) onSubmit(value);
+          }}
+        >
+          <RadioGroup value={value} onValueChange={setValue} aria-label="Business type" className="grid gap-2 sm:grid-cols-2">
+            {options.map((option) => {
+              const id = `${ids}-${option}`;
+              return (
+                <Label
+                  key={option}
+                  htmlFor={id}
+                  className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border p-3 font-normal has-data-[state=checked]:border-primary has-data-[state=checked]:bg-primary/10"
+                >
+                  <RadioGroupItem id={id} value={option} />
+                  {isBusinessType(option) ? BUSINESS_TYPE_LABELS[option] : "Guess from name"}
+                </Label>
+              );
+            })}
+          </RadioGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="min-h-12" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-12" disabled={value === ""}>
+              Set business type
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -269,6 +269,7 @@ export async function importLeadsBatch(ctx: RequestContext | null, batchInput: u
         state: lead.state,
         country: lead.country,
         source: lead.source,
+        business_type: lead.business_type,
         notes: lead.notes,
         assigned_to: assigneeForPosition(assignment, row.position),
       },

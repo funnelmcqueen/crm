@@ -75,7 +75,7 @@ const EXPECTED_MAPPING: ReadonlyArray<readonly [string, string]> = [
   ['Country', 'Country'],
   ['Lead Source', 'Source'],
   ['Notes', 'Notes'],
-  ['Industry', "Don't import"],
+  ['Industry', 'Business type'],
   ['Employees', "Don't import"],
 ];
 

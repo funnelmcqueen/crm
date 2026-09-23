@@ -93,6 +93,7 @@ async function main(): Promise<void> {
     SUPABASE_SERVICE_ROLE_KEY: localbase.serviceRoleKey,
     APP_BASE_URL: APP_URL,
     DIALER_DRIVER: 'mock',
+    CALENDAR_DRIVER: 'mock',
     NEXT_TELEMETRY_DISABLED: '1',
   };
   // Spawning node directly (not the .cmd shim) needs no shell on Windows and gives a pid taskkill can walk.

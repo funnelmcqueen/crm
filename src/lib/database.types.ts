@@ -14,6 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          booked_by: string
+          client_request_id: string
+          created_at: string
+          ends_at: string
+          google_event_id: string | null
+          id: string
+          lead_id: string
+          note: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
+        }
+        Insert: {
+          booked_by: string
+          client_request_id: string
+          created_at?: string
+          ends_at: string
+          google_event_id?: string | null
+          id?: string
+          lead_id: string
+          note?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+        }
+        Update: {
+          booked_by?: string
+          client_request_id?: string
+          created_at?: string
+          ends_at?: string
+          google_event_id?: string | null
+          id?: string
+          lead_id?: string
+          note?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_booked_by_fkey"
+            columns: ["booked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bookable_hours: {
+        Row: {
+          ends_minute: number
+          id: string
+          starts_minute: number
+          weekday: number
+        }
+        Insert: {
+          ends_minute: number
+          id?: string
+          starts_minute: number
+          weekday: number
+        }
+        Update: {
+          ends_minute?: number
+          id?: string
+          starts_minute?: number
+          weekday?: number
+        }
+        Relationships: []
+      }
+      calendar_connection: {
+        Row: {
+          app_calendar_id: string | null
+          broken_at: string | null
+          connected_at: string
+          connected_by: string
+          google_email: string
+          id: boolean
+          refresh_token_ciphertext: string
+        }
+        Insert: {
+          app_calendar_id?: string | null
+          broken_at?: string | null
+          connected_at?: string
+          connected_by: string
+          google_email: string
+          id?: boolean
+          refresh_token_ciphertext: string
+        }
+        Update: {
+          app_calendar_id?: string | null
+          broken_at?: string | null
+          connected_at?: string
+          connected_by?: string
+          google_email?: string
+          id?: boolean
+          refresh_token_ciphertext?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_connection_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calls: {
         Row: {
           call_status: string | null
@@ -194,6 +307,7 @@ export type Database = {
           address: string | null
           assigned_to: string | null
           business_name: string
+          business_type: Database["public"]["Enums"]["business_type"] | null
           call_count: number
           city: string | null
           contact_name: string | null
@@ -218,6 +332,7 @@ export type Database = {
           address?: string | null
           assigned_to?: string | null
           business_name: string
+          business_type?: Database["public"]["Enums"]["business_type"] | null
           call_count?: number
           city?: string | null
           contact_name?: string | null
@@ -242,6 +357,7 @@ export type Database = {
           address?: string | null
           assigned_to?: string | null
           business_name?: string
+          business_type?: Database["public"]["Enums"]["business_type"] | null
           call_count?: number
           city?: string | null
           contact_name?: string | null
@@ -321,6 +437,7 @@ export type Database = {
           deleted_at: string | null
           device_seen_at: string | null
           email: string
+          google_calendar_id: string | null
           id: string
           in_app_calling_enabled: boolean
           name: string
@@ -334,6 +451,7 @@ export type Database = {
           deleted_at?: string | null
           device_seen_at?: string | null
           email: string
+          google_calendar_id?: string | null
           id: string
           in_app_calling_enabled?: boolean
           name?: string
@@ -347,6 +465,7 @@ export type Database = {
           deleted_at?: string | null
           device_seen_at?: string | null
           email?: string
+          google_calendar_id?: string | null
           id?: string
           in_app_calling_enabled?: boolean
           name?: string
@@ -408,6 +527,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      abandon_appointment: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       admin_agent_activity: {
         Args: {
           p_from: string
@@ -525,6 +650,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      begin_appointment: {
+        Args: {
+          p_client_request_id?: string
+          p_lead_id: string
+          p_note?: string
+          p_starts_at: string
+        }
+        Returns: Database["public"]["Tables"]["appointments"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      booked_intervals: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          ends_at: string
+          starts_at: string
+        }[]
+      }
       bulk_assign_leads: {
         Args: {
           p_expected_assigned_to?: string
@@ -563,6 +713,13 @@ export type Database = {
           result: string
         }[]
       }
+      bulk_set_business_type: {
+        Args: {
+          p_lead_ids: string[]
+          p_type?: Database["public"]["Enums"]["business_type"]
+        }
+        Returns: number
+      }
       bulk_set_lead_source: {
         Args: {
           p_lead_ids: string[]
@@ -588,6 +745,12 @@ export type Database = {
         }
         Returns: boolean
       }
+      cancel_appointment: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       claim_caller_id: {
         Args: {
           p_user_id: string
@@ -596,6 +759,31 @@ export type Database = {
           e164: string
           phone_number_id: string
         }[]
+      }
+      clear_agent_calendars: {
+        Args: never
+        Returns: number
+      }
+      confirm_appointment: {
+        Args: {
+          p_google_event_id: string
+          p_id: string
+        }
+        Returns: Database["public"]["Tables"]["appointments"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      connect_calendar: {
+        Args: {
+          p_app_calendar_id: string
+          p_ciphertext: string
+          p_email: string
+        }
+        Returns: undefined
       }
       consume_rate_limit: {
         Args: {
@@ -615,6 +803,10 @@ export type Database = {
           p_lead_id: string
         }
         Returns: string
+      }
+      disconnect_calendar: {
+        Args: never
+        Returns: undefined
       }
       export_leads: {
         Args: {
@@ -692,6 +884,16 @@ export type Database = {
       follow_up_tab_counts: {
         Args: never
         Returns: Json
+      }
+      get_calendar_status: {
+        Args: never
+        Returns: {
+          app_calendar_id: string
+          broken: boolean
+          connected: boolean
+          google_email: string
+          hours_set: boolean
+        }[]
       }
       get_company_name: {
         Args: never
@@ -875,6 +1077,10 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_calendar_broken: {
+        Args: never
+        Returns: undefined
+      }
       mark_voicemail_heard: {
         Args: {
           p_call_id: string
@@ -986,6 +1192,26 @@ export type Database = {
           website: string
         }[]
       }
+      set_agent_calendar_id: {
+        Args: {
+          p_calendar_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      set_bookable_hours: {
+        Args: {
+          p_rows: Json
+        }
+        Returns: undefined
+      }
+      set_lead_business_type: {
+        Args: {
+          p_lead_id: string
+          p_type?: Database["public"]["Enums"]["business_type"]
+        }
+        Returns: undefined
+      }
       skip_lead: {
         Args: {
           p_lead_id: string
@@ -1004,6 +1230,8 @@ export type Database = {
       }
     }
     Enums: {
+      appointment_status: "pending" | "scheduled" | "cancelled"
+      business_type: "restaurant" | "cafe_bakery" | "hotel_motel" | "home_services" | "auto" | "retail" | "beauty" | "other"
       call_direction: "OUTBOUND" | "INBOUND"
       call_mode: "IN_APP" | "TEL"
       call_outcome: "NO_ANSWER" | "VOICEMAIL" | "CONNECTED" | "INTERESTED" | "FOLLOW_UP" | "APPOINTMENT" | "NOT_INTERESTED" | "WRONG_NUMBER"
@@ -1136,6 +1364,8 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      appointment_status: ["pending", "scheduled", "cancelled"],
+      business_type: ["restaurant", "cafe_bakery", "hotel_motel", "home_services", "auto", "retail", "beauty", "other"],
       call_direction: ["OUTBOUND", "INBOUND"],
       call_mode: ["IN_APP", "TEL"],
       call_outcome: ["NO_ANSWER", "VOICEMAIL", "CONNECTED", "INTERESTED", "FOLLOW_UP", "APPOINTMENT", "NOT_INTERESTED", "WRONG_NUMBER"],

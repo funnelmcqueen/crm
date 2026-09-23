@@ -1,4 +1,4 @@
-// Per-device pep-talk state (docs/DEVIATIONS.md D45): the agent's setting, today's call count and
+// Per-device pep-talk state (docs/DEVIATIONS.md D49): the agent's setting, today's call count and
 // the lines they have already seen today.
 //
 // This lives in localStorage rather than on the profile, exactly like the call-mode preference it

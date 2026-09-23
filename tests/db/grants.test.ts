@@ -86,6 +86,23 @@ const MATRIX: Record<string, Access> = {
   // agent Today dashboard
   get_my_call_days: 'api',
   my_caller_id_available: 'api',
+  // closer calendar booking (D46)
+  set_lead_business_type: 'api',
+  bulk_set_business_type: 'api',
+  begin_appointment: 'api',
+  confirm_appointment: 'api',
+  abandon_appointment: 'api',
+  cancel_appointment: 'api',
+  booked_intervals: 'api',
+  get_calendar_status: 'api',
+  // Google Calendar connection (D47)
+  set_bookable_hours: 'api',
+  connect_calendar: 'api',
+  disconnect_calendar: 'api',
+  mark_calendar_broken: 'service',
+  // A calendar per agent (D48)
+  set_agent_calendar_id: 'service',
+  clear_agent_calendars: 'service',
   // stage 7 (follow-ups)
   list_follow_ups: 'api',
   follow_up_tab_counts: 'api',
@@ -121,6 +138,7 @@ const INVOKER = new Set([
   'bulk_delete_leads',
   'export_selected_leads',
   'list_skipped_leads',
+  'bulk_set_business_type',
 ]);
 
 interface FnAcl {

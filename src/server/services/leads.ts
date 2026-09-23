@@ -333,7 +333,7 @@ export async function getLeadDetail(ctx: RequestContext | null, id: unknown): Pr
     admin = { assignedTo };
   }
 
-  return { lead: toLeadRecord(row), history, admin };
+  return { lead: toLeadRecord({ ...row, business_type: null }), history, admin };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -566,7 +566,7 @@ export async function updateLeadDetails(
   if (error) fail(error);
   const updated = data?.[0];
   if (!updated) throw new AppError("not_found");
-  return toLeadRecord(updated);
+  return toLeadRecord({ ...updated, business_type: null });
 }
 
 export async function reassignLead(

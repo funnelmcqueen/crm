@@ -637,6 +637,8 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     [finishWrapUp, router],
   );
 
+  const markMeetingBooked = useCallback((leadId: string) => dispatch({ type: "MEETING_BOOKED", leadId }), [dispatch]);
+
   const value = useMemo<DialerContextValue>(
     () => ({
       state,
@@ -650,6 +652,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       hangup,
       setMuted,
       sendDigits,
+      markMeetingBooked,
       deviceReady,
       setInputDevice,
       setOutputDevice,
@@ -667,6 +670,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       hangup,
       setMuted,
       sendDigits,
+      markMeetingBooked,
       deviceReady,
       setInputDevice,
       setOutputDevice,

@@ -1,5 +1,6 @@
 // Bulk lead actions (docs/DEVIATIONS.md D41): limits, result shapes and the messages shown after an action.
 // Shared by the server services and the Leads page, so a count reads the same everywhere.
+import { BUSINESS_TYPE_LABELS, type BusinessType } from "./business-type";
 import { STATUS_LABELS, type LeadStatus } from "./statuses";
 
 /** The most leads one selection (and one bulk request) may hold. The SQL functions enforce the same cap. */
@@ -123,6 +124,16 @@ export function describeSourceResult(result: BulkCountResult, source: string | n
   const head = result.count > 0 ? `${what} ${leadCount(result.count)}.` : "No sources changed.";
   const same = result.requested - result.count;
   return sentence([head, same > 0 && result.count > 0 ? `${leadCount(same)} already had it or ${same === 1 ? "is" : "are"} no longer available.` : null]);
+}
+
+export function describeBusinessTypeResult(result: BulkCountResult, type: BusinessType | null): string {
+  if (result.count === 0) return "No business types changed.";
+  if (type === null) {
+    return `Cleared the business type on ${leadCount(result.count)}, so ${result.count === 1 ? "its name decides" : "their names decide"} again.`;
+  }
+  const head = `Set the business type to ${BUSINESS_TYPE_LABELS[type]} on ${leadCount(result.count)}.`;
+  const same = result.requested - result.count;
+  return sentence([head, same > 0 ? `${leadCount(same)} already had it or ${same === 1 ? "is" : "are"} no longer available.` : null]);
 }
 
 export function describeDeleteResult(result: BulkCountResult): string {

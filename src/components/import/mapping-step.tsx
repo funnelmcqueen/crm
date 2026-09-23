@@ -104,7 +104,7 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
       <div className="flex min-h-12 items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3">
         <Label htmlFor="import-append-unmapped" className="flex cursor-pointer flex-col items-start gap-0.5">
           <span className="font-semibold">Append unmapped columns to notes</span>
-          <span className="text-xs font-normal text-muted-foreground">Adds lines like &quot;Industry: HVAC&quot; so nothing is lost.</span>
+          <span className="text-xs font-normal text-muted-foreground">Adds lines like &quot;Employees: 12&quot; so nothing is lost.</span>
         </Label>
         <Switch id="import-append-unmapped" checked={appendUnmapped} onCheckedChange={onAppendUnmappedChange} />
       </div>

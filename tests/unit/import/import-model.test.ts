@@ -116,7 +116,8 @@ describe('mapping validation', () => {
     expect(requiredFieldLabels(missingRequiredImportFields({}))).toEqual(['Business name', 'Phone']);
     const { mapping } = samplePreview();
     expect(missingRequiredImportFields(mapping)).toEqual([]);
-    expect(mapping).toMatchObject({ Company: 'business_name', 'Phone Number': 'phone', City: 'city', Industry: null });
+    // "Industry" is now a recognized business type column (Task 11).
+    expect(mapping).toMatchObject({ Company: 'business_name', 'Phone Number': 'phone', City: 'city', Industry: 'business_type' });
   });
 });
 

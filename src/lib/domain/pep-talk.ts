@@ -1,4 +1,4 @@
-// Picking a pep-talk line (docs/DEVIATIONS.md D45). Pure: no storage, no randomness of its own.
+// Picking a pep-talk line (docs/DEVIATIONS.md D49). Pure: no storage, no randomness of its own.
 //
 // Every choice is derived from a caller-supplied seed, so the same call or the same day yields the
 // same line. That keeps a server render and its hydration in agreement, makes "did it fire?" a unit

@@ -37,7 +37,7 @@ export interface WrapUp {
 export type DialerState =
   | { kind: "idle" }
   | { kind: "preparing"; subject: CallSubject; callId: string | null }
-  | { kind: "ringing"; subject: CallSubject; callId: string; warning: string | null }
+  | { kind: "ringing"; subject: CallSubject; callId: string; warning: string | null; meetingBooked?: boolean }
   | {
       kind: "in-call";
       subject: CallSubject;
@@ -46,10 +46,18 @@ export type DialerState =
       connectedAt: number;
       muted: boolean;
       warning: string | null;
+      meetingBooked?: boolean;
     }
   | ({ kind: "wrap-up" } & WrapUp)
   | { kind: "incoming"; callId: string | null; context: IncomingContext }
-  | { kind: "tel-pending"; subject: CallSubject; callId: string | null; clientRequestId: string; startedAt: number };
+  | {
+      kind: "tel-pending";
+      subject: CallSubject;
+      callId: string | null;
+      clientRequestId: string;
+      startedAt: number;
+      meetingBooked?: boolean;
+    };
 
 export type DialerAction =
   | { type: "OUTBOUND_START"; subject: CallSubject }
@@ -72,7 +80,9 @@ export type DialerAction =
   | { type: "INCOMING_ENDED" }
   | { type: "PRESELECT_OUTCOME"; outcome: CallOutcome }
   | { type: "RESTORE_WRAP_UP"; wrapUp: WrapUp }
-  | { type: "WRAP_UP_DONE" };
+  | { type: "WRAP_UP_DONE" }
+  /** A meeting was booked with this lead from the booking panel (docs/DEVIATIONS.md D46). */
+  | { type: "MEETING_BOOKED"; leadId: string };
 
 export const INITIAL_DIALER_STATE: DialerState = { kind: "idle" };
 
@@ -98,6 +108,11 @@ function wrapUpFrom(
     preselectedOutcome: preselectOutcomeForEndReason(reason) ?? (connected ? null : "NO_ANSWER"),
     label: subject.label,
   };
+}
+
+/** A meeting booked during the call makes Appointment the outcome to confirm. */
+function withMeeting(next: DialerState, meetingBooked: boolean | undefined): DialerState {
+  return meetingBooked && next.kind === "wrap-up" ? { ...next, preselectedOutcome: "APPOINTMENT" } : next;
 }
 
 /**
@@ -132,6 +147,7 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
           connectedAt: action.at,
           muted: false,
           warning: state.kind === "ringing" ? state.warning : null,
+          ...(state.kind === "ringing" && state.meetingBooked ? { meetingBooked: true } : {}),
         };
       }
       return state;
@@ -140,8 +156,8 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
       if (state.kind === "preparing" && state.callId !== null) {
         return wrapUpFrom(state.subject, state.callId, action.reason, false);
       }
-      if (state.kind === "ringing") return wrapUpFrom(state.subject, state.callId, action.reason, false);
-      if (state.kind === "in-call") return wrapUpFrom(state.subject, state.callId, action.reason, true);
+      if (state.kind === "ringing") return withMeeting(wrapUpFrom(state.subject, state.callId, action.reason, false), state.meetingBooked);
+      if (state.kind === "in-call") return withMeeting(wrapUpFrom(state.subject, state.callId, action.reason, true), state.meetingBooked);
       return state;
 
     case "WARNING": {
@@ -172,7 +188,7 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
         clientRequestId: state.clientRequestId,
         mode: "TEL",
         endReason: "completed",
-        preselectedOutcome: null,
+        preselectedOutcome: state.meetingBooked ? "APPOINTMENT" : null,
         label: state.subject.label,
       };
 
@@ -204,6 +220,15 @@ export function dialerReducer(state: DialerState, action: DialerAction): DialerS
 
     case "INCOMING_ENDED":
       return state.kind === "incoming" ? INITIAL_DIALER_STATE : state;
+
+    case "MEETING_BOOKED":
+      if ((state.kind === "ringing" || state.kind === "in-call" || state.kind === "tel-pending") && state.subject.leadId === action.leadId) {
+        return state.meetingBooked ? state : { ...state, meetingBooked: true };
+      }
+      if (state.kind === "wrap-up" && state.leadId === action.leadId && state.preselectedOutcome !== "APPOINTMENT") {
+        return { ...state, preselectedOutcome: "APPOINTMENT" };
+      }
+      return state;
 
     case "PRESELECT_OUTCOME":
       return state.kind === "wrap-up" && state.preselectedOutcome !== action.outcome

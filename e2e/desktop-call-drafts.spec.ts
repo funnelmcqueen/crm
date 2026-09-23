@@ -5,7 +5,9 @@ test('lead notes survive reload, navigation and a failed save', async ({ page })
   await signIn(page, 'blair');
   const id = await findLeadId(page, 'Windy City Heating & Cooling');
   await page.goto(`/leads/${id}`);
-  const notes = page.getByLabel('Notes', { exact: true });
+  // By id, not by label: the textarea's own <Label> reads "Notes" and the section wrapping it carries
+  // aria-label="Notes", so getByLabel('Notes') matches both and trips Playwright's strict mode.
+  const notes = page.locator('#lead-notes');
   const original = await notes.inputValue();
   await notes.fill('Ask for the owner on Friday.');
   page.once('dialog', (dialog) => dialog.accept());

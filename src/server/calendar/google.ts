@@ -1,0 +1,126 @@
+// The Google-backed CalendarClient (docs/DEVIATIONS.md D47). This is the privacy boundary for this milestone: it
+// must never call an events-listing endpoint (the granted scopes do not allow one) and must never return anything
+// from Google beyond bare busy start/end times and the created event's id — no title, description or attendee.
+// The database is out of scope here: the caller (src/server/services/calendar-booking.ts) reads the connection
+// row and the bookable hours and passes them in through GoogleCalendarDeps.
+//
+// Each agent has a calendar of their own on the one connected account (D48), and this module is always handed
+// the id of the booking agent's. Provisioning happens elsewhere and earlier — when the agent's account is
+// created, or from Settings for an agent who predates D48 — so there is no "agent with no calendar" state for
+// this module to handle; the caller refuses the booking before reaching here. An earlier version of this
+// contract had this module create a calendar lazily on first use; that was dropped (fix round 1) because a
+// rejected write after the calendar was created would orphan it on the account, and because the RPCs involved
+// are not callable from an agent's own session, so a lazy create would just raise forbidden.
+import "server-only";
+import { bookableWindows, type BookableRange } from "@/lib/domain/bookable-hours";
+import { accessTokenFor, deleteEvent, freeBusy, GoogleApiError, insertEvent } from "@/server/google/api";
+import { decryptRefreshToken } from "@/server/google/crypto";
+import type { CalendarAvailability, CalendarClient, CalendarInterval } from "./types";
+
+/** A connected account, as stored (ciphertext only — never the raw refresh token). */
+export interface GoogleCalendarConnection {
+  readonly refreshTokenCiphertext: string;
+  /**
+   * The booking agent's own secondary calendar on the connected account (D48). One account hosts one of these
+   * per agent, all created by this app, so the single refresh token above reaches every one of them.
+   */
+  readonly calendarId: string;
+}
+
+export interface GoogleCalendarDeps {
+  connection: GoogleCalendarConnection;
+  ranges: readonly BookableRange[];
+  /** The company zone: bookable hours are interpreted in it, and it is sent with every created event. */
+  timeZone: string;
+  /** Called once when any Google call fails with GoogleApiError kind "invalid_grant" (access revoked). */
+  onInvalidGrant: () => Promise<void>;
+}
+
+/**
+ * createMeeting's input, widened with fields the CalendarClient interface itself does not carry: the optional
+ * lead email, and the booking's own client request id (design §7) — the Meet conference's request id is derived
+ * from it so that the mandated single retry of events.insert (src/server/google/api.ts) cannot create a second
+ * conference: a timed-out insert Google actually processed and a retry of the same booking attempt carry the
+ * same clientRequestId, so Google recognises the same conference request instead of creating another one.
+ */
+interface CreateMeetingInput {
+  start: Date;
+  end: Date;
+  title: string;
+  description: string;
+  leadEmail?: string | null;
+  /** The agent running the meeting: they need the Meet link in their own calendar and inbox (D48). */
+  agentEmail?: string | null;
+  clientRequestId: string;
+}
+
+/**
+ * Runs one Google call chain: decrypts the refresh token, exchanges it for an access token, then `fn`. A
+ * GoogleApiError with kind "invalid_grant" reports the connection broken through `onInvalidGrant` (once) before
+ * rethrowing; every other Google/network error rethrows untouched.
+ *
+ * A decrypt failure (GOOGLE_TOKEN_ENCRYPTION_KEY rotated or wrong in this environment, or a tampered ciphertext)
+ * is deliberately treated the same as invalid_grant: it also reports the connection broken. Otherwise Settings
+ * keeps showing "Connected" while booking is silently unavailable and nothing ever points the owner at the real
+ * cause — reconnecting genuinely is the fix either way, since it re-encrypts the refresh token under whatever
+ * key is current. The decrypt call is isolated in its own try/catch so this only ever fires for a
+ * decrypt failure, never for a later, unrelated error from accessTokenFor or `fn`.
+ */
+async function withAccessToken<T>(deps: GoogleCalendarDeps, fn: (accessToken: string) => Promise<T>): Promise<T> {
+  let refreshToken: string;
+  try {
+    refreshToken = decryptRefreshToken(deps.connection.refreshTokenCiphertext);
+  } catch (err) {
+    await deps.onInvalidGrant();
+    throw err;
+  }
+  try {
+    const accessToken = await accessTokenFor(refreshToken);
+    return await fn(accessToken);
+  } catch (err) {
+    if (err instanceof GoogleApiError && err.kind === "invalid_grant") {
+      await deps.onInvalidGrant();
+    }
+    throw err;
+  }
+}
+
+export function createGoogleCalendar(deps: GoogleCalendarDeps): CalendarClient & { cancelMeeting(eventId: string): Promise<void> } {
+  return {
+    async readAvailability({ from, to }): Promise<CalendarAvailability> {
+      const windows: CalendarInterval[] = bookableWindows(deps.ranges, deps.timeZone, from, to).map((window) => ({
+        start: window.start,
+        end: window.end,
+      }));
+      // The agent's own calendar and nothing else (D48). The owner's primary calendar used to be read here,
+      // from when every meeting was theirs to run; they do not attend these meetings, so their own commitments
+      // must not block an agent — and the app no longer reads their personal calendar at all.
+      const busyTimes = await withAccessToken(deps, (accessToken) =>
+        freeBusy(accessToken, [deps.connection.calendarId], from, to),
+      );
+      const busy: CalendarInterval[] = busyTimes.map((block) => ({ start: block.start, end: block.end }));
+      return { windows, busy };
+    },
+
+    async createMeeting(input: CreateMeetingInput): Promise<{ eventId: string }> {
+      return withAccessToken(deps, async (accessToken) => {
+        const { id } = await insertEvent(accessToken, deps.connection.calendarId, {
+          summary: input.title,
+          description: input.description,
+          start: input.start,
+          end: input.end,
+          timeZone: deps.timeZone,
+          attendeeEmails: [input.agentEmail, input.leadEmail].filter((email): email is string => Boolean(email)),
+          conferenceRequestId: input.clientRequestId,
+        });
+        return { eventId: id };
+      });
+    },
+
+    async cancelMeeting(eventId: string): Promise<void> {
+      return withAccessToken(deps, async (accessToken) => {
+        await deleteEvent(accessToken, deps.connection.calendarId, eventId);
+      });
+    },
+  };
+}

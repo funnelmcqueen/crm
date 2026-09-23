@@ -9,7 +9,7 @@ function isPepSetting(value: string): value is PepSetting {
   return (PEP_SETTINGS as readonly string[]).includes(value);
 }
 
-/** Between-calls lines: level, or off entirely (docs/DEVIATIONS.md D45). */
+/** Between-calls lines: level, or off entirely (docs/DEVIATIONS.md D49). */
 export function PepSection() {
   const [setting, setSetting] = usePepSetting();
 

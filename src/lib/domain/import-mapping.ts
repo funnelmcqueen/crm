@@ -1,4 +1,5 @@
 import { isSupportedCountry, type CountryCode } from 'libphonenumber-js';
+import { businessTypeFromImportValue, type BusinessType } from './business-type';
 import { nameCityKey } from './dedupe';
 import { normalizePhone } from './phone';
 import { normalizeWebsiteDomain } from './website';
@@ -14,6 +15,7 @@ export const IMPORT_FIELD_KEYS = [
   'state',
   'country',
   'source',
+  'business_type',
   'notes',
 ] as const;
 
@@ -167,6 +169,12 @@ export const CRM_IMPORT_FIELDS: readonly ImportFieldDef[] = [
     synonyms: ['Lead Source', 'Origin', 'Channel', 'List', 'List Name', 'Campaign'],
   },
   {
+    key: 'business_type',
+    label: 'Business type',
+    required: false,
+    synonyms: ['Business Type', 'Category', 'Business Category', 'Industry', 'Type', 'Vertical', 'Niche'],
+  },
+  {
     key: 'notes',
     label: 'Notes',
     required: false,
@@ -198,6 +206,7 @@ export interface NormalizedImportLead {
   state: string | null;
   country: string | null;
   source: string | null;
+  business_type: BusinessType | null;
   notes: string | null;
   dedupe_name_key: string | null;
 }
@@ -495,6 +504,11 @@ export function validateImportRow(
     return { ok: false, reasons };
   }
 
+  const businessTypeRaw = values.business_type;
+  const businessType = businessTypeFromImportValue(businessTypeRaw);
+  // An unrecognised category is kept, like any unmapped column, rather than silently dropped.
+  if (businessTypeRaw !== undefined && businessType === null) extraLines.push(`Business type: ${businessTypeRaw}`);
+
   const notes = [...noteParts, ...extraLines].join('\n');
   const website = values.website ?? null;
   return {
@@ -512,6 +526,7 @@ export function validateImportRow(
       state: values.state ?? null,
       country: values.country ?? null,
       source: values.source ?? null,
+      business_type: businessType,
       notes: notes === '' ? null : notes,
       dedupe_name_key: nameCityKey(businessName, values.city),
     },

@@ -3,8 +3,10 @@ import { z } from "zod";
 import type { Database, Json } from "@/lib/database.types";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
 import { endOfDayInTz, isValidTimeZone, startOfDayInTz } from "@/lib/domain/time";
+import { isGoogleDriver } from "@/server/calendar/client";
 import { requireAdmin, type RequestContext } from "@/server/context";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
+import { provisionAgentCalendar } from "@/server/services/calendar-connection";
 import { createAdminClient } from "@/server/supabase/admin";
 
 // Admin agent management (SPEC 8 "Agents (admin)", SPEC 5 "On disable, also ban the user in Supabase Auth").
@@ -311,9 +313,27 @@ export async function createAgent(
   const warning =
     updated.error || (updated.data ?? []).length !== 1
       ? "The account was created, but its daily target and time zone could not be saved. Edit the agent to set them."
-      : null;
+      : (await provisionCalendar(userId, values.name, values.timezone));
 
   return { userId, name: values.name, email: values.email, password, warning };
+}
+
+/**
+ * Gives the new agent their own Google calendar (docs/DEVIATIONS.md D48), so they can book from their first
+ * day. Never fails the account: an agent without a calendar simply cannot book yet, and Settings provisions
+ * them later. Returns the warning to show, or null when there is nothing to say.
+ */
+async function provisionCalendar(userId: string, name: string, timeZone: string): Promise<string | null> {
+  if (!isGoogleDriver()) return null;
+  try {
+    const created = await provisionAgentCalendar(userId, name, timeZone);
+    return created
+      ? null
+      : "The account was created, but Google Calendar isn't connected, so they can't book meetings yet.";
+  } catch (error) {
+    console.error("[agents] provisioning a calendar failed", { userId, code: error instanceof Error ? error.name : typeof error });
+    return "The account was created, but their meetings calendar could not be. Give them one from Settings.";
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

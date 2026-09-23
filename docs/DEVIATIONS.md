@@ -82,7 +82,12 @@ worse than no index.
 | [D42](#d42-a-skipped-lead-waits-in-a-skipped-queue) | A skipped lead waits in a Skipped queue instead of coming back |
 | [D43](#d43-the-agent-dashboard-is-a-today-workspace-and-one-goal-module-drives-every-target-display) | The agent dashboard is a Today workspace, and one goal module drives every target display |
 | [D44](#d44-pipeline-stage-navigation-and-bounded-columns) | Pipeline stage navigation and bounded columns |
-| [D45](#d45-between-calls-lines) | Between-calls lines |
+| [D45](#d45-phase-2-calling-workspace-and-recoverable-drafts) | Phase 2 calling workspace and recoverable drafts |
+| [D46](#d46-closer-calendar-booking) | Closer calendar booking |
+| [D47](#d47-google-calendar-connection) | Google Calendar connection |
+| [D48](#d48-a-google-calendar-per-agent) | A Google calendar per agent |
+| [D49](#d49-between-calls-lines) | Between-calls lines |
+| [D50](#d50-versioned-march-restaurant-call-playbook) | Versioned March restaurant call playbook |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -747,7 +752,144 @@ the empty queue links to Follow-ups and Skipped. Existing outcome keyboard short
 retain drafts; a warning is shown. Browser Back/Forward preserves drafts without rewriting browser history.
 No migrations, provider settings, credentials, permissions or production data were changed for Phase 2.
 
-## D45. Between-calls lines
+## D46. Closer calendar booking
+**Spec:** §15 lists Google Calendar under "Future-ready, not built".
+**Built:** agents book 30-minute meetings with a lead into one closer calendar from the lead page or the in-call bar.
+The panel shows open slots inside the closer's bookable windows, plain **Busy** blocks for the rest of those windows
+(D47 narrows this: busy time outside the bookable hours never reaches the browser at all), full
+details only of meetings the agent booked, and the three best slots for the lead's business type phrased in the lead's
+local time ("Tomorrow at 5 pm EDT"). Booking writes go through guarded SECURITY DEFINER RPCs; a unique index on live
+start times makes a double booking impossible; failures abandon the pending appointment until the meeting event is created. A booking during
+a call preselects Appointment; otherwise the lead moves to Appointment unless it is already further along. Business
+type is set in bulk, through CSV import or corrected in the panel, and guessed from the name when blank. This release
+runs on an in-memory mock calendar (`CALENDAR_DRIVER=mock`, refused in production); the Google connection is the second
+milestone. Design: `docs/superpowers/specs/2026-09-17-closer-calendar-booking-design.md`.
+**Why:** the closer confirms meetings personally, agents need to offer concrete times mid-call, and the closer's calendar
+details are none of the agents' business.
+**Not built:** texts or emails to the lead, rescheduling or cancelling by agents, reminders, several closers. States
+spanning two time zones use their larger zone. Marking a meeting cancelled in the CRM leaves the Google event in place
+— superseded by D47 below, which deletes the Google event on cancel once a connection exists.
+
+## D47. Google Calendar connection
+**Spec:** §15 lists Google Calendar under "Future-ready, not built". D46 shipped booking against an in-memory mock
+calendar and named the real Google connection as its second milestone.
+**Built:** the closer's real Google Calendar now backs booking (`CALENDAR_DRIVER=google`), through a minimal,
+least-privilege OAuth connection (`docs/superpowers/specs/2026-09-18-google-calendar-connection-design.md`):
+
+- **Four scopes, exactly, no broader grant:**
+
+  | Scope | Permits |
+  |---|---|
+  | `openid`, `https://www.googleapis.com/auth/userinfo.email` | The account's email — shown in Settings, and used as the primary calendar's id for the free/busy query |
+  | `https://www.googleapis.com/auth/calendar.freebusy` | `freebusy.query` only: bare busy `start`/`end` pairs per calendar, never a title, description or attendee |
+  | `https://www.googleapis.com/auth/calendar.app.created` | Create a secondary calendar, and see/create/change/delete events only **on calendars the app itself created** — authorises `events.insert` and `events.delete` on that calendar, nothing on the primary one |
+
+- **Meetings live on a calendar the app created**, never the closer's primary calendar, because `calendar.app.created`
+  is the only write scope granted. The OAuth connect flow (`GET /api/google/callback`,
+  `src/server/http/google-oauth.ts`) creates a secondary calendar titled "Funnel McQueen meetings" on first connect
+  and stores its id in `calendar_connection.app_calendar_id` in the same write that stores the connection.
+  **The calendar client (`src/server/calendar/google.ts`) never creates this calendar itself** — an intentional
+  change from the design, which had the client create it lazily on first use: a `connect_calendar` rejection after
+  a lazy create would have orphaned the calendar on the closer's account, and `connect_calendar` is admin-only, so a
+  lazy create triggered by an agent's own booking session would just raise `forbidden`. A connection stored without
+  an app calendar id — a state the connect flow itself never produces — is treated as booking-unavailable rather
+  than attempted (`buildGoogleDeps`, `src/server/services/calendar-booking.ts`).
+- **Bookable hours live in the CRM**, not read from a Google calendar — a change from D46's original design (its §4
+  said "windows come from a bookable calendar"). `public.bookable_hours` (one row per weekday range, minutes from
+  local midnight, replaced atomically by the admin-only `set_bookable_hours` RPC) replaces it, interpreted in
+  `settings.default_timezone` so a window stays "10:00-12:00 local" across a daylight-saving change.
+- **The meeting gets a Google Meet link, and the lead is invited as a guest** when they have an email address;
+  Google sends that invitation, not the CRM (`insertEvent`, `src/server/google/api.ts`,
+  `conferenceDataVersion=1&sendUpdates=all`).
+- **Cancelling in the CRM deletes the Google event too** (`cancelAppointment` → `cancelMeeting`), so Google notifies
+  the guest. A 404/410 from Google (already gone) counts as success; any other failure leaves the CRM row cancelled
+  and logs the appointment and event ids for manual reconciliation — the calendar can be tidied by hand. This
+  supersedes both D46's own "Not built" line above and the comment above `cancel_appointment` in
+  `supabase/migrations/20260915001900_calendar_booking.sql` ("CRM only: the event stays in Google Calendar until
+  the closer deletes it there") — that migration already ran elsewhere by the time this milestone shipped, so its
+  comment could not be edited in place and is stale as of this deviation.
+- **The refresh token is stored only as AES-256-GCM ciphertext** (`src/server/google/crypto.ts`,
+  `calendar_connection.refresh_token_ciphertext`; no API role, admin included, may select that column — the one
+  place that needs the plaintext, disconnecting to revoke it with Google, reads it with the service role). Access
+  tokens are obtained per server instance and cached in memory only, never written to the database, a log, a cookie
+  or the browser.
+- **`unauthorized_client` from Google is a permanent error, not a revoked grant.** Only Google's `invalid_grant`
+  reason marks the connection broken (`mark_calendar_broken`, which shows the reconnect banner in Settings);
+  `unauthorized_client` (a bad or rotated client id/secret) is classified `permanent` instead (`classify`,
+  `src/server/google/api.ts`), because sending the owner through a reconnect would not fix a client-credential
+  problem — reconnecting is specifically the remedy for a revoked or expired refresh token.
+**Why:** the least-privilege scopes keep milestone 1's privacy promise ("no event title, description or attendee
+ever reaches an agent") by never being granted permission to read those fields at all, which is stronger than
+milestone 1's server discarding what it read. Reading bookable hours from the CRM instead of a Google calendar
+avoids asking the owner to maintain a second, Google-side notion of "bookable" that the app cannot validate.
+Misclassifying `unauthorized_client` as a revoked grant would send the owner through a reconnect flow that can
+never fix a credentials problem, and would hide the real fix (checking the variables) behind the wrong prompt.
+
+**Not built:** several closers or per-agent calendars; rescheduling or cancelling by agents; reminders; watching
+Google for changes made there (no push notifications or sync tokens, so a meeting moved or deleted directly in
+Google leaves the CRM's own record in place and the slot stays blocked until it is cancelled in the CRM);
+recurring meetings; anything that reads an event's title, description or guest list. **Busy time is read only from
+the closer's primary calendar and the app's own calendar** (`readAvailability`, `src/server/calendar/google.ts`) —
+time blocked on another secondary calendar the closer keeps (a shared family calendar, say) is invisible to the
+slot engine, and an agent could book over it. Enumerating the closer's calendars would need a broader scope than
+the four above allow, so the mitigation is to keep commitments on the primary calendar; the smallest fix if this
+bites is a Settings field listing extra calendar ids to treat as busy.
+
+
+## D48. A Google calendar per agent
+**Spec:** D46 and D47 were built around one closer: the owner ran every meeting, so every booking landed in one
+calendar and only an admin could cancel. The owner confirmed (2026-09-23) they do not attend these meetings —
+agents close their own — which makes that shape wrong rather than merely limiting. This supersedes D47's
+"Not built: several closers or per-agent calendars" and the "busy time is read from the closer's primary
+calendar" paragraph above it.
+**Built:** one Google account still, now hosting one secondary calendar per person. No new scopes, no per-agent
+OAuth: `calendar.app.created` already permits creating secondary calendars and reading and writing events on
+calendars this app created, so the one refresh token reaches every one of them.
+
+- **`profiles.google_calendar_id`** names each person's own calendar. Null means "not provisioned", and booking
+  is unavailable to that person with the ordinary "Booking isn't available right now" message
+  (`buildGoogleDeps`, `src/server/services/calendar-booking.ts`). It is written only by
+  `set_agent_calendar_id` and cleared only by `clear_agent_calendars`, both **service-role only** — the same
+  reasoning as `mark_calendar_broken` (D47): an agent's own session must not be able to create calendars on the
+  owner's account as a side effect of booking.
+- **Provisioning is always admin- or server-initiated:** with the agent's account (`createAgent`, best effort —
+  a failure warns and never fails the account), from the Settings card for anyone who predates the connection,
+  and at connect time for the admin connecting, who is assigned the calendar created then. That last one is why
+  the connect-time calendar is not left empty on the account now that meetings go elsewhere.
+- **Two agents may hold the same clock time.** `appointments_live_start_key` is unique on
+  `(booked_by, starts_at)` rather than `starts_at` alone, so nobody is in two meetings at once but parallel
+  closers are no longer mutually exclusive. `booked_intervals` is scoped to the caller, so another agent's
+  meetings neither block a picker nor appear in it, and the availability cache is keyed by owner as well as
+  range so one agent is never served another's windows and busy times.
+- **An agent cancels their own meeting; an admin still cancels any** (`cancel_appointment`). The Google event is
+  deleted from the calendar named by the appointment's `booked_by`, not the caller's — an admin cancelling an
+  agent's meeting would otherwise delete against the wrong calendar.
+- **Busy time is each agent's own calendar and nothing else.** The owner's primary calendar is no longer read at
+  all: they do not attend these meetings, so their dentist appointment must not block an agent. The app now
+  reads none of the owner's personal calendar data, which is stronger than D47's position.
+- **The agent is an attendee on every meeting**, beside the lead when the lead has an email. Google mails them
+  the invitation with the Meet link, which is also how the meeting reaches their own Google Calendar and phone —
+  the app never shares a calendar from the owner's account, which would need an ACL scope it does not hold.
+- **Reconnecting to an account that cannot be proved to be the same one clears every stored calendar id**
+  (`clear_agent_calendars`, called from the OAuth callback). Their old ids name calendars the new token cannot
+  reach, and the resulting failures classify as `permanent`, so nothing would mark the connection broken and
+  Settings would keep saying "Connected" while every booking failed — the D47 C1 failure, multiplied. Cleared,
+  Settings shows plainly who needs a new calendar.
+
+**Why:** separate Google accounts per agent would isolate failures better, but every agent would have to click
+through Google's unverified-app consent themselves, and an unverified published app has user caps — a
+verification project, for a team of a few. One account with many calendars needs no new consent from anyone and
+no new scopes.
+
+**Not built:** per-agent bookable hours (hours remain one company-wide week in the company time zone, though
+`profiles.timezone` already exists if that changes) or per-agent time zones; rescheduling; reminders; agents
+sharing calendars into their own Google accounts by ACL. **One broken connection still takes booking offline for
+everyone**, since the connection is still a singleton — isolating that needs the per-account model above.
+**Deleting an agent leaves their calendar on the account**, empty or not; `docs/RUNBOOK.md` says to remove
+strays by hand, next to the account-switch case. A failure to store a calendar id after Google created it
+likewise strands an empty calendar, and re-provisioning simply makes another.
+
+## D49. Between-calls lines
 **Spec:** not mentioned. §7 covers the call workspace and §6 the dashboard; neither asks for anything like this.
 **Built:** a one-liner in three places, from a written pool of ~100 in `src/lib/domain/pep-talk-lines.ts`: under the goal copy
 on Today, in a toast after a logged outcome (always the first call of the day, then about one in three), and in place of the
@@ -761,7 +903,7 @@ hung up on is the audience, not the punchline. Off is one click away in Settings
 **Not built:** nothing is stored server-side, so the level and the day's counters do not follow an agent between devices, and
 the milestone counter counts calls logged in that browser rather than reading the dashboard's figure.
 
-## D46. Versioned March restaurant call playbook
+## D50. Versioned March restaurant call playbook
 **Spec:** §7 defines the call workspace but does not provide campaign-specific scripting or live objection guidance.
 **Built:** every lead workspace now includes a compact, read-only Call Playbook panel with the reviewed March restaurant callback script (v3): a personalized opening, five stages, eight objection responses, booking handoff, no-show recovery, and factual-call guardrails. The content lives in the pure `src/lib/domain/call-playbook.ts` module and the page panel needs no client state, new API, database table, or permission.
 **Why:** agents need the next useful line while a lead is open. A static, versioned source gives every caller the same approved words without introducing an admin configuration surface before the team has tested the flow.

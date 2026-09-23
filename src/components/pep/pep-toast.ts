@@ -14,7 +14,7 @@ export interface CheerOutcomeInput {
 }
 
 /**
- * Fires the between-calls line after an outcome is logged (docs/DEVIATIONS.md D45).
+ * Fires the between-calls line after an outcome is logged (docs/DEVIATIONS.md D49).
  *
  * Deliberately fire-and-forget and never throws: a joke failing must not take down the wrap-up that
  * just saved someone's call. The day's counter advances even when no line shows, so "every tenth

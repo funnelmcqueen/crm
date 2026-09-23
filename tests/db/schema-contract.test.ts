@@ -64,6 +64,8 @@ describe('columns (SPEC 4)', () => {
       id: 'uuid', lead_id: 'uuid', user_id: 'uuid', created_at: 'timestamp with time zone', due_at: 'timestamp with time zone',
       completed_at: 'timestamp with time zone', note: 'text',
     },
+    // Google Calendar connection (D47): bookable hours, replacing milestone 1's bookable calendar.
+    bookable_hours: { id: 'uuid', weekday: 'smallint', starts_minute: 'integer', ends_minute: 'integer' },
   };
 
   it.each(Object.keys(SPEC_COLUMNS))('%s has every specified column with the specified type', async (table) => {
@@ -144,6 +146,10 @@ describe('foreign keys (SPEC 4: profiles RESTRICT, lead deletion cascades)', () 
       // Skipped queue (D42): a skip goes with its lead; a user with skips is never deleted.
       'public.lead_skips.lead_id -> public.leads': 'c',
       'public.lead_skips.user_id -> public.profiles': 'r',
+      // Closer calendar booking (D46): an appointment goes with its lead; a booker or connector is never deleted.
+      'public.appointments.lead_id -> public.leads': 'c',
+      'public.appointments.booked_by -> public.profiles': 'r',
+      'public.calendar_connection.connected_by -> public.profiles': 'r',
       'public.leads.assigned_to -> public.profiles': 'r',
       'public.phone_numbers.assigned_to -> public.profiles': 'r',
       'public.profiles.id -> auth.users': 'r',
