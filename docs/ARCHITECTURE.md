@@ -847,7 +847,7 @@ calendar used). `leads.business_type` (enum, null = guess from name).
 | `set_bookable_hours(p_rows)` | definer | admin | D47: replaces the whole week atomically; validates weekday/minute range, 30-minute granularity, ordering and overlap, else `invalid_hours` |
 | `connect_calendar(p_email, p_ciphertext, p_app_calendar_id)` | definer | admin | D47: upserts the singleton, clears `broken_at` |
 | `disconnect_calendar()` | definer | admin | D47: deletes the row |
-| `mark_calendar_broken()` | definer | active | D47: any active user's booking attempt can discover a revoked grant; only ever sets `broken_at` |
+| `mark_calendar_broken()` | definer | service role | D47: any active user's booking attempt can trigger the *call*, but the RPC itself is service-role only (grants are the guard, matching `revoke_user_sessions`) — an agent's own session cannot reach it directly; only ever sets `broken_at` |
 | `get_calendar_status()` | definer | admin | returns `connected, google_email, hours_set, broken, app_calendar_id`, never the token. D47: `hours_set` now reflects whether any `bookable_hours` rows exist — previously a `bookable_calendar_id is not null` stand-in that was never populated |
 
 **Driver resolution** (`getCalendarDriver`, `src/server/env.ts`): an explicit `CALENDAR_DRIVER` wins; otherwise
@@ -855,6 +855,11 @@ calendar used). `leads.business_type` (enum, null = guess from name).
 `DIALER_DRIVER` auto-detects `twilio` from the Twilio variables), else `mock` in development/test and `unavailable`
 in production — a production deployment with no driver set and no Google configuration reports booking unavailable
 rather than inventing availability. `CALENDAR_DRIVER=mock` with `NODE_ENV=production` is still refused at startup.
+Whenever the driver resolves to `google` — `CALENDAR_DRIVER=google` explicit, or that auto-detect — `parseServerEnv`'s
+`superRefine` additionally requires `APP_BASE_URL` (the OAuth redirect is built from it, exactly like Twilio's
+webhook signature check) and validates `GOOGLE_TOKEN_ENCRYPTION_KEY` decodes to 32 bytes, mirroring the
+`DIALER_DRIVER=twilio` checks; `isGoogleCalendarConfigured` includes `APP_BASE_URL` for the same reason
+`isTwilioConfigured` does.
 
 **Google modules (D47).** `src/server/google/http.ts` is the shared timeout+retry primitive both Google HTTP callers
 use: an 8s timeout per attempt, one retry on a connection error or timeout only, never on an HTTP status Google
