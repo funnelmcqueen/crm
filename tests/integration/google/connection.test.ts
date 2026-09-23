@@ -113,16 +113,17 @@ describe('connect flow', () => {
     });
   }
 
-  function googleFlow(options: { includeRefreshToken?: boolean; calendarId?: string } = {}): FetchCall[] {
+  function googleFlow(options: { includeRefreshToken?: boolean; calendarId?: string; email?: string } = {}): FetchCall[] {
     const includeRefreshToken = options.includeRefreshToken ?? true;
     const calendarId = options.calendarId ?? FAKE_CALENDAR_ID;
+    const email = options.email ?? FAKE_GOOGLE_EMAIL;
     return stubGoogleFetch((url) => {
       if (url === TOKEN_URL) {
         const body: Record<string, unknown> = { access_token: FAKE_ACCESS_TOKEN, expires_in: 3600, token_type: 'Bearer' };
         if (includeRefreshToken) body.refresh_token = FAKE_REFRESH_TOKEN;
         return json(body);
       }
-      if (url === USERINFO_URL) return json({ email: FAKE_GOOGLE_EMAIL });
+      if (url === USERINFO_URL) return json({ email });
       if (url === CALENDAR_INSERT_URL) return json({ id: calendarId });
       throw new Error(`unexpected Google network call to ${url}`);
     });
@@ -383,6 +384,31 @@ describe('connect flow', () => {
 
       expect(calls.some((c) => c.url === CALENDAR_INSERT_URL)).toBe(false);
       expect((await connectionRow())?.app_calendar_id).toBe(FAKE_CALENDAR_ID);
+    });
+
+    it('reconnecting with a different Google account creates a new calendar and replaces app_calendar_id, instead of reusing a calendar unreachable under the new grant', async () => {
+      const first = await startFlow();
+      googleFlow();
+      const firstRes = await handleGoogleCallback(
+        callbackAs(adminSession, `state=${encodeURIComponent(first.state)}&code=${TEST_AUTH_CODE}`, first.cookie),
+      );
+      expect(firstRes.status).toBe(302);
+      expect(await connectionRow()).toMatchObject({ google_email: FAKE_GOOGLE_EMAIL, app_calendar_id: FAKE_CALENDAR_ID });
+
+      const DIFFERENT_GOOGLE_EMAIL = 'a-different-owner@example.test';
+      const DIFFERENT_CALENDAR_ID = 'test-app-calendar-id-2';
+      const second = await startFlow();
+      const calls = googleFlow({ email: DIFFERENT_GOOGLE_EMAIL, calendarId: DIFFERENT_CALENDAR_ID });
+      const secondRes = await handleGoogleCallback(
+        callbackAs(adminSession, `state=${encodeURIComponent(second.state)}&code=${TEST_AUTH_CODE}`, second.cookie),
+      );
+      expect(secondRes.status).toBe(302);
+      expect(secondRes.headers.get('location')).toBe(`${APP_BASE_URL}/settings?calendar=connected`);
+
+      // The old calendar id belongs to the first account's calendar.app.created grant and is unreachable under
+      // the new account, so reusing it (rather than creating a fresh one) would make every later booking fail.
+      expect(calls.some((c) => c.url === CALENDAR_INSERT_URL)).toBe(true);
+      expect(await connectionRow()).toMatchObject({ google_email: DIFFERENT_GOOGLE_EMAIL, app_calendar_id: DIFFERENT_CALENDAR_ID });
     });
 
     it('a token response with no refresh_token redirects to calendar=error and writes nothing', async () => {

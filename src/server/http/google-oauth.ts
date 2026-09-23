@@ -14,10 +14,6 @@ import { consentUrl, exchangeCode, newPkcePair } from "@/server/google/oauth";
 import { NO_STORE } from "@/server/http/browser";
 import { createAdminClient } from "@/server/supabase/admin";
 
-export interface GoogleOAuthDeps {
-  env: ServerEnv;
-}
-
 type CalendarStatus = "connected" | "denied" | "error";
 
 const COOKIE_NAME = "gcal_oauth";
@@ -25,8 +21,7 @@ const COOKIE_PATH = "/api/google";
 const COOKIE_MAX_AGE_SECONDS = 600;
 const APP_CALENDAR_TITLE = "Funnel McQueen meetings";
 
-function resolveEnv(deps: Partial<GoogleOAuthDeps>): { env: ServerEnv } | { response: Response } {
-  if (deps.env) return { env: deps.env };
+function resolveEnv(): { env: ServerEnv } | { response: Response } {
   try {
     return { env: getServerEnv() };
   } catch (error) {
@@ -104,14 +99,24 @@ function constantTimeEqual(a: string, b: string): boolean {
 /**
  * The current connection's app calendar id, if any — read with the service role since no API role, admin
  * included, may select calendar_connection directly (see supabase/migrations/20260915002000_google_calendar.sql
- * and src/server/services/calendar-connection.ts's loadRefreshTokenCiphertext for the same pattern). A
- * reconnect reuses this instead of creating a second "Funnel McQueen meetings" calendar and stranding the
- * first one, along with every already-booked appointment whose google_event_id lives there.
+ * and src/server/services/calendar-connection.ts's loadRefreshTokenCiphertext for the same pattern). Reused only
+ * when the stored connection's email matches the account just authenticated: a reconnect with the SAME Google
+ * account gets this instead of creating a second "Funnel McQueen meetings" calendar and stranding the first one,
+ * along with every already-booked appointment whose google_event_id lives there. A reconnect with a DIFFERENT
+ * account gets a fresh calendar instead — the old id was created under the previous account's own
+ * `calendar.app.created` grant, so it is not reachable under the new account's grant, and reusing it would make
+ * every free/busy read and event insert fail with a `permanent` GoogleApiError that never marks the connection
+ * broken (fix round N).
  */
-async function existingAppCalendarId(): Promise<string | null> {
-  const { data, error } = await createAdminClient().from("calendar_connection").select("app_calendar_id").eq("id", true).maybeSingle();
+async function existingAppCalendarId(email: string): Promise<string | null> {
+  const { data, error } = await createAdminClient()
+    .from("calendar_connection")
+    .select("google_email, app_calendar_id")
+    .eq("id", true)
+    .maybeSingle();
   if (error) throw mapPostgrestError(error);
-  return data?.app_calendar_id ?? null;
+  if (!data || data.google_email !== email) return null;
+  return data.app_calendar_id;
 }
 
 /** Never a code, token or secret — just enough to see where a connection attempt broke. */
@@ -128,8 +133,8 @@ function logGoogleOAuthError(step: string, error: unknown): void {
 }
 
 /** GET /api/google/start: admin session required. Redirects to Google's consent screen. */
-export async function handleGoogleStart(req: Request, deps: Partial<GoogleOAuthDeps> = {}): Promise<Response> {
-  const resolved = resolveEnv(deps);
+export async function handleGoogleStart(req: Request): Promise<Response> {
+  const resolved = resolveEnv();
   if ("response" in resolved) return resolved.response;
   const { env } = resolved;
 
@@ -159,8 +164,8 @@ export async function handleGoogleStart(req: Request, deps: Partial<GoogleOAuthD
 }
 
 /** GET /api/google/callback: re-checks the admin session, verifies state, exchanges the code, and connects. */
-export async function handleGoogleCallback(req: Request, deps: Partial<GoogleOAuthDeps> = {}): Promise<Response> {
-  const resolved = resolveEnv(deps);
+export async function handleGoogleCallback(req: Request): Promise<Response> {
+  const resolved = resolveEnv();
   if ("response" in resolved) return clearOnly(resolved.response);
   const { env } = resolved;
 
@@ -222,7 +227,7 @@ export async function handleGoogleCallback(req: Request, deps: Partial<GoogleOAu
 
   let appCalendarId: string;
   try {
-    const existing = await existingAppCalendarId();
+    const existing = await existingAppCalendarId(email);
     appCalendarId = existing ?? (await createAppCalendar(accessToken, APP_CALENDAR_TITLE, timeZone)).id;
   } catch (error) {
     if (isNextControlFlowError(error)) throw error;
