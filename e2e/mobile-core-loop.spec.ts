@@ -73,6 +73,13 @@ test.describe('mobile core loop (tel:)', () => {
     const noAnswer = sheet.locator('button[data-outcome="NO_ANSWER"]');
     await noAnswer.click();
     await expect(noAnswer).toHaveAttribute('aria-checked', 'true');
+    await sheet.getByRole('button', { name: '+ Add note' }).click();
+    await sheet.getByLabel('Notes (optional)', { exact: true }).fill('Try the owner tomorrow.');
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.reload();
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByLabel('Notes (optional)', { exact: true })).toHaveValue('Try the owner tomorrow.');
+    await expect(noAnswer).toHaveAttribute('aria-checked', 'true');
 
     await sheet.getByRole('button', { name: 'Save & Next' }).click();
     await page.waitForURL((url) => isNextFlowLeadUrl(url, firstLeadId ?? undefined));

@@ -30,11 +30,13 @@ export default async function NextLeadPage({
         title="You're all caught up"
         description={
           skip.length > 0
-            ? "No more leads to call right now. Start over to see the leads you skipped."
-            : "No leads need a call right now. Check back later or browse your leads."
+            ? "No more leads to call in this session. Review your follow-ups or resume a lead from Skipped."
+            : "No leads need a call right now. Review your follow-ups, resume a skipped lead, or browse your leads."
         }
         action={
           <div className="flex flex-wrap justify-center gap-2">
+            <Link href="/follow-ups" className="inline-flex min-h-12 items-center rounded-xl border px-5 font-bold outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50">Review follow-ups</Link>
+            <Link href="/follow-ups?tab=skipped" className="inline-flex min-h-12 items-center rounded-xl border px-5 font-bold outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50">Review skipped leads</Link>
             <Link
               href="/leads"
               className="inline-flex min-h-12 items-center rounded-xl bg-primary px-5 text-base font-bold text-primary-foreground outline-none transition-colors duration-150 hover:bg-primary/85 focus-visible:ring-3 focus-visible:ring-ring/50"

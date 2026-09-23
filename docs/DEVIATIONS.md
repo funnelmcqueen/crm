@@ -82,8 +82,12 @@ worse than no index.
 | [D42](#d42-a-skipped-lead-waits-in-a-skipped-queue) | A skipped lead waits in a Skipped queue instead of coming back |
 | [D43](#d43-the-agent-dashboard-is-a-today-workspace-and-one-goal-module-drives-every-target-display) | The agent dashboard is a Today workspace, and one goal module drives every target display |
 | [D44](#d44-pipeline-stage-navigation-and-bounded-columns) | Pipeline stage navigation and bounded columns |
+| [D45](#d45-phase-2-calling-workspace-and-recoverable-drafts) | Phase 2 calling workspace and recoverable drafts |
 | [D46](#d46-closer-calendar-booking) | Closer calendar booking |
 | [D47](#d47-google-calendar-connection) | Google Calendar connection |
+| [D48](#d48-a-google-calendar-per-agent) | A Google calendar per agent |
+| [D49](#d49-between-calls-lines) | Between-calls lines |
+| [D50](#d50-versioned-march-restaurant-call-playbook) | Versioned March restaurant call playbook |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -729,6 +733,25 @@ the Move to… menu are unchanged; phones keep the swipeable, full-height column
 **Why:** with a few hundred New leads the later stages were off screen and the only way to reach them was a scrollbar below the
 longest column.
 
+## D45. Phase 2 calling workspace and recoverable drafts
+**Spec:** the Phase 2 handoff asks for clearer calling context, fast feedback, reliable notes and graceful interruptions.
+**Built:** the lead header highlights the current lead; a compact Before you call summary shows the latest call,
+next follow-up and expandable previous notes. The existing calling-setup notice is reused on the lead page and
+the active phone/in-app mode is explained. Invalid numbers disable CALL using the existing E.164 rule.
+
+Lead notes and outcome forms survive same-tab reloads for up to 12 hours. Drafts are scoped to user and lead/call,
+never automatically submitted, and removed after successful save or explicit discard/sign-out. Memory preserves
+edits during SPA/history navigation if storage is unavailable; the UI warns that reload recovery is unavailable.
+Links and queue exits ask about unsaved lead notes; native reload/close warns about notes or a live/unfinished call.
+In-app recovery rechecks access with existing server actions before showing cached context. It retains the same
+call ID, refuses already-logged/inaccessible calls and offers retry on transient errors. A failed driver connection
+after call creation can still be logged. Save & Next confirms success and uses the existing queue without auto-dialing;
+the empty queue links to Follow-ups and Skipped. Existing outcome keyboard shortcuts are described in the sheet.
+
+**Limits:** drafts are per tab, expire after 12 hours, and cannot restore live audio. Storage-denied reloads cannot
+retain drafts; a warning is shown. Browser Back/Forward preserves drafts without rewriting browser history.
+No migrations, provider settings, credentials, permissions or production data were changed for Phase 2.
+
 ## D46. Closer calendar booking
 **Spec:** §15 lists Google Calendar under "Future-ready, not built".
 **Built:** agents book 30-minute meetings with a lead into one closer calendar from the lead page or the in-call bar.
@@ -865,3 +888,23 @@ everyone**, since the connection is still a singleton — isolating that needs t
 **Deleting an agent leaves their calendar on the account**, empty or not; `docs/RUNBOOK.md` says to remove
 strays by hand, next to the account-switch case. A failure to store a calendar id after Google created it
 likewise strands an empty calendar, and re-provisioning simply makes another.
+
+## D49. Between-calls lines
+**Spec:** not mentioned. §7 covers the call workspace and §6 the dashboard; neither asks for anything like this.
+**Built:** a one-liner in three places, from a written pool of ~100 in `src/lib/domain/pep-talk-lines.ts`: under the goal copy
+on Today, in a toast after a logged outcome (always the first call of the day, then about one in three), and in place of the
+outcome line when a call is the tenth, the halfway point or the target itself. Lines are tagged clean, salty or raw; Settings
+offers those three levels and Off, defaulting to raw, stored per device beside the call-mode preference. The picker is pure and
+seeded by call id or by day and mood, so a line never re-rolls under the agent, and the day's shown ids are remembered so a
+bucket is used up before anything repeats.
+**Why:** the team asked for it, and the ten seconds before the next dial is where a cold caller actually loses the day. The
+humour targets the situation, the prospect or the job, never the agent, and never anyone's identity: someone who has just been
+hung up on is the audience, not the punchline. Off is one click away in Settings and nobody is told what anyone picked.
+**Not built:** nothing is stored server-side, so the level and the day's counters do not follow an agent between devices, and
+the milestone counter counts calls logged in that browser rather than reading the dashboard's figure.
+
+## D50. Versioned March restaurant call playbook
+**Spec:** §7 defines the call workspace but does not provide campaign-specific scripting or live objection guidance.
+**Built:** every lead workspace now includes a compact, read-only Call Playbook panel with the reviewed March restaurant callback script (v3): a personalized opening, five stages, eight objection responses, booking handoff, no-show recovery, and factual-call guardrails. The content lives in the pure `src/lib/domain/call-playbook.ts` module and the page panel needs no client state, new API, database table, or permission.
+**Why:** agents need the next useful line while a lead is open. A static, versioned source gives every caller the same approved words without introducing an admin configuration surface before the team has tested the flow.
+**Not built:** per-campaign assignment, a playbook editor, automatic calendar invites, automatic messages, and AI-generated call responses. The `CallPlaybook` component consumes a small typed module so a future campaign-backed source can replace it without changing the lead workspace.

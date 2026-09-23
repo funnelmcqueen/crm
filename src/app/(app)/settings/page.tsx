@@ -4,6 +4,7 @@ import { AgentTargetsList, CompanySettingsForm } from "@/components/settings/adm
 import { AudioSection } from "@/components/settings/audio-section";
 import { CalendarSection } from "@/components/settings/calendar-section";
 import { CallModeSection } from "@/components/settings/call-mode-section";
+import { PepSection } from "@/components/settings/pep-section";
 import { EmailForm, NameForm, PasswordForm, type EmailChangeNotice } from "@/components/settings/profile-forms";
 import { SettingsSection } from "@/components/settings/settings-section";
 import { requireUserPage } from "@/server/context";
@@ -71,6 +72,14 @@ export default async function SettingsPage({
 
       <SettingsSection id="call-mode" title="Call mode" description="How CALL places calls on this device.">
         <CallModeSection inAppAvailable={inAppAvailable} />
+      </SettingsSection>
+
+      <SettingsSection
+        id="pep-talk"
+        title="Between-calls lines"
+        description="A one-liner after some calls and on your dashboard. Dark, rude, and entirely optional."
+      >
+        <PepSection />
       </SettingsSection>
 
       <SettingsSection id="audio" title="Audio" description="Microphone and speaker for in-app calls.">

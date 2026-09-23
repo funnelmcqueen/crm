@@ -616,6 +616,20 @@ export function requireAdmin(ctx): RequestContext   // throws AppError('forbidde
 
 ## 6. Dialer module contract (`src/lib/dialer`, client-only)
 
+Phase 2 draft recovery: `workspace-drafts.ts` stores lead-note, outcome-form and unfinished-call drafts in
+sessionStorage under `fmq.draft.<userId>.<kind>.<id>`, validated on read and expiring after 12 hours. An in-memory
+fallback keeps SPA/Back/Forward navigation lossless when storage is blocked; a failed deletion leaves an in-memory
+tombstone. Native unload warns, and lead-page links and queue actions ask before leaving unsaved lead notes.
+Successful save/discard removes the corresponding draft; successful sign-out clears all workspace drafts.
+Sign-out transport failure preserves them. These are local drafts, not automatic server saves.
+
+The provider records an in-app recovery identity as soon as outbound creation returns a call ID, through ringing,
+in-call and wrap-up. On reload it rechecks the existing call through the existing session/RLS-backed status and
+context actions. Already-logged/inaccessible calls are discarded; transient recovery errors retain the draft and
+block new calls until Retry recovery succeeds. Recovery only opens outcome logging; audio never auto-restarts.
+Outcome retries retain the original call/request ID, preserving `log_call` idempotency. No calling or permission
+configuration is changed. `recover-wrap-up.ts` holds recovery decisions; `use-unsaved-notes.ts` guards lead-note exits.
+
 ```ts
 export type DialerDriverName = 'twilio' | 'tel' | 'mock';
 export type CallModePreference = 'auto' | 'in-app' | 'phone';           // localStorage 'fmq.callMode'

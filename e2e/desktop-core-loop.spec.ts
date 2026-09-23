@@ -40,6 +40,22 @@ test('desktop core loop: CALL -> in-call bar -> hang up -> outcome sheet -> Save
   const sheet = page.getByRole('dialog', { name: 'Log call' });
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText(START_LEAD);
+  await sheet.getByLabel('Notes (optional)', { exact: true }).fill('Owner asked for a proposal.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByLabel('Notes (optional)', { exact: true })).toHaveValue('Owner asked for a proposal.');
+  await waitForMockDialer(page);
+  await sheet.locator('button[data-outcome="CONNECTED"]').click();
+  await page.route('**/*', async (route) => {
+    if (route.request().headers()['next-action']) await route.abort('failed');
+    else await route.continue();
+  });
+  await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(sheet.getByRole('alert')).toContainText(/couldn't save/i);
+  await expect(sheet.getByLabel('Notes (optional)', { exact: true })).toHaveValue('Owner asked for a proposal.');
+  await page.unroute('**/*');
+  await sheet.locator('button[data-outcome="NO_ANSWER"]').click();
   // Keyboard: Enter on a focused outcome chooses it (it must not save a different outcome), Enter again saves.
   const connected = sheet.locator('button[data-outcome="CONNECTED"]');
   await connected.focus();

@@ -16,6 +16,8 @@ import {
 import { notifyVoicemailsChanged } from "@/lib/dialer/events";
 import { DIALER_MESSAGES, microphoneErrorMessage, outboundErrorMessage } from "@/lib/dialer/messages";
 import { isUnansweredCallStatus } from "@/lib/dialer/outcome-form";
+import { recoverWrapUp, wrapUpForRecovery } from "@/lib/dialer/recover-wrap-up";
+import { draftKey, readDraft, removeDraft, wrapUpDraftSchema, writeDraft } from "@/lib/dialer/workspace-drafts";
 import { useCallModePreference } from "@/lib/dialer/preference";
 import { currentDeviceIsIOS, resolveDialMode } from "@/lib/dialer/resolve-mode";
 import { nextLeadHref, parseSkipParam } from "@/lib/dialer/skip-list";
@@ -37,6 +39,7 @@ import type {
 } from "@/lib/dialer/types";
 import { preselectOutcomeForEndReason } from "@/lib/domain/outcomes";
 import { isDialable } from "@/lib/domain/statuses";
+import { E164_PATTERN } from "@/lib/domain/phone";
 import { getCallStatusAction, getIncomingCallContextAction } from "@/server/actions/calls";
 import {
   AUDIO_INPUT_STORAGE_KEY,
@@ -98,6 +101,11 @@ function currentSkipList(): string[] {
 }
 
 export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, children }: DialerProviderProps) {
+  const recoveryKey = draftKey(userId, "wrapup", "current");
+  const recoveringRef = useRef(true);
+  const [recovering, setRecovering] = useState(true);
+  const [recoveryError, setRecoveryError] = useState(false);
+  const [recoveryAttempt, setRecoveryAttempt] = useState(0);
   const router = useRouter();
   const [state, setState] = useState<DialerState>(INITIAL_DIALER_STATE);
   // Mirrors `state` synchronously so a double tap can never start two calls.
@@ -105,10 +113,12 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   const dispatch = useCallback((action: DialerAction) => {
     const next = dialerReducer(stateRef.current, action);
     if (next !== stateRef.current) {
+      const recovery = wrapUpForRecovery(next);
+      if (recovery) writeDraft(recoveryKey, recovery);
       stateRef.current = next;
       setState(next);
     }
-  }, []);
+  }, [recoveryKey]);
 
   const [preference] = useCallModePreference();
   const isIOS = useSyncExternalStore(noopSubscribe, currentDeviceIsIOS, serverIsIOS);
@@ -130,31 +140,61 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     return error;
   }, []);
 
-  // Restore a phone call that was tapped before a reload.
+  // Recover a call after reload without starting another call or trusting cached access.
   useEffect(() => {
-    const now = Date.now();
-    const pending = readPendingTel(now, userId);
-    if (!pending) {
-      clearPendingTel();
-      return;
+    let canceled = false;
+    let retryNeeded = false;
+    async function restore() {
+      const recovered = readDraft(recoveryKey, wrapUpDraftSchema);
+      if (recovered?.mode === "IN_APP" && recovered.callId) {
+        try {
+          const [status, context] = await Promise.all([
+            getCallStatusAction(recovered.callId), getIncomingCallContextAction(recovered.callId),
+          ]);
+          if (canceled) return;
+          const decision = recoverWrapUp(recovered, status, context);
+          if (decision.kind === "discard") {
+            removeDraft(recoveryKey);
+            removeDraft(draftKey(userId, "outcome", recovered.callId));
+            return;
+          }
+          if (decision.kind === "retry") { retryNeeded = true; return; }
+          dispatch({ type: "RESTORE_WRAP_UP", wrapUp: decision.wrapUp });
+          toast("Recovered an unfinished call. Check the outcome and save when ready.");
+        } catch { retryNeeded = true; }
+        return;
+      }
+      const now = Date.now();
+      const pending = readPendingTel(now, userId);
+      if (!pending) { clearPendingTel(); return; }
+      if (pending.stage === "wrap-up" || shouldOpenTelOutcome(pending, now)) {
+        writePendingTel({ ...pending, stage: "wrap-up" });
+        dispatch({ type: "RESTORE_WRAP_UP", wrapUp: pendingTelWrapUp(pending) });
+      } else {
+        dispatch({ type: "TEL_START", leadId: pending.leadId, label: pending.label,
+          clientRequestId: pending.clientRequestId, startedAt: pending.startedAt });
+      }
     }
-    if (pending.stage === "wrap-up" || shouldOpenTelOutcome(pending, now)) {
-      writePendingTel({ ...pending, stage: "wrap-up" });
-      dispatch({ type: "RESTORE_WRAP_UP", wrapUp: pendingTelWrapUp(pending) });
-    } else {
-      dispatch({
-        type: "TEL_START",
-        leadId: pending.leadId,
-        label: pending.label,
-        clientRequestId: pending.clientRequestId,
-        startedAt: pending.startedAt,
-      });
-    }
-  }, [dispatch, userId]);
+    void restore().finally(() => {
+      if (!canceled) {
+        recoveringRef.current = retryNeeded;
+        setRecovering(retryNeeded);
+        setRecoveryError(retryNeeded);
+      }
+    });
+    return () => { canceled = true; };
+  }, [dispatch, userId, recoveryKey, recoveryAttempt]);
+
+  useEffect(() => {
+    if (state.kind === "idle" || state.kind === "incoming" || state.kind === "tel-pending") return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [state.kind]);
 
   const handleIncoming = useCallback(
     (call: IncomingCall) => {
-      if (stateRef.current.kind !== "idle") {
+      if (recoveringRef.current || stateRef.current.kind !== "idle") {
         call.reject();
         return;
       }
@@ -218,9 +258,9 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
 
   const deviceReady = device === "ready";
   const dialMode = resolveDialMode({ preference, defaultDriver, isIOS, inAppEnabled, deviceReady });
-  const connecting =
+  const connecting = recovering || (
     device === "registering" &&
-    resolveDialMode({ preference, defaultDriver, isIOS, inAppEnabled, deviceReady: true }) === "in-app";
+    resolveDialMode({ preference, defaultDriver, isIOS, inAppEnabled, deviceReady: true }) === "in-app");
 
   const recheckServerStatus = useCallback(
     async (callId: string) => {
@@ -245,7 +285,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   const startCall = useCallback(
     async (lead: DialableLead) => {
       const driver = sessionRef.current?.readyDriver() ?? null;
-      if (!driver || stateRef.current.kind !== "idle" || !isDialable(lead.status)) return;
+      if (recoveringRef.current || !driver || stateRef.current.kind !== "idle" || !isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return;
 
       const token = callTokenRef.current + 1;
       callTokenRef.current = token;
@@ -324,7 +364,10 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
         if (ended) return;
         ended = true;
         activeCallRef.current = null;
-        abort(DIALER_MESSAGES.startFailed);
+        if (isCurrent()) {
+          dispatch({ type: "DISCONNECTED", reason: "failed" });
+          toast.error(DIALER_MESSAGES.startFailed);
+        }
       }
     },
     [dispatch, ensureMicrophone, recheckServerStatus, router],
@@ -332,7 +375,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
 
   const beginTelCall = useCallback(
     (lead: DialableLead): boolean => {
-      if (stateRef.current.kind !== "idle" || !isDialable(lead.status)) return false;
+      if (recoveringRef.current || stateRef.current.kind !== "idle" || !isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return false;
       const pending = {
         userId,
         leadId: lead.id,
@@ -536,12 +579,14 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
     const current = stateRef.current;
     if (current.kind !== "wrap-up") return;
     if (current.mode === "TEL") clearPendingTel();
+    removeDraft(recoveryKey);
     dispatch({ type: "WRAP_UP_DONE" });
-  }, [dispatch]);
+  }, [dispatch, recoveryKey]);
 
   const handleSaved = useCallback(
     (goNext: boolean) => {
       finishWrapUp();
+      toast.success(goNext ? "Call saved. Opening your next lead…" : "Call saved.");
       notifyVoicemailsChanged();
       if (goNext) router.push(nextLeadHref(currentSkipList()));
       else router.refresh();
@@ -589,6 +634,13 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   return (
     <DialerContext.Provider value={value}>
       {children}
+      {recoveryError ? (
+        <section role="alert" className="fixed inset-x-4 bottom-24 z-50 rounded-xl border bg-card p-4 shadow-lg md:left-64">
+          <p className="font-bold">Your unfinished call could not be recovered.</p>
+          <p className="mt-1 text-sm">Your draft is still in this tab. Reconnect and retry before starting another call.</p>
+          <button type="button" className="mt-2 min-h-12 rounded-lg border px-4 font-bold focus-visible:ring-3 focus-visible:ring-ring/50" onClick={() => { setRecoveryError(false); setRecoveryAttempt((attempt) => attempt + 1); }}>Retry recovery</button>
+        </section>
+      ) : null}
       {state.kind === "preparing" || state.kind === "ringing" || state.kind === "in-call" || state.kind === "tel-pending" ? (
         // The fixed call bars would otherwise cover the end of the page.
         <div aria-hidden className="h-20" />
@@ -604,6 +656,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       ) : null}
       {state.kind === "wrap-up" ? (
         <OutcomeSheet
+          userId={userId}
           key={state.callId ?? state.clientRequestId ?? "wrap-up"}
           wrapUp={state}
           timezone={timezone}

@@ -7,9 +7,14 @@ import { NextMeeting } from "@/components/booking/next-meeting";
 import { DateTime, currentTime } from "@/components/common/datetime";
 import { StatusBadge } from "@/components/common/status-badge";
 import { CallButton } from "@/components/dialer/call-button";
+import { CallReadiness } from "@/components/dialer/call-readiness";
+import { CallingSetupNotice } from "@/components/dashboard/calling-setup-notice";
+import { getDialerDriver, type DialerDriver } from "@/server/env";
+import { OUTCOME_LABELS } from "@/lib/domain/outcomes";
 import { NextLeadControls } from "@/components/dialer/next-lead-controls";
 import { AdminLeadPanel } from "@/components/leads/admin-lead-panel";
 import { CallHistory } from "@/components/leads/call-history";
+import { CallPlaybook } from "@/components/leads/call-playbook";
 import { CopyPhoneButton } from "@/components/leads/copy-phone-button";
 import { FollowUpPicker } from "@/components/leads/follow-up-picker";
 import { LeadNotesForm } from "@/components/leads/lead-notes-form";
@@ -49,12 +54,16 @@ export default async function LeadDetailPage({
 
   const { lead, history } = detail;
   const isAdmin = ctx.profile.role === "ADMIN";
-  const [agents, skips, nextMeeting] = await Promise.all([
+  const [agents, skips, nextMeeting, callerId] = await Promise.all([
     isAdmin ? listAgentsForFilter(ctx).then((all) => all.filter((agent) => agent.active)) : Promise.resolve([]),
     getLeadSkipHistory(ctx, lead.id),
     getNextMeeting(ctx, lead.id),
+    ctx.supabase.rpc("my_caller_id_available"),
   ]);
   const openSkip = skips.find((skip) => skip.resolvedAt === null) ?? null;
+  let driver: DialerDriver = "tel";
+  try { driver = getDialerDriver(); } catch { /* Same phone fallback as the app shell. */ }
+  const lastCall = history[0];
   const tz = ctx.profile.timezone;
   const now = currentTime();
   const flow = Array.isArray(query.flow) ? query.flow[0] : query.flow;
@@ -86,8 +95,9 @@ export default async function LeadDetailPage({
 
       {flow === "next" ? <NextLeadControls leadId={lead.id} businessName={lead.businessName} /> : null}
 
-      <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <header className="mb-3 flex flex-col gap-4 rounded-xl border border-primary/25 bg-card p-4 md:flex-row md:items-start md:justify-between md:p-5">
         <div className="min-w-0">
+          <p className="mb-2 text-xs font-bold tracking-wide text-primary uppercase">{flow === "next" ? "Current lead · Call queue" : "Lead workspace"}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="text-2xl font-extrabold tracking-tight break-words md:text-3xl">{lead.businessName}</h1>
             <StatusBadge status={lead.status} />
@@ -104,6 +114,30 @@ export default async function LeadDetailPage({
           <CallButton lead={dialable} size="lg" className="h-14 min-w-48 text-lg font-extrabold" />
         </div>
       </header>
+      <div className="mb-4 space-y-2">
+        <CallReadiness phone={lead.phone} />
+        {!callerId.error ? <CallingSetupNotice driver={driver} inAppEnabled={ctx.profile.in_app_calling_enabled} callerIdAvailable={callerId.data === true} isAdmin={isAdmin} /> : null}
+      </div>
+
+      <section aria-label="Before you call" className="mb-4 grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-3">
+        <div className="min-w-0">
+          <h2 className="text-xs font-semibold text-muted-foreground">Latest call</h2>
+          <p className="mt-1 text-sm font-bold">{lastCall ? (lastCall.outcome ? OUTCOME_LABELS[lastCall.outcome] : "Outcome not logged") : "No calls yet"}</p>
+          {lastCall ? <DateTime value={lastCall.createdAt} tz={tz} now={now} className="text-xs text-muted-foreground" /> : null}
+          {lastCall?.notes ? <p className="mt-1 line-clamp-2 text-sm break-words">{lastCall.notes}</p> : null}
+          {lastCall ? <a href="#lead-history" className="inline-flex min-h-12 items-center rounded text-xs font-semibold underline focus-visible:ring-3 focus-visible:ring-ring/50">View call history</a> : null}
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-xs font-semibold text-muted-foreground">Next follow-up</h2>
+          <p className="mt-1 text-sm font-bold"><DateTime value={lead.nextFollowUpAt} tz={tz} now={now} empty="Nothing scheduled" /></p>
+        </div>
+        <details className="min-w-0">
+          <summary className="min-h-12 cursor-pointer rounded text-sm font-semibold focus-visible:ring-3 focus-visible:ring-ring/50">Previous notes {lead.notes ? "" : "· none yet"}</summary>
+          <p className="max-h-40 overflow-auto text-sm break-words whitespace-pre-wrap">{lead.notes || "Add useful context in Notes below."}</p>
+        </details>
+      </section>
+
+      <CallPlaybook contactName={lead.contactName} agentName={ctx.profile.name} />
 
       {lead.status !== "DO_NOT_CONTACT" || nextMeeting ? (
         <div className="mb-4 flex flex-col gap-3">
@@ -206,7 +240,7 @@ export default async function LeadDetailPage({
             <FollowUpPicker leadId={lead.id} nextFollowUpAt={lead.nextFollowUpAt} tz={tz} now={now} />
           </section>
           <section aria-label="Notes" className="rounded-xl border bg-card p-4">
-            <LeadNotesForm leadId={lead.id} notes={lead.notes} />
+            <LeadNotesForm key={lead.id} userId={ctx.userId} leadId={lead.id} notes={lead.notes} />
           </section>
           {isAdmin && detail.admin ? (
             <AdminLeadPanel
