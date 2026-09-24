@@ -159,6 +159,7 @@ export interface AgentRow {
   active: boolean;
   inAppCallingEnabled: boolean;
   timezone: string;
+  primaryLocale: "en" | "de";
   dailyCallTarget: number;
   leadsAssigned: number;
   dialsToday: number;
@@ -199,6 +200,7 @@ function toAgentRow(row: AgentRowsRow): AgentRow {
     active: row.active,
     inAppCallingEnabled: row.in_app_calling_enabled,
     timezone: row.timezone,
+    primaryLocale: row.primary_locale,
     dailyCallTarget: row.daily_call_target,
     leadsAssigned: Number(row.leads_assigned ?? 0),
     dialsToday: Number(row.dials_today ?? 0),
@@ -257,6 +259,7 @@ export const createAgentSchema = z
     email: emailSchema,
     dailyCallTarget: dailyTargetSchema,
     timezone: timeZoneSchema,
+    primaryLocale: z.enum(["en", "de"]).default("en"),
   })
   .strict();
 
@@ -307,12 +310,12 @@ export async function createAgent(
   // The auth trigger created the AGENT profile with the company defaults; apply this form with the admin's session.
   const updated = await admin.supabase
     .from("profiles")
-    .update({ name: values.name, daily_call_target: values.dailyCallTarget, timezone: values.timezone })
+    .update({ name: values.name, daily_call_target: values.dailyCallTarget, timezone: values.timezone, primary_locale: values.primaryLocale })
     .eq("id", userId)
     .select("id");
   const warning =
     updated.error || (updated.data ?? []).length !== 1
-      ? "The account was created, but its daily target and time zone could not be saved. Edit the agent to set them."
+      ? "The account was created, but its daily target, time zone and language could not be saved. Edit the agent to set them."
       : (await provisionCalendar(userId, values.name, values.timezone));
 
   return { userId, name: values.name, email: values.email, password, warning };
@@ -493,10 +496,11 @@ export const updateAgentProfileSchema = z
     name: agentNameSchema.optional(),
     dailyCallTarget: dailyTargetSchema.optional(),
     timezone: timeZoneSchema.optional(),
+    primaryLocale: z.enum(["en", "de"]).optional(),
   })
   .strict()
   .refine(
-    (value) => value.name !== undefined || value.dailyCallTarget !== undefined || value.timezone !== undefined,
+    (value) => value.name !== undefined || value.dailyCallTarget !== undefined || value.timezone !== undefined || value.primaryLocale !== undefined,
     "Nothing to update.",
   );
 
@@ -507,6 +511,7 @@ export interface AgentProfileSummary {
   name: string;
   dailyCallTarget: number;
   timezone: string;
+  primaryLocale: "en" | "de";
 }
 
 export async function updateAgentProfile(
@@ -521,16 +526,17 @@ export async function updateAgentProfile(
   if (values.name !== undefined) patch.name = values.name;
   if (values.dailyCallTarget !== undefined) patch.daily_call_target = values.dailyCallTarget;
   if (values.timezone !== undefined) patch.timezone = values.timezone;
+  if (values.primaryLocale !== undefined) patch.primary_locale = values.primaryLocale;
 
   const { data, error } = await admin.supabase
     .from("profiles")
     .update(patch)
     .eq("id", id)
-    .select("id, name, daily_call_target, timezone");
+    .select("id, name, daily_call_target, timezone, primary_locale");
   if (error) fail(error);
   const row = data?.[0];
   if (!row) throw new AppError("not_found");
-  return { userId: row.id, name: row.name, dailyCallTarget: row.daily_call_target, timezone: row.timezone };
+  return { userId: row.id, name: row.name, dailyCallTarget: row.daily_call_target, timezone: row.timezone, primaryLocale: row.primary_locale };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -40,6 +40,18 @@ describe('profiles_guard', () => {
     ]);
   });
 
+  it('only an admin may change a profile primary locale', async () => {
+    expect((await pgError(userRows(db, u.a, `update public.profiles set primary_locale = 'de' where id = $1`, [u.a]))).code).toBe('42501');
+    await userRows(db, u.admin, `update public.profiles set primary_locale = 'de' where id = $1`, [u.b]);
+    expect(await profile(u.b)).toMatchObject({ primary_locale: 'de' });
+    await userRows(db, u.a, `update public.profiles set primary_locale = 'en' where id = $1`, [u.b]);
+    expect(await profile(u.b)).toMatchObject({ primary_locale: 'de' });
+  });
+
+  it('rejects unsupported primary locales', async () => {
+    expect((await pgError(userRows(db, u.admin, `update public.profiles set primary_locale = 'fr' where id = $1`, [u.b]))).code).toBe('23514');
+  });
+
   it.each<[string, unknown]>([
     ['role', 'ADMIN'],
     ['active', false],

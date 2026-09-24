@@ -71,7 +71,7 @@ export interface CreateAgentDialogProps {
 }
 
 export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgentDialogProps) {
-  const blank = { name: "", email: "", target: String(defaultTarget), timezone: defaultTimezone };
+  const blank = { name: "", email: "", target: String(defaultTarget), timezone: defaultTimezone, primaryLocale: "en" as "en" | "de" };
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blank);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +104,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
         email: form.email,
         dailyCallTarget: target,
         timezone: form.timezone,
+        primaryLocale: form.primaryLocale,
       });
       if (result.ok) {
         setCreated(result.data);
@@ -231,6 +232,18 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
                 />
               </div>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="create-agent-language">Primary language</Label>
+              <Select value={form.primaryLocale} onValueChange={(primaryLocale: "en" | "de") => setForm((prev) => ({ ...prev, primaryLocale }))}>
+                <SelectTrigger id="create-agent-language" className={INPUT_CLASS} disabled={pending}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="de">Deutsch</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <FormError message={error} />
             <DialogFooter>
               <Button type="button" variant="outline" className="h-12" onClick={() => onOpenChange(false)} disabled={pending}>
@@ -256,10 +269,11 @@ export interface EditableAgent {
   name: string;
   dailyCallTarget: number;
   timezone: string;
+  primaryLocale: "en" | "de";
 }
 
 export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onClose(): void }) {
-  const [form, setForm] = useState({ name: agent.name, target: String(agent.dailyCallTarget), timezone: agent.timezone });
+  const [form, setForm] = useState({ name: agent.name, target: String(agent.dailyCallTarget), timezone: agent.timezone, primaryLocale: agent.primaryLocale });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -276,6 +290,7 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
         name: form.name,
         dailyCallTarget: target,
         timezone: form.timezone,
+        primaryLocale: form.primaryLocale,
       });
       if (result.ok) {
         toast.success(`${result.data.name} was updated`);
@@ -330,6 +345,18 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
                 disabled={pending}
               />
             </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-agent-language">Primary language</Label>
+            <Select value={form.primaryLocale} onValueChange={(primaryLocale: "en" | "de") => setForm((prev) => ({ ...prev, primaryLocale }))}>
+              <SelectTrigger id="edit-agent-language" className={INPUT_CLASS} disabled={pending}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="de">Deutsch</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <FormError message={error} />
           <DialogFooter>

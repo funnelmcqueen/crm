@@ -40,7 +40,7 @@ describe('columns (SPEC 4)', () => {
   const SPEC_COLUMNS: Record<string, Record<string, string>> = {
     profiles: {
       id: 'uuid', email: 'text', name: 'text', role: 'user_role', active: 'boolean', daily_call_target: 'integer',
-      timezone: 'text', in_app_calling_enabled: 'boolean', created_at: 'timestamp with time zone',
+      timezone: 'text', in_app_calling_enabled: 'boolean', primary_locale: 'text', created_at: 'timestamp with time zone',
     },
     settings: { company_name: 'text', default_daily_target: 'integer', default_timezone: 'text', voicemail_greeting: 'text' },
     leads: {
@@ -90,6 +90,13 @@ describe('columns (SPEC 4)', () => {
     expect(lead.status).toBe('NEW');
     expect(lead.call_count).toBe(0);
     expect(lead.assigned_to).toBeNull();
+  });
+
+  it('defaults profile primary_locale to English and permits only English or German', async () => {
+    const id = await createAuthUser(db);
+    const [profile] = await adminSqlRows<{ primary_locale: string }>(db, `select primary_locale from public.profiles where id = $1`, [id]);
+    expect(profile.primary_locale).toBe('en');
+    expect((await pgError(db.query(`update public.profiles set primary_locale = 'fr' where id = $1`, [id]))).code).toBe('23514');
   });
 });
 

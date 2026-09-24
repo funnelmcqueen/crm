@@ -20,6 +20,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     daily_call_target: 50,
     timezone: "America/New_York",
     in_app_calling_enabled: true,
+    primary_locale: "en",
     device_seen_at: null,
     created_at: "2026-09-15T00:00:00Z",
     deleted_at: null,

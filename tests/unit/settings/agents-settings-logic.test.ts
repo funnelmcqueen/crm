@@ -46,7 +46,16 @@ describe("createAgentSchema", () => {
       email: "alex@example.com",
       dailyCallTarget: 50,
       timezone: "America/Chicago",
+      primaryLocale: "en",
     });
+  });
+
+  it.each(["en", "de"] as const)("accepts primary locale %s", (primaryLocale) => {
+    expect(createAgentSchema.parse({ ...valid, primaryLocale }).primaryLocale).toBe(primaryLocale);
+  });
+
+  it("rejects unsupported primary locales", () => {
+    expect(createAgentSchema.safeParse({ ...valid, primaryLocale: "fr" }).success).toBe(false);
   });
 
   it("accepts a numeric string target from a form", () => {
@@ -75,6 +84,11 @@ describe("updateAgentProfileSchema", () => {
     expect(updateAgentProfileSchema.safeParse({ active: false }).success).toBe(false);
     expect(updateAgentProfileSchema.safeParse({ in_app_calling_enabled: false }).success).toBe(false);
     expect(updateAgentProfileSchema.parse({ dailyCallTarget: 0 })).toEqual({ dailyCallTarget: 0 });
+  });
+
+  it("allows admins to update an agent's primary locale", () => {
+    expect(updateAgentProfileSchema.parse({ primaryLocale: "de" })).toEqual({ primaryLocale: "de" });
+    expect(updateAgentProfileSchema.safeParse({ primaryLocale: "fr" }).success).toBe(false);
   });
 });
 

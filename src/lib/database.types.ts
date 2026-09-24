@@ -441,6 +441,7 @@ export type Database = {
           id: string
           in_app_calling_enabled: boolean
           name: string
+          primary_locale: "en" | "de"
           role: Database["public"]["Enums"]["user_role"]
           timezone: string
         }
@@ -455,6 +456,7 @@ export type Database = {
           id: string
           in_app_calling_enabled?: boolean
           name?: string
+          primary_locale?: "en" | "de"
           role?: Database["public"]["Enums"]["user_role"]
           timezone?: string
         }
@@ -469,6 +471,7 @@ export type Database = {
           id?: string
           in_app_calling_enabled?: boolean
           name?: string
+          primary_locale?: "en" | "de"
           role?: Database["public"]["Enums"]["user_role"]
           timezone?: string
         }
@@ -562,6 +565,7 @@ export type Database = {
           interested_today: number
           leads_assigned: number
           name: string
+          primary_locale: "en" | "de"
           role: Database["public"]["Enums"]["user_role"]
           talk_seconds_today: number
           timezone: string
