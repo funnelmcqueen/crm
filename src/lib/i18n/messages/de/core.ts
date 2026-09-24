@@ -1,4 +1,4 @@
-import type en from "./en/core";
+import type en from "../en/core";
 
 const de: { [K in keyof typeof en]: string } = {
   skipToContent: "Zum Inhalt springen",
