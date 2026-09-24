@@ -3,7 +3,7 @@
 import { CalendarClock } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { DateTime, formatDateTime } from "@/components/common/datetime";
+import { DateTime } from "@/components/common/datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,8 @@ import { followUpQuickPicks, tryZonedLocalInputToUtc, utcToZonedLocalInput } fro
 import { cn } from "@/lib/utils";
 import { setNextFollowUpAction } from "@/server/actions/leads";
 import { isOverdue } from "./lead-list-cells";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatDate } from "@/lib/i18n/format";
 
 const MAX_NOTE = 500;
 
@@ -32,6 +34,8 @@ export interface FollowUpPickerProps {
 }
 
 export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPickerProps) {
+  const t = useTranslations("workspace");
+  const { locale } = useLocale();
   const [pending, startTransition] = useTransition();
   const [customOpen, setCustomOpen] = useState(false);
   const [custom, setCustom] = useState("");
@@ -44,7 +48,7 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
     startTransition(async () => {
       const result = await setNextFollowUpAction(leadId, due.toISOString(), note.trim() === "" ? undefined : note);
       if (result.ok) {
-        toast.success(`Follow-up set for ${formatDateTime(due, tz)}`);
+        toast.success(t.followUpSetFor.replace("{date}", formatDate(due, locale, { dateStyle: "medium", timeStyle: "short", timeZone: tz })));
         setNote("");
         setCustom("");
         setCustomOpen(false);
@@ -57,7 +61,7 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
   function saveCustom() {
     const due = tryZonedLocalInputToUtc(custom, tz);
     if (!due) {
-      setError("Pick a date and time.");
+      setError(t.pickDateTime);
       return;
     }
     save(due);
@@ -66,15 +70,15 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Next follow-up</span>
+        <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t.nextFollowUp}</span>
         <p className={cn("flex items-center gap-2 text-base font-bold", overdue && "text-destructive")}>
           <CalendarClock aria-hidden className="size-5 shrink-0" />
-          <DateTime value={nextFollowUpAt} tz={tz} now={now} empty="None scheduled" />
-          {overdue ? <span className="text-xs font-semibold uppercase">Overdue</span> : null}
+          <DateTime value={nextFollowUpAt} tz={tz} now={now} empty={t.noneScheduled} locale={locale} />
+          {overdue ? <span className="text-xs font-semibold uppercase">{t.overdue}</span> : null}
         </p>
       </div>
 
-      <div role="group" aria-label="Schedule follow-up" className="grid grid-cols-2 gap-2">
+      <div role="group" aria-label={t.scheduleFollowUp} className="grid grid-cols-2 gap-2">
         {QUICK_PICKS.map((pick) => (
           <Button
             key={pick.key}
@@ -84,7 +88,7 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
             className="h-12"
             onClick={() => save(followUpQuickPicks(tz)[pick.key])}
           >
-            {pick.label}
+            {t.followUpPicks[pick.key === "tomorrow9am" ? "tomorrow" : pick.key === "in3Days" ? "in3days" : "nextWeek"]}
           </Button>
         ))}
         <Button
@@ -96,14 +100,14 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
           className="h-12"
           onClick={() => setCustomOpen((open) => !open)}
         >
-          Custom
+          {t.followUpPicks.custom}
         </Button>
       </div>
 
       {customOpen ? (
         <div id="follow-up-custom" className="flex flex-col gap-2">
           <Label htmlFor="follow-up-custom-input" className="text-xs text-muted-foreground">
-            Date and time ({tz.replace(/_/g, " ")})
+            {t.dateAndTime.replace("{zone}", tz.replace(/_/g, " "))}
           </Label>
           <div className="flex gap-2">
             <Input
@@ -115,7 +119,7 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
               className="h-12 flex-1 text-base lg:text-sm"
             />
             <Button type="button" disabled={pending || custom === ""} className="h-12 font-bold" onClick={saveCustom}>
-              Set
+              {t.set}
             </Button>
           </div>
         </div>
@@ -123,20 +127,20 @@ export function FollowUpPicker({ leadId, nextFollowUpAt, tz, now }: FollowUpPick
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="follow-up-note" className="text-xs text-muted-foreground">
-          Note (optional)
+          {t.noteOptional}
         </Label>
         <Input
           id="follow-up-note"
           value={note}
           maxLength={MAX_NOTE}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="What to follow up on"
+          placeholder={t.followUpPlaceholder}
           className="h-12 text-base lg:text-sm"
         />
       </div>
 
       <p aria-live="polite" className="text-xs text-destructive">
-        {error ?? (pending ? <span className="text-muted-foreground">Saving…</span> : "")}
+        {error ?? (pending ? <span className="text-muted-foreground">{t.saving}</span> : "")}
       </p>
     </div>
   );

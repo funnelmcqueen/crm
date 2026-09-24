@@ -6,6 +6,7 @@ import { BookMeetingButton } from "@/components/booking/book-meeting-button";
 import { formatCallTimer, type DialerState } from "@/lib/dialer/state";
 import { cn } from "@/lib/utils";
 import { Keypad } from "./keypad";
+import { useTranslations } from "@/components/i18n/locale-provider";
 
 type LiveCallState = Extract<DialerState, { kind: "preparing" | "ringing" | "in-call" }>;
 
@@ -17,6 +18,7 @@ export interface InCallBarProps {
 }
 
 function CallTimer({ connectedAt }: { connectedAt: number }) {
+  const t = useTranslations("workspace");
   const [now, setNow] = useState(connectedAt);
   useEffect(() => {
     const tick = () => setNow(Date.now());
@@ -28,7 +30,7 @@ function CallTimer({ connectedAt }: { connectedAt: number }) {
     };
   }, []);
   return (
-    <span className="font-extrabold tabular-nums" aria-label="Call duration">
+    <span className="font-extrabold tabular-nums" aria-label={t.callDuration}>
       {formatCallTimer(now - connectedAt)}
     </span>
   );
@@ -39,6 +41,7 @@ const controlClass =
 
 /** Sticky red bar for the live call: above the mobile tab bar, at the bottom of the main area on desktop. */
 export function InCallBar({ state, onHangup, onMutedChange, onDigits }: InCallBarProps) {
+  const t = useTranslations("workspace");
   const [keypadOpen, setKeypadOpen] = useState(false);
   const connected = state.kind === "in-call";
   const muted = connected && state.muted;
@@ -46,7 +49,7 @@ export function InCallBar({ state, onHangup, onMutedChange, onDigits }: InCallBa
 
   return (
     <section
-      aria-label="Active call"
+      aria-label={t.activeCall}
       className="fixed inset-x-0 bottom-[var(--bottom-nav-height)] z-40 bg-primary text-primary-foreground shadow-lg md:left-60"
     >
       <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-2 md:px-8">
@@ -56,7 +59,7 @@ export function InCallBar({ state, onHangup, onMutedChange, onDigits }: InCallBa
             {connected ? (
               <CallTimer key={state.connectedAt} connectedAt={state.connectedAt} />
             ) : (
-              <span aria-live="polite">{state.kind === "ringing" ? "Ringing..." : "Calling..."}</span>
+              <span aria-live="polite">{state.kind === "ringing" ? t.ringing : t.calling}</span>
             )}
             {warning ? (
               <span role="status" className="inline-flex min-w-0 items-center gap-1 truncate font-bold">
@@ -77,7 +80,7 @@ export function InCallBar({ state, onHangup, onMutedChange, onDigits }: InCallBa
 
         <button
           type="button"
-          aria-label={muted ? "Unmute" : "Mute"}
+          aria-label={muted ? t.unmute : t.mute}
           aria-pressed={muted}
           disabled={!connected}
           onClick={() => onMutedChange(!muted)}
@@ -87,28 +90,28 @@ export function InCallBar({ state, onHangup, onMutedChange, onDigits }: InCallBa
           )}
         >
           {muted ? <MicOff aria-hidden /> : <Mic aria-hidden />}
-          <span className="hidden md:inline">{muted ? "Unmute" : "Mute"}</span>
+          <span className="hidden md:inline">{muted ? t.unmute : t.mute}</span>
         </button>
 
         <button
           type="button"
-          aria-label="Keypad"
+          aria-label={t.keypad}
           disabled={!connected}
           onClick={() => setKeypadOpen(true)}
           className={cn(controlClass, "bg-black/20 hover:bg-black/30")}
         >
           <Grid3x3 aria-hidden />
-          <span className="hidden md:inline">Keypad</span>
+          <span className="hidden md:inline">{t.keypad}</span>
         </button>
 
         <button
           type="button"
-          aria-label="Hang up"
+          aria-label={t.hangUp}
           onClick={onHangup}
           className={cn(controlClass, "bg-primary-foreground px-4 text-primary hover:bg-primary-foreground/90")}
         >
           <PhoneOff aria-hidden />
-          <span className="hidden sm:inline">Hang up</span>
+          <span className="hidden sm:inline">{t.hangUp}</span>
         </button>
       </div>
 

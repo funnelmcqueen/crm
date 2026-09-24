@@ -24,7 +24,6 @@ import {
   MAX_CALL_NOTES,
   MAX_FOLLOW_UP_NOTE,
   buildLogCallPayload,
-  describeCallEnd,
   outcomeFromShortcutKey,
   outcomeSheetEnterAction,
   resolveFollowUpAt,
@@ -32,7 +31,9 @@ import {
 } from "@/lib/dialer/outcome-form";
 import type { WrapUp } from "@/lib/dialer/state";
 import { CALL_OUTCOME_OPTIONS, type CallOutcome } from "@/lib/domain/outcomes";
-import { formatInTz, isValidTimeZone } from "@/lib/domain/time";
+import { isValidTimeZone } from "@/lib/domain/time";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatDate } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 import { cheerOutcome } from "@/components/pep/pep-toast";
 import { logCallAction } from "@/server/actions/calls";
@@ -47,9 +48,9 @@ export interface OutcomeSheetProps {
   onDiscard(): void;
 }
 
-const SAVE_ERROR = "Couldn't save. Check your connection and try again.";
-
 export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: OutcomeSheetProps) {
+  const t = useTranslations("workspace");
+  const { locale } = useLocale();
   const storageKey = draftKey(userId, "outcome", wrapUp.callId ?? wrapUp.clientRequestId ?? "unknown");
   const formId = useId();
   const tz = isValidTimeZone(timezone) ? timezone : "UTC";
@@ -111,7 +112,7 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
       cheerOutcome({ outcome: built.payload.outcome, business: wrapUp.leadId ? wrapUp.label : null, callId: result.data.callId });
       onSaved(goNext);
     } catch {
-      setError(SAVE_ERROR);
+      setError(t.saveError);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -150,7 +151,7 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
     }
   }
 
-  const endLabel = describeCallEnd(wrapUp.mode, wrapUp.endReason);
+  const endLabel = wrapUp.mode === "TEL" ? t.callEnds.phone : t.callEnds[wrapUp.endReason];
 
   return (
     <>
@@ -177,16 +178,16 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
         >
           <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
             <SheetHeader className="px-5 pt-5 pb-3">
-              <SheetTitle className="text-xl font-extrabold">Log call</SheetTitle>
+              <SheetTitle className="text-xl font-extrabold">{t.logCall}</SheetTitle>
               <SheetDescription id={`${formId}-description`} className="truncate">
                 <span className="font-semibold text-foreground">{wrapUp.label}</span> · {endLabel}
               </SheetDescription>
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pb-4">
-              <p className="text-sm text-muted-foreground">Choose an outcome, add a note if needed, then Save &amp; Next.</p>
-              <p className="hidden text-xs text-muted-foreground md:block">Keyboard: 1–8 selects an outcome. Enter saves the selected outcome and opens the next lead.</p>
-              <div role="radiogroup" aria-label="Outcome" className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <p className="text-sm text-muted-foreground">{t.outcomeIntro}</p>
+              <p className="hidden text-xs text-muted-foreground md:block">{t.outcomeShortcut}</p>
+              <div role="radiogroup" aria-label={t.outcome} className="grid grid-cols-2 gap-2 md:grid-cols-4">
                 {CALL_OUTCOME_OPTIONS.map((option, index) => {
                   const selected = outcome === option.value;
                   return (
@@ -207,7 +208,7 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                       )}
                     >
                       {selected ? <Check aria-hidden className="size-4 shrink-0" /> : null}
-                      <span>{option.label}</span>
+                      <span className="min-w-0 break-words">{t.outcomes[option.value]}</span>
                       <kbd
                         aria-hidden
                         className={cn(
@@ -224,13 +225,13 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
 
               {outcome === "WRONG_NUMBER" && wrapUp.leadId ? (
                 <p className="-mt-2 text-sm font-semibold text-destructive">
-                  This lead will be marked Do Not Contact.
+                  {t.wrongNumberDnc}
                 </p>
               ) : null}
 
               {outcome === "FOLLOW_UP" ? (
                 <fieldset className="flex flex-col gap-3 rounded-xl border p-3">
-                  <legend className="px-1 text-sm font-bold">Follow up</legend>
+                  <legend className="px-1 text-sm font-bold">{t.followUp}</legend>
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                     {FOLLOW_UP_PICKS.map((pick) => {
                       const selected = values.followUpPick === pick.value;
@@ -246,14 +247,14 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                             selected ? "border-primary bg-primary/15 text-foreground" : "bg-card hover:bg-accent",
                           )}
                         >
-                          {pick.label}
+                          {t.followUpPicks[pick.value]}
                         </button>
                       );
                     })}
                   </div>
                   {values.followUpPick === "custom" ? (
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor={`${formId}-custom`}>Date and time ({tz.replace(/_/g, " ")})</Label>
+                      <Label htmlFor={`${formId}-custom`}>{t.dateAndTime.replace("{zone}", tz.replace(/_/g, " "))}</Label>
                       <Input
                         id={`${formId}-custom`}
                         type="datetime-local"
@@ -266,14 +267,14 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                   ) : null}
                   {followUpPreview ? (
                     <p className="text-sm text-muted-foreground">
-                      Due{" "}
+                      {t.due}{" "}
                       <span className="font-semibold text-foreground tabular-nums">
-                        {formatInTz(followUpPreview, tz, "EEE, MMM d 'at' h:mm a")}
+                        {formatDate(followUpPreview, locale, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz })}
                       </span>
                     </p>
                   ) : null}
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`${formId}-follow-up-note`}>Follow-up note (optional)</Label>
+                    <Label htmlFor={`${formId}-follow-up-note`}>{t.followUpNoteOptional}</Label>
                     <Input
                       id={`${formId}-follow-up-note`}
                       value={values.followUpNote}
@@ -293,11 +294,11 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                     onClick={() => setNotesOpen(true)}
                     className="inline-flex min-h-12 w-fit items-center rounded-lg px-1 text-sm font-bold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:hidden"
                   >
-                    + Add note
+                    {t.addNote}
                   </button>
                 )}
                 <div className={cn("flex-col gap-1.5", notesOpen ? "flex" : "hidden md:flex")}>
-                  <Label htmlFor={`${formId}-notes`}>Notes (optional)</Label>
+                  <Label htmlFor={`${formId}-notes`}>{t.notesOptional}</Label>
                   <Textarea
                     id={`${formId}-notes`}
                     value={values.notes}
@@ -312,12 +313,12 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
 
               {wrapUp.mode === "TEL" ? (
                 <fieldset className="flex flex-col gap-1.5">
-                  <legend className="mb-1.5 text-sm font-medium">Talk time (optional)</legend>
+                  <legend className="mb-1.5 text-sm font-medium">{t.talkTimeOptional}</legend>
                   <div className="flex items-center gap-2">
                     <Input
-                      aria-label="Minutes"
+                      aria-label={t.minutes}
                       inputMode="numeric"
-                      placeholder="min"
+                      placeholder={t.min}
                       value={values.durationMinutes}
                       maxLength={4}
                       disabled={saving}
@@ -328,9 +329,9 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                       :
                     </span>
                     <Input
-                      aria-label="Seconds"
+                      aria-label={t.seconds}
                       inputMode="numeric"
-                      placeholder="sec"
+                      placeholder={t.sec}
                       value={values.durationSeconds}
                       maxLength={2}
                       disabled={saving}
@@ -346,8 +347,8 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                   {error}
                 </p>
               ) : null}
-              {draftUnavailable ? <p role="status" className="text-sm text-destructive">Draft recovery is unavailable. Keep this page open until your call is saved.</p> : null}
-              <p role="status" className="sr-only">{saving ? "Saving call outcome…" : ""}</p>
+              {draftUnavailable ? <p role="status" className="text-sm text-destructive">{t.draftRecoveryUnavailable}</p> : null}
+              <p role="status" className="sr-only">{saving ? t.savingCallOutcome : ""}</p>
             </div>
 
             <div className="grid grid-cols-[auto_1fr] gap-2 border-t px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
@@ -357,7 +358,7 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                 onClick={() => void save(false)}
                 className="min-h-14 rounded-xl border bg-card px-6 text-base font-bold outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
               >
-                Save
+                {t.save}
               </button>
               <button
                 ref={saveNextRef}
@@ -367,7 +368,7 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
                 onClick={() => void save(true)}
                 className="min-h-14 rounded-xl bg-primary px-6 text-lg font-extrabold text-primary-foreground outline-none transition-colors duration-150 hover:bg-primary/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:opacity-50"
               >
-                {saving ? "Saving..." : "Save & Next"}
+                {saving ? t.saving : t.saveAndNext}
               </button>
             </div>
           </div>
@@ -377,13 +378,13 @@ export function OutcomeSheet({ userId, wrapUp, timezone, onSaved, onDiscard }: O
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Close without logging?</AlertDialogTitle>
-            <AlertDialogDescription>This call&apos;s outcome and any notes entered here will be discarded.</AlertDialogDescription>
+            <AlertDialogTitle>{t.closeWithoutLogging}</AlertDialogTitle>
+            <AlertDialogDescription>{t.discardCallWarning}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="min-h-12">Keep logging</AlertDialogCancel>
+            <AlertDialogCancel className="min-h-12">{t.keepLogging}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" className="min-h-12" onClick={() => { removeDraft(storageKey); onDiscard(); }}>
-              Discard
+              {t.discard}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

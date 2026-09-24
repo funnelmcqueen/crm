@@ -24,10 +24,11 @@ const DOT: Record<StatusTone, string> = {
 export interface StatusBadgeProps {
   status: LeadStatus;
   className?: string;
+  label?: string;
 }
 
 /** Lead status pill. Labels and tones come from lib/domain/statuses only. */
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export function StatusBadge({ status, className, label }: StatusBadgeProps) {
   const tone = STATUS_TONE[status];
   return (
     <span
@@ -39,7 +40,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       )}
     >
       <span aria-hidden className={cn("size-1.5 rounded-full", DOT[tone])} />
-      {STATUS_LABELS[status]}
+      {label ?? STATUS_LABELS[status]}
     </span>
   );
 }

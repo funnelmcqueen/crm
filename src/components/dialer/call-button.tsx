@@ -10,6 +10,7 @@ import { isDialable } from "@/lib/domain/statuses";
 import { E164_PATTERN } from "@/lib/domain/phone";
 import { cn } from "@/lib/utils";
 import { useDialer } from "./dialer-context";
+import { useTranslations } from "@/components/i18n/locale-provider";
 
 export interface CallButtonProps {
   lead: DialableLead;
@@ -18,46 +19,47 @@ export interface CallButtonProps {
   className?: string;
 }
 
-function busyLabel(state: DialerState): string {
+function busyLabel(state: DialerState, t: ReturnType<typeof useTranslations>): string {
   switch (state.kind) {
     case "preparing":
     case "tel-pending":
-      return "Calling...";
+      return t.calling;
     case "ringing":
-      return "Ringing...";
+      return t.ringing;
     case "in-call":
-      return "In call";
+      return t.inCall;
     default:
-      return "Log outcome";
+      return t.logOutcome;
   }
 }
 
 export function CallButton({ lead, size = "default", label = "CALL", className }: CallButtonProps) {
   const dialer = useDialer();
+  const t = useTranslations("workspace");
   const reasonId = useId();
 
   const base = cn(
     "inline-flex items-center justify-center gap-2 rounded-xl bg-primary font-extrabold tracking-wide text-primary-foreground uppercase outline-none select-none transition-colors duration-150 hover:bg-primary/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px [&_svg]:size-5 [&_svg]:shrink-0",
     size === "lg" ? "min-h-14 w-full px-8 text-lg md:w-auto" : "min-h-12 px-5 text-base",
   );
-  const accessibleName = `Call ${lead.businessName}`;
+  const accessibleName = t.callAria.replace("{name}", lead.businessName);
 
-  let text = label;
+  let text = label === "CALL" ? t.callUpper : label === "Call back" ? t.callBack : label;
   let reason: string | null = null;
   if (!dialer) {
-    reason = "Calling is not available on this page";
+    reason = t.callingUnavailable;
   } else if (!isDialable(lead.status)) {
-    text = "Do Not Contact";
-    reason = "This lead is marked Do Not Contact";
+    text = t.statuses.DO_NOT_CONTACT;
+    reason = t.dncReason;
   } else if (!E164_PATTERN.test(lead.phone)) {
-    text = "Phone needed";
-    reason = "Ask an admin to add a valid phone number before calling";
+    text = t.phoneNeeded;
+    reason = t.phoneNeededReason;
   } else if (dialer.state.kind !== "idle") {
-    if (activeLeadId(dialer.state) === lead.id) text = busyLabel(dialer.state);
-    reason = dialer.state.kind === "wrap-up" ? "Log the last call first" : "Another call is active";
+    if (activeLeadId(dialer.state) === lead.id) text = busyLabel(dialer.state, t);
+    reason = dialer.state.kind === "wrap-up" ? t.logLastCallFirst : t.anotherCallActive;
   } else if (dialer.connecting) {
-    text = "Connecting...";
-    reason = "Getting in-app calling ready";
+    text = t.connecting;
+    reason = t.gettingCallingReady;
   }
 
   if (reason !== null || !dialer) {

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { updateLeadNotesAction } from "@/server/actions/leads";
+import { useTranslations } from "@/components/i18n/locale-provider";
 
 const MAX_NOTES = 10_000;
 
@@ -18,6 +19,7 @@ export interface LeadNotesFormProps {
 }
 
 export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
+  const t = useTranslations("workspace");
   const storageKey = draftKey(userId, "lead", leadId);
   const [value, setValue] = useState(notes ?? "");
   const [saved, setSaved] = useState(notes ?? "");
@@ -32,11 +34,11 @@ export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
       const draft = readDraft(storageKey, leadDraftSchema);
       if (!canceled && draft !== null) {
         setValue(draft);
-        setDraftNotice("Unsaved draft restored. Save to keep it on this lead.");
+        setDraftNotice(t.draftRestored);
       }
     });
     return () => { canceled = true; };
-  }, [storageKey]);
+  }, [storageKey, t]);
 
   // A newer server value (another tab, an admin edit) replaces the text only when nothing is unsaved.
   if (notes !== syncedNotes) {
@@ -55,8 +57,8 @@ export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
       setDraftNotice(null);
     } else {
       setDraftNotice(writeDraft(storageKey, next)
-        ? "Draft kept in this tab. Save to keep it on this lead."
-        : "Draft recovery is unavailable. Save your notes before leaving.");
+        ? t.draftKept
+        : t.draftNotesUnavailable);
     }
   }
 
@@ -74,12 +76,12 @@ export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
           setValue(stored);
           removeDraft(storageKey);
           setDraftNotice(null);
-          toast.success("Notes saved");
+          toast.success(t.notesSaved);
         } else {
           setError(result.error.message);
         }
       } catch {
-        setError("Couldn't save your notes. Check your connection and try again. Your draft is still here.");
+        setError(t.notesSaveError);
       }
     });
   }
@@ -91,7 +93,7 @@ export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
   return (
     <form onSubmit={submit} className="flex flex-col gap-2">
       <Label htmlFor="lead-notes" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Notes
+        {t.notes}
       </Label>
       <Textarea
         id="lead-notes"
@@ -100,7 +102,7 @@ export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
         onChange={(event) => changeValue(event.target.value)}
         disabled={pending}
         onKeyDown={onKeyDown}
-        placeholder="Gatekeeper name, best time to call, objections…"
+        placeholder={t.notesPlaceholder}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "lead-notes-error" : undefined}
         className="min-h-32 text-base lg:text-sm"
@@ -111,9 +113,9 @@ export function LeadNotesForm({ userId, leadId, notes }: LeadNotesFormProps) {
           {error ?? ""}
         </p>
         <div className="flex items-center gap-3">
-          {dirty && !pending ? <span className="text-xs text-muted-foreground">Unsaved</span> : null}
+          {dirty && !pending ? <span className="text-xs text-muted-foreground">{t.unsaved}</span> : null}
           <Button type="submit" disabled={!dirty || pending} className="h-12 min-w-24 font-bold">
-            {pending ? "Saving…" : "Save"}
+            {pending ? t.saving : t.save}
           </Button>
         </div>
       </div>

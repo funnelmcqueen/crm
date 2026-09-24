@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useTranslations } from "@/components/i18n/locale-provider";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"] as const;
 
@@ -13,6 +14,7 @@ export interface KeypadProps {
 
 /** DTMF keypad for phone menus during a call. */
 export function Keypad({ open, onOpenChange, onDigit }: KeypadProps) {
+  const t = useTranslations("workspace");
   const [entered, setEntered] = useState("");
 
   const press = (key: string) => {
@@ -31,8 +33,8 @@ export function Keypad({ open, onOpenChange, onDigit }: KeypadProps) {
       <SheetContent side="bottom" className="rounded-t-2xl pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <div className="mx-auto w-full max-w-sm">
           <SheetHeader className="px-5 pt-5">
-            <SheetTitle className="text-lg font-bold">Keypad</SheetTitle>
-            <SheetDescription>Tones are sent to the call as you tap.</SheetDescription>
+            <SheetTitle className="text-lg font-bold">{t.keypad}</SheetTitle>
+            <SheetDescription>{t.keypadTones}</SheetDescription>
           </SheetHeader>
           <p
             aria-live="polite"
@@ -53,7 +55,7 @@ export function Keypad({ open, onOpenChange, onDigit }: KeypadProps) {
               <button
                 key={key}
                 type="button"
-                aria-label={key === "*" ? "Star" : key === "#" ? "Pound" : key}
+                aria-label={key === "*" ? t.star : key === "#" ? t.pound : key}
                 onClick={() => press(key)}
                 className="min-h-14 rounded-xl border bg-card text-2xl font-extrabold tabular-nums outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-accent"
               >

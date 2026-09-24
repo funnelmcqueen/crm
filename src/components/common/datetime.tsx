@@ -1,5 +1,7 @@
 import { formatInTz, isValidTimeZone, type DateInput } from "@/lib/domain/time";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/i18n/format";
+import type { Locale } from "@/lib/i18n/locales";
 
 export type DateTimeStyle = "date" | "datetime" | "smart";
 
@@ -52,15 +54,23 @@ export interface DateTimeProps {
   /** Shown when there is no value. */
   empty?: string;
   className?: string;
+  locale?: Locale;
 }
 
-export function DateTime({ value, tz, style = "smart", now, empty = "—", className }: DateTimeProps) {
+export function DateTime({ value, tz, style = "smart", now, empty = "—", className, locale }: DateTimeProps) {
   if (!value || !Number.isFinite(Date.parse(value))) {
     return <span className={cn("text-muted-foreground", className)}>{empty}</span>;
   }
   return (
     <time dateTime={new Date(value).toISOString()} className={cn("tabular-nums", className)}>
-      {formatDateTime(value, tz, style, now)}
+      {locale ? formatDate(new Date(value), locale, {
+        ...(style === "date" ? { dateStyle: "medium" as const } : style === "datetime" ? { dateStyle: "medium" as const, timeStyle: "short" as const } : {
+          weekday: "short" as const, month: "short" as const, day: "numeric" as const,
+          year: formatDate(new Date(value), locale, { year: "numeric", timeZone: safeTz(tz) }) === formatDate(new Date(now ?? value), locale, { year: "numeric", timeZone: safeTz(tz) }) ? undefined : "numeric" as const,
+          hour: "numeric" as const, minute: "2-digit" as const,
+        }),
+        timeZone: safeTz(tz),
+      }) : formatDateTime(value, tz, style, now)}
     </time>
   );
 }

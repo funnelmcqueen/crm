@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import en from "@/lib/i18n/messages/en/core";
 import de from "@/lib/i18n/messages/de/core";
+import workspaceEn from "@/lib/i18n/messages/en/workspace";
+import workspaceDe from "@/lib/i18n/messages/de/workspace";
 import type { Locale } from "@/lib/i18n/locales";
 
 const messages = { en, de };
@@ -19,4 +21,13 @@ export function LocaleProvider({ locale, children }: { locale: Locale; children:
 
 export function useLocale() {
   return useContext(LocaleContext);
+}
+
+const workspaceMessages = { en: workspaceEn, de: workspaceDe };
+
+/** Typed messages for the sales workspace, selected by the existing locale provider. */
+export function useTranslations(namespace: "workspace") {
+  const { locale } = useLocale();
+  if (namespace === "workspace") return workspaceMessages[locale];
+  return workspaceMessages[locale];
 }

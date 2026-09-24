@@ -7,6 +7,7 @@ import { normalizePhone, formatPhoneDisplay } from "@/lib/domain/phone";
 import { telHref, type DialMode } from "@/lib/dialer/resolve-mode";
 import type { ManualDialTarget } from "@/lib/dialer/types";
 import { useDialer } from "./dialer-context";
+import { useTranslations } from "@/components/i18n/locale-provider";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"] as const;
 
@@ -50,6 +51,7 @@ export interface ManualKeypadControlsProps {
 
 /** The idle dial surface also renders alone in tests, outside the Sheet portal. */
 export function ManualKeypadControls({ value, busy, error, onValueChange, onCall, onClose }: ManualKeypadControlsProps) {
+  const t = useTranslations("workspace");
   const preview = manualDialPreview(value);
   const append = (key: string) => onValueChange((value + key).slice(0, 100));
   return (
@@ -67,14 +69,14 @@ export function ManualKeypadControls({ value, busy, error, onValueChange, onCall
       }}
     >
       <SheetHeader className="px-4 pt-4 pr-16">
-        <SheetTitle className="text-lg font-bold">Keypad</SheetTitle>
-        <SheetDescription>Enter a number to call.</SheetDescription>
+        <SheetTitle className="text-lg font-bold">{t.keypad}</SheetTitle>
+        <SheetDescription>{t.enterNumber}</SheetDescription>
       </SheetHeader>
       <div className="px-4">
-        <label htmlFor="manual-keypad-number" className="sr-only">Phone number</label>
+        <label htmlFor="manual-keypad-number" className="sr-only">{t.phoneNumber}</label>
         <input
           id="manual-keypad-number"
-          aria-label="Phone number"
+          aria-label={t.phoneNumber}
           type="tel"
           inputMode="tel"
           autoComplete="tel"
@@ -82,11 +84,11 @@ export function ManualKeypadControls({ value, busy, error, onValueChange, onCall
           maxLength={100}
           disabled={busy}
           onChange={(event) => onValueChange(event.target.value)}
-          placeholder="Phone number"
+          placeholder={t.phoneNumber}
           className="min-h-12 w-full rounded-xl border bg-background px-4 text-center text-xl font-bold tabular-nums outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         />
         <p aria-live="polite" className="min-h-6 pt-1 text-center text-sm text-muted-foreground">
-          {preview ? preview.display : value ? "Enter a valid phone number" : ""}
+          {preview ? preview.display : value ? t.validPhoneNumber : ""}
         </p>
         {error ? <p role="alert" className="text-center text-sm text-destructive">{error}</p> : null}
       </div>
@@ -95,7 +97,7 @@ export function ManualKeypadControls({ value, busy, error, onValueChange, onCall
           <button
             key={key}
             type="button"
-            aria-label={key === "*" ? "Star" : key === "#" ? "Pound" : key}
+            aria-label={key === "*" ? t.star : key === "#" ? t.pound : key}
             disabled={busy}
             onClick={() => append(key)}
             className="min-h-12 rounded-xl border bg-card text-2xl font-extrabold tabular-nums outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
@@ -105,14 +107,14 @@ export function ManualKeypadControls({ value, busy, error, onValueChange, onCall
         ))}
       </div>
       <div className="grid grid-cols-3 gap-2 px-4 pt-3">
-        <button type="button" aria-label="Close keypad" disabled={busy} onClick={onClose} className="min-h-12 rounded-xl border px-2 font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50">Close</button>
-        <button type="button" aria-label="Call number" disabled={!preview || busy} onClick={onCall} className="min-h-12 rounded-xl bg-primary px-2 font-bold text-primary-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50">
+        <button type="button" aria-label={t.closeKeypad} disabled={busy} onClick={onClose} className="min-h-12 rounded-xl border px-2 font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50">{t.close}</button>
+        <button type="button" aria-label={t.callNumber} disabled={!preview || busy} onClick={onCall} className="min-h-12 rounded-xl bg-primary px-2 font-bold text-primary-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50">
           <Phone aria-hidden className="mx-auto size-5" />
-          Call
+          {t.call}
         </button>
-        <button type="button" aria-label="Backspace" disabled={!value || busy} onClick={() => onValueChange(value.slice(0, -1))} className="min-h-12 rounded-xl border px-2 font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50">
+        <button type="button" aria-label={t.backspace} disabled={!value || busy} onClick={() => onValueChange(value.slice(0, -1))} className="min-h-12 rounded-xl border px-2 font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50">
           <Delete aria-hidden className="mx-auto size-5" />
-          <span className="sr-only">Backspace</span>
+          <span className="sr-only">{t.backspace}</span>
         </button>
       </div>
     </div>
@@ -121,6 +123,7 @@ export function ManualKeypadControls({ value, busy, error, onValueChange, onCall
 
 /** One launcher for every signed-in route. Connected-call tones stay in InCallBar. */
 export function PersistentKeypad() {
+  const t = useTranslations("workspace");
   const dialer = useDialer();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -139,10 +142,10 @@ export function PersistentKeypad() {
         setOpen(false);
         setValue("");
       } else if (!started) {
-        setError("The call could not be started. Please try again.");
+        setError(t.callStartError);
       }
     } catch {
-      setError("The call could not be started. Please try again.");
+      setError(t.callStartError);
     } finally {
       setBusy(false);
     }
@@ -153,12 +156,12 @@ export function PersistentKeypad() {
       {idle ? (
         <button
           type="button"
-          aria-label="Open keypad"
+          aria-label={t.openKeypad}
           onClick={() => setOpen(true)}
           className="fixed right-3 bottom-[calc(var(--bottom-nav-height)+0.75rem)] z-40 inline-flex min-h-12 items-center gap-2 rounded-full bg-primary px-5 font-bold text-primary-foreground shadow-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:right-4 md:bottom-4"
         >
           <Grid3x3 aria-hidden className="size-5" />
-          Keypad
+          {t.keypad}
         </button>
       ) : null}
       <Sheet open={open && idle} onOpenChange={(next) => { if (!busy) setOpen(next); }}>

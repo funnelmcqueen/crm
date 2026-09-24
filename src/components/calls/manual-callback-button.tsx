@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import { manualDialPreview, placeManualCall } from "@/components/dialer/persistent-keypad";
 import { useDialer } from "@/components/dialer/dialer-context";
+import { useTranslations } from "@/components/i18n/locale-provider";
 
 export interface ManualCallbackButtonProps {
   phone: string;
@@ -13,11 +14,12 @@ export interface ManualCallbackButtonProps {
 
 /** Calls an unmatched number through the same server-created manual-call flow as the persistent keypad. */
 export function ManualCallbackButton({ phone }: ManualCallbackButtonProps) {
+  const t = useTranslations("workspace");
   const dialer = useDialer();
   const [busy, setBusy] = useState(false);
   const preview = manualDialPreview(phone);
   if (!preview) return null;
-  const label = `Call back ${formatPhoneDisplay(preview.e164)}`;
+  const label = t.callbackAria.replace("{phone}", formatPhoneDisplay(preview.e164));
   const disabled = !dialer || busy || dialer.state.kind !== "idle";
 
   async function call() {
@@ -25,9 +27,9 @@ export function ManualCallbackButton({ phone }: ManualCallbackButtonProps) {
     setBusy(true);
     try {
       const started = await placeManualCall(phone, dialer, (href) => { window.location.href = href; });
-      if (!started) toast.error("The call could not be started. Please try again.");
+      if (!started) toast.error(t.callStartError);
     } catch {
-      toast.error("The call could not be started. Please try again.");
+      toast.error(t.callStartError);
     } finally {
       setBusy(false);
     }
@@ -42,7 +44,7 @@ export function ManualCallbackButton({ phone }: ManualCallbackButtonProps) {
       className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-base font-extrabold tracking-wide text-primary-foreground uppercase outline-none transition-colors duration-150 select-none hover:bg-primary/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50"
     >
       <Phone aria-hidden className="size-5" />
-      {busy ? "Calling..." : "Call back"}
+      {busy ? t.calling : t.callBack}
     </button>
   );
 }
