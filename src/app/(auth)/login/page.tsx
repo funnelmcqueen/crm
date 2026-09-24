@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { safeNextPath } from "@/lib/supabase/auth-redirect";
 import { LoginForm } from "./login-form";
@@ -38,6 +39,17 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
         <div className="rounded-xl border bg-card p-6">
           <LoginForm next={next} />
         </div>
+
+        {/* Discoverable from the sign-in page: Google's consent-screen review fetches both while signed out. */}
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          <Link href="/privacy" className="hover:underline">
+            Privacy
+          </Link>
+          <span aria-hidden> · </span>
+          <Link href="/terms" className="hover:underline">
+            Terms
+          </Link>
+        </p>
       </div>
     </main>
   );

@@ -150,7 +150,7 @@ prints a ready-to-paste env block:
 ```
 [localbase] applied bootstrap.sql
 [localbase] applied migration 20260915000100_core_schema.sql
-... (20 migrations)
+... (22 migrations)
 [localbase] listening on http://127.0.0.1:54321
 
 localbase is running (data: .../.localbase/data)
@@ -590,9 +590,14 @@ for consent explicitly, so that it is always issued a refresh token.
 both redirect URIs — the deployed one and localhost for local development:
 
 ```
-https://<your-app-domain>/api/google/callback
+https://crm-xgjz.vercel.app/api/google/callback
 http://localhost:3000/api/google/callback
 ```
+
+The first must be the domain the app is actually served from. Every push to `main` builds three separate
+deployments on Vercel — `crm`, `crm-nmeg` and `crm-xgjz` — and **`crm-xgjz` is the live one**. Google matches
+the redirect URI exactly, so a URI naming one deployment is rejected when the consent screen returns to
+another.
 
 Save, then copy the client ID and secret.
 
@@ -617,10 +622,14 @@ All three variables are server-only and must never carry a `NEXT_PUBLIC_` prefix
 The OAuth redirect (`/api/google/callback`, step 3 above) is built from `APP_BASE_URL`, the same variable
 Twilio's signature check uses. Without it, `/api/google/start` refuses with a bare `{"error":"unavailable"}`
 and startup itself refuses once the three `GOOGLE_*` variables above are set (env.ts requires
-`APP_BASE_URL` alongside them, exactly as it already does for `DIALER_DRIVER=twilio`). Use the deployed
-origin in production, and for local development:
+`APP_BASE_URL` alongside them, exactly as it already does for `DIALER_DRIVER=twilio`). It must match the
+redirect URI registered in step 3 — scheme and host, no path, no trailing slash:
 
-> `APP_BASE_URL=http://localhost:3000`
+> `APP_BASE_URL=https://crm-xgjz.vercel.app` (production)
+> `APP_BASE_URL=http://localhost:3000` (local development)
+
+Environment variables are set per deployment on Vercel, so set these on `crm-xgjz`; `crm` and `crm-nmeg`
+build from the same pushes but are not the live app.
 
 If Twilio is also configured, this is the same variable — no need to set it twice.
 

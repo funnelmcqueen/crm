@@ -149,7 +149,9 @@ If Google refuses to complete the reconnect (an error page from Google, or Setti
 2. Confirm the OAuth consent screen is **Published**, not stuck in Testing (README, Google Calendar
    setup, step 2).
 3. Confirm both redirect URIs are still registered on the OAuth client, the deployed one included
-   (`https://<app-domain>/api/google/callback`).
+   (`https://crm-xgjz.vercel.app/api/google/callback`). `crm-xgjz` is the live deployment; every push
+   also builds `crm` and `crm-nmeg` on Vercel, and a redirect URI or `APP_BASE_URL` pointing at one of those will be
+   rejected by Google on the way back.
 
 ### Settings says Connected, but booking is unavailable and nothing is marked broken
 

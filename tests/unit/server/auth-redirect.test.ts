@@ -44,6 +44,15 @@ describe("path helpers", () => {
     expect(isPublicPath("/authors")).toBe(false);
   });
 
+  it("keeps the legal pages public, which Google's consent-screen review depends on", () => {
+    // Google fetches both while signed out before it will publish the OAuth consent screen; putting either
+    // behind the login would block publishing, and the connection would silently expire every seven days.
+    expect(isPublicPath("/privacy")).toBe(true);
+    expect(isPublicPath("/terms")).toBe(true);
+    expect(isPublicPath("/privacy/extra")).toBe(false);
+    expect(isPublicPath("/terminal")).toBe(false);
+  });
+
   it("recognizes admin paths", () => {
     expect(isAdminPath("/admin")).toBe(true);
     expect(isAdminPath("/admin/phone-numbers")).toBe(true);
