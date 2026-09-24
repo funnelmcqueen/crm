@@ -6,6 +6,8 @@ import { CallButton } from "@/components/dialer/call-button";
 import { ManualCallbackButton } from "@/components/calls/manual-callback-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
+import { formatNumber } from "@/lib/i18n/format";
+import type { Locale } from "@/lib/i18n/locales";
 import type { CallHistoryRow } from "@/server/services/calls";
 
 export interface CallHistoryListProps {
@@ -17,16 +19,25 @@ export interface CallHistoryListProps {
 
 type Translations = ReturnType<typeof useTranslations>;
 
+function localizedDuration(seconds: number | null, locale: Locale, t: Translations): string {
+  if (locale === "en") return formatDuration(seconds);
+  const whole = seconds === null || !Number.isFinite(seconds) || seconds < 0 ? 0 : Math.floor(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const secs = whole % 60;
+  return `${hours > 0 ? `${formatNumber(hours, locale)} ${t.callsList.hourShort} ` : ""}${formatNumber(minutes, locale)} ${t.min} ${formatNumber(secs, locale)} ${t.sec}`;
+}
+
 function titleFor(row: CallHistoryRow, t: Translations): string {
   return row.businessName ?? row.contactName ?? t.callsList.unknownCaller;
 }
 
-function resultFor(row: CallHistoryRow, t: Translations): string {
+function resultFor(row: CallHistoryRow, locale: Locale, t: Translations): string {
   if (row.hasVoicemail) {
-    const duration = row.voicemailDurationSeconds === null ? "" : ` · ${formatDuration(row.voicemailDurationSeconds)}`;
+    const duration = row.voicemailDurationSeconds === null ? "" : ` · ${localizedDuration(row.voicemailDurationSeconds, locale, t)}`;
     return `${row.handledAt ? t.callsList.heardVoicemail : t.callsList.unheardVoicemail}${duration}`;
   }
-  if (row.outcome) return t.outcomes[row.outcome];
+  if (row.outcome) return t.outcomes[row.outcome] ?? t.leadHistory.notLogged;
   if (row.callStatus === "no-answer") return t.callsList.noAnswer;
   if (row.callStatus === "busy") return t.callsList.busy;
   if (row.callStatus === "failed") return t.callsList.failed;
@@ -96,8 +107,8 @@ export function CallHistoryList({ rows, tz, now, isAdmin }: CallHistoryListProps
                 <TableCell className="max-w-64 py-3"><Caller row={row} /></TableCell>
                 {isAdmin ? <TableCell className="max-w-40 truncate">{row.agentName ?? t.callsList.unknown}</TableCell> : null}
                 <TableCell><DateTime value={row.createdAt} tz={tz} now={now} locale={locale} className="text-sm whitespace-nowrap" /></TableCell>
-                <TableCell><span className="inline-flex items-center gap-1 text-sm">{row.hasVoicemail ? <Voicemail aria-hidden className="size-4" /> : null}{resultFor(row, t)}</span></TableCell>
-                <TableCell className="tabular-nums">{formatDuration(row.durationSeconds)}</TableCell>
+                <TableCell><span className="inline-flex items-center gap-1 text-sm">{row.hasVoicemail ? <Voicemail aria-hidden className="size-4" /> : null}{resultFor(row, locale, t)}</span></TableCell>
+                <TableCell className="tabular-nums">{localizedDuration(row.durationSeconds, locale, t)}</TableCell>
                 <TableCell className="py-3 pr-4 text-right"><Callback row={row} /></TableCell>
               </TableRow>
             ))}
@@ -114,8 +125,8 @@ export function CallHistoryList({ rows, tz, now, isAdmin }: CallHistoryListProps
             </div>
             <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
               <span><Direction row={row} /></span>
-              <span className="truncate text-center">{resultFor(row, t)}</span>
-              <span className="text-right tabular-nums">{formatDuration(row.durationSeconds)}</span>
+              <span className="truncate text-center">{resultFor(row, locale, t)}</span>
+              <span className="text-right tabular-nums">{localizedDuration(row.durationSeconds, locale, t)}</span>
             </div>
             {isAdmin ? <p className="truncate text-xs text-muted-foreground">{t.callsList.agentPrefix} <span className="text-foreground">{row.agentName ?? t.callsList.unknown}</span></p> : null}
             <div className="mt-auto"><Callback row={row} /></div>

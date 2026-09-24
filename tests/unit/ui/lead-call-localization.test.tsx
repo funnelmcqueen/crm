@@ -42,6 +42,30 @@ describe("German lead and call lists", () => {
     expect(html).toContain("(941) 555-0123");
   });
 
+  it("formats call and voicemail durations for German on desktop and mobile", () => {
+    const row: CallHistoryRow = {
+      id: "call-2", createdAt: "2026-09-25T13:30:00.000Z", leadId: null, leadStatus: null,
+      businessName: null, contactName: null, remoteE164: "+19415550124", userId: "agent-1", agentName: "Maya",
+      direction: "INBOUND", outcome: null, callStatus: "completed", durationSeconds: 83,
+      hasVoicemail: true, voicemailDurationSeconds: 21, handledAt: null,
+    };
+    const html = german(createElement(CallHistoryList, { rows: [row], tz: "Europe/Berlin", now: Date.parse("2026-09-25T14:00:00Z"), isAdmin: false }));
+    expect(html).toContain("Neue Mailbox-Nachricht · 0 Min. 21 Sek.");
+    expect(html).toContain("1 Min. 23 Sek.");
+    expect(html.match(/1 Min\. 23 Sek\./g)).toHaveLength(2);
+  });
+
+  it("uses a safe localized fallback for an unexpected call outcome", () => {
+    const row: CallHistoryRow = {
+      id: "call-3", createdAt: "2026-09-25T13:30:00.000Z", leadId: null, leadStatus: null,
+      businessName: null, contactName: null, remoteE164: "+19415550124", userId: "agent-1", agentName: "Maya",
+      direction: "OUTBOUND", outcome: "UNEXPECTED" as CallHistoryRow["outcome"], callStatus: "completed", durationSeconds: 42,
+      hasVoicemail: false, voicemailDurationSeconds: null, handledAt: null,
+    };
+    const html = german(createElement(CallHistoryList, { rows: [row], tz: "Europe/Berlin", now: Date.parse("2026-09-25T14:00:00Z"), isAdmin: false }));
+    expect(html).toContain("Nicht erfasst");
+  });
+
   it("localizes the lead call history empty state", () => {
     const html = german(createElement(CallHistory, { history: [] as CallHistoryEntry[], tz: "Europe/Berlin", now: 0, isAdmin: false, canMarkHeard: true }));
     expect(html).toContain("Noch keine Anrufe");
