@@ -5,17 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signIn } from "@/server/actions/auth";
+import { useLocale } from "@/components/i18n/locale-provider";
 
 export function LoginForm({ next }: { next: string }) {
   const [state, formAction, pending] = useActionState(signIn, null);
   const failed = state !== null;
+  const { messages } = useLocale();
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <input type="hidden" name="next" value={next} />
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{messages.email}</Label>
         <Input
           id="email"
           name="email"
@@ -33,7 +35,7 @@ export function LoginForm({ next }: { next: string }) {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password">{messages.password}</Label>
         <Input
           id="password"
           name="password"
@@ -55,7 +57,7 @@ export function LoginForm({ next }: { next: string }) {
       </div>
 
       <Button type="submit" disabled={pending} className="h-12 w-full text-base font-bold">
-        {pending ? "Signing in..." : "Sign in"}
+        {pending ? messages.signingIn : messages.signIn}
       </Button>
     </form>
   );

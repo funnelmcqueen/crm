@@ -4,6 +4,7 @@ import { Brand } from "./brand";
 import type { NavKey, ShellUser } from "./nav-config";
 import { Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
+import { useLocale } from "@/components/i18n/locale-provider";
 
 export interface AppShellProps {
   user: ShellUser;
@@ -19,13 +20,14 @@ export interface AppShellProps {
 }
 
 export function AppShell({ user, badges, headerSlot, children }: AppShellProps) {
+  const { messages } = useLocale();
   return (
     <div className="min-h-dvh">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-3 focus:font-bold focus:text-primary-foreground"
       >
-        Skip to content
+        {messages.skipToContent}
       </a>
 
       <Sidebar user={user} badges={badges} headerSlot={headerSlot} />

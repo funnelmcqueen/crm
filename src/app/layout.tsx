@@ -3,6 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { LocaleProvider } from "@/components/i18n/locale-provider";
+import { resolveLocale } from "@/lib/i18n/locales";
+import { cookies } from "next/headers";
 import "./globals.css";
 
 // `--font-sans` is the variable the shadcn theme in globals.css maps to Tailwind's font-sans.
@@ -31,11 +34,12 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const locale = resolveLocale((await cookies()).get("crm_locale")?.value);
   return (
-    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang={locale} className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full bg-background text-foreground">
-        <TooltipProvider>{children}</TooltipProvider>
+        <LocaleProvider locale={locale}><TooltipProvider>{children}</TooltipProvider></LocaleProvider>
         <Toaster theme="dark" position="top-center" />
       </body>
     </html>

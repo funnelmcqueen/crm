@@ -6,6 +6,9 @@ import { NextLeadLink } from "@/components/dialer/next-lead-link";
 import { requireUserPage } from "@/server/context";
 import { getDialerDriver, type DialerDriver } from "@/server/env";
 import { unheardVoicemailCount } from "@/server/services/voicemails";
+import { LocaleProvider } from "@/components/i18n/locale-provider";
+import { resolveLocale } from "@/lib/i18n/locales";
+import { cookies } from "next/headers";
 
 function dialerDriver(): DialerDriver {
   try {
@@ -21,10 +24,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Layouts are not re-run on every client navigation, so each page must also call requireUserPage().
   const ctx = await requireUserPage();
   const { profile } = ctx;
+  const locale = resolveLocale((await cookies()).get("crm_locale")?.value, profile.primary_locale);
   const voicemails = await unheardVoicemailCount(ctx).catch(() => 0);
 
   return (
-    <DialerProvider
+    <LocaleProvider locale={locale}><DialerProvider
       userId={ctx.userId}
       defaultDriver={dialerDriver()}
       inAppEnabled={profile.in_app_calling_enabled}
@@ -37,6 +41,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       >
         {children}
       </AppShell>
-    </DialerProvider>
+    </DialerProvider></LocaleProvider>
   );
 }

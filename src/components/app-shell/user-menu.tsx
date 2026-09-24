@@ -20,6 +20,8 @@ import { LOGIN_PATH } from "@/lib/supabase/auth-redirect";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/server/actions/auth";
 import { roleLabel, type ShellUser } from "./nav-config";
+import { LanguageSwitcher } from "@/components/i18n/language-switcher";
+import { useLocale } from "@/components/i18n/locale-provider";
 
 function initials(user: ShellUser): string {
   const source = user.name.trim() || user.email;
@@ -31,13 +33,14 @@ function initials(user: ShellUser): string {
 export function UserMenu({ user, compact = false }: { user: ShellUser; compact?: boolean }) {
   const [signingOut, startSignOut] = useTransition();
   const displayName = user.name.trim() || user.email;
+  const { messages } = useLocale();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Account menu for ${displayName}`}
+          aria-label={messages.accountMenu.replace("{name}", displayName)}
           className={cn(
             "flex min-h-12 items-center gap-3 rounded-lg text-left outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
             compact ? "min-w-12 justify-center" : "w-full px-2",
@@ -63,9 +66,10 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
         <DropdownMenuItem asChild className="min-h-12">
           <Link href="/settings">
             <Settings aria-hidden />
-            Settings
+            {messages.settings}
           </Link>
         </DropdownMenuItem>
+        <LanguageSwitcher />
         <DropdownMenuItem
           variant="destructive"
           disabled={signingOut}
@@ -76,7 +80,7 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
               try {
                 await signOut();
               } catch {
-                toast.error("Couldn't sign out. Check your connection and try again. Your drafts are still here.");
+                toast.error(messages.signOutError);
                 return;
               }
               // A tapped phone call is this user's data; the next person on a shared device must not find it.
@@ -89,7 +93,7 @@ export function UserMenu({ user, compact = false }: { user: ShellUser; compact?:
           }}
         >
           <LogOut aria-hidden />
-          {signingOut ? "Signing out..." : "Sign out"}
+          {signingOut ? messages.signingOut : messages.signOut}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
