@@ -2,8 +2,9 @@
 
 // Rendered on the lead detail page when it was opened from the Next Lead flow (?flow=next).
 import { useSearchParams } from "next/navigation";
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { Suspense } from "react";
-import { NEXT_LEAD_REASON_LABELS, appendSkip, isNextLeadReason, nextLeadHref, parseSkipParam } from "@/lib/dialer/skip-list";
+import { appendSkip, isNextLeadReason, nextLeadHref, parseSkipParam } from "@/lib/dialer/skip-list";
 import { useDialer } from "./dialer-context";
 import { SkipLeadMenu } from "./skip-lead-menu";
 
@@ -13,6 +14,7 @@ export interface NextLeadControlsProps {
 }
 
 function Controls({ leadId, businessName }: NextLeadControlsProps) {
+  const t = useTranslations("workspace").nextLeadUi;
   const searchParams = useSearchParams();
   const dialer = useDialer();
   const reason = searchParams.get("reason");
@@ -24,10 +26,10 @@ function Controls({ leadId, businessName }: NextLeadControlsProps) {
     <div className="flex items-center justify-between gap-3">
       {isNextLeadReason(reason) ? (
         <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">
-          Next lead · {NEXT_LEAD_REASON_LABELS[reason]}
+          {t.nextLead} · {{ VOICEMAIL: t.reasonVoicemail, OVERDUE: t.reasonOverdue, DUE_TODAY: t.reasonToday, NEW: t.reasonNew, RETRY: t.reasonRetry }[reason]}
         </span>
       ) : (
-        <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Next lead</span>
+        <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">{t.nextLead}</span>
       )}
       <SkipLeadMenu
         leadId={leadId}

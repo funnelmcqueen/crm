@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { formatDateTime } from "@/components/common/datetime";
 import {
   AlertDialog,
@@ -41,6 +42,7 @@ export interface BulkFollowUpDialogProps {
 
 /** Schedule or reschedule a follow-up on every selected lead: pick a time, optionally a note, then confirm. */
 export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFollowUpDialogProps) {
+  const t = useTranslations("workspace").bulkDialogs;
   const ids = useId();
   const [pick, setPick] = useState<QuickPick | "custom">("tomorrow9am");
   const [custom, setCustom] = useState("");
@@ -50,11 +52,11 @@ export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFo
   function submit() {
     const due = pick === "custom" ? tryZonedLocalInputToUtc(custom, tz) : followUpQuickPicks(tz)[pick];
     if (!due) {
-      setError("Pick a date and time.");
+      setError(t.pickDate);
       return;
     }
     if (due.getTime() <= Date.now()) {
-      setError("Pick a time in the future.");
+      setError(t.pickFuture);
       return;
     }
     onSubmit(due, note.trim() === "" ? undefined : note.trim());
@@ -66,13 +68,13 @@ export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFo
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Follow-up for {leadCount(count)}</DialogTitle>
+          <DialogTitle>{t.followUpFor.replace("{count}", leadCount(count))}</DialogTitle>
           <DialogDescription>
-            Each lead&rsquo;s next open follow-up moves to this time, or a new one is created. Times are in {tz.replace(/_/g, " ")}.
+            {t.followUpDescription.replace("{zone}", tz.replace(/_/g, " "))}
           </DialogDescription>
         </DialogHeader>
 
-        <div role="radiogroup" aria-label="When" className="grid grid-cols-2 gap-2">
+        <div role="radiogroup" aria-label={t.when} className="grid grid-cols-2 gap-2">
           {QUICK_PICKS.map((option) => (
             <Button
               key={option.key}
@@ -86,7 +88,7 @@ export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFo
                 setError(null);
               }}
             >
-              {option.label}
+              {{ tomorrow9am: t.tomorrow, in3Days: t.in3Days, nextWeek: t.nextWeek }[option.key]}
             </Button>
           ))}
           <Button
@@ -97,14 +99,14 @@ export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFo
             className="h-12 aria-checked:border-primary"
             onClick={() => setPick("custom")}
           >
-            Custom
+            {t.custom}
           </Button>
         </div>
 
         {pick === "custom" ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor={`${ids}-custom`} className="text-xs text-muted-foreground">
-              Date and time
+              {t.dateTime}
             </Label>
             <Input
               id={`${ids}-custom`}
@@ -122,14 +124,14 @@ export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFo
 
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${ids}-note`} className="text-xs text-muted-foreground">
-            Note (optional, replaces existing notes)
+            {t.noteOptional}
           </Label>
           <Input
             id={`${ids}-note`}
             value={note}
             maxLength={MAX_BULK_NOTE_LENGTH}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="What to follow up on"
+            placeholder={t.notePlaceholder}
             className="h-12 text-base lg:text-sm"
           />
         </div>
@@ -138,16 +140,16 @@ export function BulkFollowUpDialog({ count, tz, now, onClose, onSubmit }: BulkFo
           {error ? (
             <span className="font-semibold text-destructive">{error}</span>
           ) : preview ? (
-            <span className="text-muted-foreground">Due {formatDateTime(preview, tz)}</span>
+            <span className="text-muted-foreground">{t.due} {formatDateTime(preview, tz)}</span>
           ) : null}
         </p>
 
         <DialogFooter>
           <Button type="button" variant="outline" className="h-12" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button type="button" className="h-12 font-bold" onClick={submit}>
-            Set follow-up on {leadCount(count)}
+            {t.setFollowUpOn.replace("{count}", leadCount(count))}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -163,6 +165,7 @@ export interface BulkSourceDialogProps {
 }
 
 export function BulkSourceDialog({ count, sources, onClose, onSubmit }: BulkSourceDialogProps) {
+  const t = useTranslations("workspace").bulkDialogs;
   const ids = useId();
   const [value, setValue] = useState("");
   const trimmed = value.trim();
@@ -171,8 +174,8 @@ export function BulkSourceDialog({ count, sources, onClose, onSubmit }: BulkSour
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Change the source of {leadCount(count)}</DialogTitle>
-          <DialogDescription>Type a new source or pick one already in use. Clearing removes the source from these leads.</DialogDescription>
+          <DialogTitle>{t.changeSourceOf.replace("{count}", leadCount(count))}</DialogTitle>
+          <DialogDescription>{t.sourceDescription}</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -182,7 +185,7 @@ export function BulkSourceDialog({ count, sources, onClose, onSubmit }: BulkSour
           }}
         >
           <div className="flex flex-col gap-2">
-            <Label htmlFor={`${ids}-source`}>Source</Label>
+            <Label htmlFor={`${ids}-source`}>{t.source}</Label>
             <Input
               id={`${ids}-source`}
               list={`${ids}-sources`}
@@ -200,14 +203,14 @@ export function BulkSourceDialog({ count, sources, onClose, onSubmit }: BulkSour
           </div>
           <DialogFooter className="gap-2 sm:justify-between">
             <Button type="button" variant="ghost" className="h-12" onClick={() => onSubmit(null)}>
-              Clear source
+              {t.clearSource}
             </Button>
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               <Button type="button" variant="outline" className="h-12" onClick={onClose}>
-                Cancel
+                {t.cancel}
               </Button>
               <Button type="submit" className="h-12 font-bold" disabled={trimmed === ""}>
-                Set source
+                {t.setSource}
               </Button>
             </div>
           </DialogFooter>
@@ -227,6 +230,7 @@ export interface BulkConfirmDialogProps {
 }
 
 export function BulkConfirmDialog({ title, description, confirmLabel, destructive = false, onClose, onConfirm }: BulkConfirmDialogProps) {
+  const t = useTranslations("workspace").bulkDialogs;
   return (
     <AlertDialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <AlertDialogContent>
@@ -235,7 +239,7 @@ export function BulkConfirmDialog({ title, description, confirmLabel, destructiv
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="h-12">Cancel</AlertDialogCancel>
+          <AlertDialogCancel className="h-12">{t.cancel}</AlertDialogCancel>
           <AlertDialogAction
             variant={destructive ? "destructive" : "default"}
             className="h-12 font-bold"
@@ -262,6 +266,7 @@ export interface BulkBusinessTypeDialogProps {
 
 /** Pick one of the eight types, or go back to guessing from the name (clears the stored type). */
 export function BulkBusinessTypeDialog({ count, onClose, onSubmit }: BulkBusinessTypeDialogProps) {
+  const t = useTranslations("workspace").bulkDialogs;
   const ids = useId();
   const [value, setValue] = useState("");
   const options = [...BUSINESS_TYPES, GUESS_FROM_NAME];
@@ -270,8 +275,8 @@ export function BulkBusinessTypeDialog({ count, onClose, onSubmit }: BulkBusines
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Set the business type of {leadCount(count)}</DialogTitle>
-          <DialogDescription>Meeting times are ranked by business type. Guess from name clears it, so the name decides again.</DialogDescription>
+          <DialogTitle>{t.businessTypeOf.replace("{count}", leadCount(count))}</DialogTitle>
+          <DialogDescription>{t.businessTypeDescription}</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -281,7 +286,7 @@ export function BulkBusinessTypeDialog({ count, onClose, onSubmit }: BulkBusines
             else if (isBusinessType(value)) onSubmit(value);
           }}
         >
-          <RadioGroup value={value} onValueChange={setValue} aria-label="Business type" className="grid gap-2 sm:grid-cols-2">
+          <RadioGroup value={value} onValueChange={setValue} aria-label={t.businessType} className="grid gap-2 sm:grid-cols-2">
             {options.map((option) => {
               const id = `${ids}-${option}`;
               return (
@@ -291,17 +296,17 @@ export function BulkBusinessTypeDialog({ count, onClose, onSubmit }: BulkBusines
                   className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border p-3 font-normal has-data-[state=checked]:border-primary has-data-[state=checked]:bg-primary/10"
                 >
                   <RadioGroupItem id={id} value={option} />
-                  {isBusinessType(option) ? BUSINESS_TYPE_LABELS[option] : "Guess from name"}
+                  {isBusinessType(option) ? BUSINESS_TYPE_LABELS[option] : t.guessFromName}
                 </Label>
               );
             })}
           </RadioGroup>
           <DialogFooter>
             <Button type="button" variant="outline" className="min-h-12" onClick={onClose}>
-              Cancel
+                {t.cancel}
             </Button>
             <Button type="submit" className="min-h-12" disabled={value === ""}>
-              Set business type
+              {t.setBusinessType}
             </Button>
           </DialogFooter>
         </form>

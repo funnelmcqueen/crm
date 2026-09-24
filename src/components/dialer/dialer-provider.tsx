@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { toast } from "sonner";
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { startDeviceSession, type DeviceSession, type DeviceStatus } from "@/lib/dialer/device-session";
 import { loadInAppDriver } from "@/lib/dialer/drivers/load";
 import {
@@ -88,32 +89,32 @@ async function fetchVoiceToken(): Promise<{ token: string; ttl: number }> {
   return { token: record.token, ttl: typeof record.ttl === "number" ? record.ttl : 3600 };
 }
 
-async function requestLeadCallId(leadId: string): Promise<ManualCallRequest> {
+async function requestLeadCallId(leadId: string, messages: { [K in keyof typeof DIALER_MESSAGES]: string }): Promise<ManualCallRequest> {
   try {
     const response = await fetch("/api/calls/outbound", {
       method: "POST", credentials: "same-origin", cache: "no-store",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId }),
     });
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) return { ok: false, status: response.status, message: outboundErrorMessage(response.status, body) };
+    if (!response.ok) return { ok: false, status: response.status, message: outboundErrorMessage(response.status, body, messages) };
     const id = typeof body === "object" && body !== null ? (body as { callId?: unknown }).callId : undefined;
     return typeof id === "string" && UUID.test(id)
       ? { ok: true, callId: id }
-      : { ok: false, message: DIALER_MESSAGES.startFailed };
+      : { ok: false, message: messages.startFailed };
   } catch {
-    return { ok: false, message: DIALER_MESSAGES.startFailed };
+    return { ok: false, message: messages.startFailed };
   }
 }
 
 /** Asks for the microphone once. Returns an error message, or null when access was granted. */
-async function requestMicrophone(): Promise<string | null> {
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return DIALER_MESSAGES.micBlocked;
+async function requestMicrophone(messages: { [K in keyof typeof DIALER_MESSAGES]: string }): Promise<string | null> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return messages.micBlocked;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     for (const track of stream.getTracks()) track.stop();
     return null;
   } catch (error) {
-    return microphoneErrorMessage(error);
+    return microphoneErrorMessage(error, messages);
   }
 }
 
@@ -122,6 +123,7 @@ function currentSkipList(): string[] {
 }
 
 export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, children }: DialerProviderProps) {
+  const t = useTranslations("workspace");
   const recoveryKey = draftKey(userId, "wrapup", "current");
   const recoveringRef = useRef(true);
   const [recovering, setRecovering] = useState(true);
@@ -157,10 +159,10 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   const ensureMicrophone = useCallback(async (driver: InAppDriver): Promise<string | null> => {
     // The mock driver plays no audio, so it never prompts (keeps automated browsers prompt-free).
     if (driver.name !== "twilio" || micGrantedRef.current) return null;
-    const error = await requestMicrophone();
+    const error = await requestMicrophone(t.dialerErrors);
     if (error === null) micGrantedRef.current = true;
     return error;
-  }, []);
+  }, [t.dialerErrors]);
 
   // Recover a call after reload without starting another call or trusting cached access.
   useEffect(() => {
@@ -182,7 +184,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
           }
           if (decision.kind === "retry") { retryNeeded = true; return; }
           dispatch({ type: "RESTORE_WRAP_UP", wrapUp: decision.wrapUp });
-          toast("Recovered an unfinished call. Check the outcome and save when ready.");
+          toast(t.dialerRecovery.restored);
         } catch { retryNeeded = true; }
         return;
       }
@@ -205,7 +207,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       }
     });
     return () => { canceled = true; };
-  }, [dispatch, userId, recoveryKey, recoveryAttempt]);
+  }, [dispatch, userId, recoveryKey, recoveryAttempt, t.dialerRecovery.restored]);
 
   useEffect(() => {
     if (state.kind === "idle" || state.kind === "incoming" || state.kind === "tel-pending") return;
@@ -253,7 +255,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       onIncoming: handleIncoming,
       onStatus: (status, notify) => {
         setDevice(status);
-        if (notify) toast(DIALER_MESSAGES.inAppUnavailable, { id: "dialer-device" });
+        if (notify) toast(t.dialerErrors.inAppUnavailable, { id: "dialer-device" });
       },
       registerTimeoutMs: REGISTER_TIMEOUT_MS,
       retryMs: REGISTER_RETRY_MS,
@@ -263,7 +265,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       session.dispose();
       if (sessionRef.current === session) sessionRef.current = null;
     };
-  }, [shouldRegister, defaultDriver, handleIncoming]);
+  }, [shouldRegister, defaultDriver, handleIncoming, t.dialerErrors.inAppUnavailable]);
 
   // Twilio routes callbacks only to agents whose device checked in recently, so only a working device pings.
   useEffect(() => {
@@ -374,17 +376,17 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
         activeCallRef.current = null;
         if (isCurrent()) {
           dispatch({ type: "DISCONNECTED", reason: "failed" });
-          toast.error(DIALER_MESSAGES.startFailed);
+          toast.error(t.dialerErrors.startFailed);
         }
       }
     },
-    [dispatch, ensureMicrophone, recheckServerStatus, router],
+    [dispatch, ensureMicrophone, recheckServerStatus, router, t.dialerErrors.startFailed],
   );
 
   const startCall = useCallback((lead: DialableLead) => {
     if (!isDialable(lead.status) || !E164_PATTERN.test(lead.phone)) return;
-    return startOutboundCall({ leadId: lead.id, label: lead.businessName }, () => requestLeadCallId(lead.id));
-  }, [startOutboundCall]);
+    return startOutboundCall({ leadId: lead.id, label: lead.businessName }, () => requestLeadCallId(lead.id, t.dialerErrors));
+  }, [startOutboundCall, t.dialerErrors]);
 
   const startManualCall = useCallback(async (target: ManualDialTarget): Promise<void> => {
     await startOutboundCall({ leadId: null, label: target.label }, () => requestManualCallId(target, "IN_APP"));
@@ -598,7 +600,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       active = call.accept(events);
     } catch {
       endIncoming();
-      toast.error(DIALER_MESSAGES.acceptFailed);
+      toast.error(t.dialerErrors.acceptFailed);
       return;
     }
     incomingRef.current = null;
@@ -609,7 +611,7 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       return;
     }
     activeCallRef.current = active;
-  }, [declineIncoming, dispatch, endIncoming, ensureMicrophone]);
+  }, [declineIncoming, dispatch, endIncoming, ensureMicrophone, t.dialerErrors.acceptFailed]);
 
   const incomingCallId = state.kind === "incoming" ? state.callId : undefined;
   useEffect(() => {
@@ -629,12 +631,12 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
   const handleSaved = useCallback(
     (goNext: boolean) => {
       finishWrapUp();
-      toast.success(goNext ? "Call saved. Opening your next lead…" : "Call saved.");
+      toast.success(goNext ? t.dialerRecovery.savedNext : t.dialerRecovery.saved);
       notifyVoicemailsChanged();
       if (goNext) router.push(nextLeadHref(currentSkipList()));
       else router.refresh();
     },
-    [finishWrapUp, router],
+    [finishWrapUp, router, t.dialerRecovery.saved, t.dialerRecovery.savedNext],
   );
 
   const markMeetingBooked = useCallback((leadId: string) => dispatch({ type: "MEETING_BOOKED", leadId }), [dispatch]);
@@ -684,9 +686,9 @@ export function DialerProvider({ userId, defaultDriver, inAppEnabled, timezone, 
       <PersistentKeypad />
       {recoveryError ? (
         <section role="alert" className="fixed inset-x-4 bottom-24 z-50 rounded-xl border bg-card p-4 shadow-lg md:left-64">
-          <p className="font-bold">Your unfinished call could not be recovered.</p>
-          <p className="mt-1 text-sm">Your draft is still in this tab. Reconnect and retry before starting another call.</p>
-          <button type="button" className="mt-2 min-h-12 rounded-lg border px-4 font-bold focus-visible:ring-3 focus-visible:ring-ring/50" onClick={() => { setRecoveryError(false); setRecoveryAttempt((attempt) => attempt + 1); }}>Retry recovery</button>
+          <p className="font-bold">{t.dialerRecovery.failedTitle}</p>
+          <p className="mt-1 text-sm">{t.dialerRecovery.failedDescription}</p>
+          <button type="button" className="mt-2 min-h-12 rounded-lg border px-4 font-bold focus-visible:ring-3 focus-visible:ring-ring/50" onClick={() => { setRecoveryError(false); setRecoveryAttempt((attempt) => attempt + 1); }}>{t.dialerRecovery.retry}</button>
         </section>
       ) : null}
       {state.kind === "preparing" || state.kind === "ringing" || state.kind === "in-call" || state.kind === "tel-pending" ? (

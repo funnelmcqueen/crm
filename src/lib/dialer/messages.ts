@@ -13,31 +13,31 @@ export const DIALER_MESSAGES = {
 } as const;
 
 /** User-facing message for a failed POST /api/calls/outbound. */
-export function outboundErrorMessage(status: number, body: unknown): string {
+export function outboundErrorMessage(status: number, body: unknown, messages: { [K in keyof typeof DIALER_MESSAGES]: string } = DIALER_MESSAGES): string {
   const reason =
     typeof body === "object" && body !== null && "reason" in body ? (body as { reason: unknown }).reason : undefined;
   switch (status) {
     case 404:
-      return DIALER_MESSAGES.leadUnavailable;
+      return messages.leadUnavailable;
     case 409:
-      if (reason === "do_not_contact") return DIALER_MESSAGES.doNotContact;
-      if (reason === "call_in_progress") return DIALER_MESSAGES.callInProgress;
-      return DIALER_MESSAGES.startFailed;
+      if (reason === "do_not_contact") return messages.doNotContact;
+      if (reason === "call_in_progress") return messages.callInProgress;
+      return messages.startFailed;
     case 429:
-      return DIALER_MESSAGES.rateLimited;
+      return messages.rateLimited;
     case 401:
-      return DIALER_MESSAGES.signedOut;
+      return messages.signedOut;
     case 403:
-      return DIALER_MESSAGES.inAppDisabled;
+      return messages.inAppDisabled;
     case 503:
-      return DIALER_MESSAGES.inAppUnavailable;
+      return messages.inAppUnavailable;
     default:
-      return DIALER_MESSAGES.startFailed;
+      return messages.startFailed;
   }
 }
 
 /** Maps a getUserMedia failure to the message shown before the first in-app call. */
-export function microphoneErrorMessage(error: unknown): string {
+export function microphoneErrorMessage(error: unknown, messages: { [K in keyof typeof DIALER_MESSAGES]: string } = DIALER_MESSAGES): string {
   const name = typeof error === "object" && error !== null && "name" in error ? (error as { name: unknown }).name : "";
-  return name === "NotFoundError" || name === "OverconstrainedError" ? DIALER_MESSAGES.micMissing : DIALER_MESSAGES.micBlocked;
+  return name === "NotFoundError" || name === "OverconstrainedError" ? messages.micMissing : messages.micBlocked;
 }

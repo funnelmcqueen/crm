@@ -3,6 +3,7 @@
 import { CalendarClock, Check, ChevronDown } from "lucide-react";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { formatDateTime } from "@/components/common/datetime";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,16 +41,17 @@ export interface CompleteButtonProps {
 }
 
 export function CompleteButton({ businessName, onComplete, className }: CompleteButtonProps) {
+  const t = useTranslations("workspace").queues;
   return (
     <Button
       type="button"
       variant="outline"
-      aria-label={`Complete follow-up for ${businessName}`}
+      aria-label={t.completeFor.replace("{name}", businessName)}
       className={cn("h-12 gap-1.5 px-3 font-semibold", className)}
       onClick={onComplete}
     >
       <Check aria-hidden />
-      Complete
+      {t.complete}
     </Button>
   );
 }
@@ -63,6 +65,7 @@ export interface RescheduleMenuProps {
 }
 
 export function RescheduleMenu({ followUpId, businessName, tz, className }: RescheduleMenuProps) {
+  const t = useTranslations("workspace").queues;
   const [pending, startTransition] = useTransition();
   const [picks, setPicks] = useState<FollowUpQuickPicks | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
@@ -96,7 +99,7 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
   function onCustomSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (custom === "") {
-      setError("Pick a date and time.");
+      setError(t.pickDate);
       return;
     }
     submit({ kind: "custom", local: custom }, () => setCustomOpen(false));
@@ -115,11 +118,11 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
             type="button"
             variant="outline"
             disabled={pending}
-            aria-label={`Reschedule follow-up for ${businessName}`}
+            aria-label={t.rescheduleFor.replace("{name}", businessName)}
             className={cn("h-12 gap-1.5 px-3 font-semibold", className)}
           >
             <CalendarClock aria-hidden />
-            {pending ? "Saving…" : "Reschedule"}
+            {pending ? t.saving : t.reschedule}
             <ChevronDown aria-hidden className="text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
@@ -130,7 +133,7 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
               className="min-h-12 flex-col items-start justify-center gap-0 px-3"
               onSelect={() => submit({ kind: "quick", pick: pick.key })}
             >
-              <span className="font-semibold">{pick.label}</span>
+              <span className="font-semibold">{{ tomorrow9am: t.tomorrow, in3Days: t.in3Days, nextWeek: t.nextWeek }[pick.key]}</span>
               {picks ? (
                 <span className="text-xs text-muted-foreground tabular-nums">{formatDateTime(picks[pick.key], tz)}</span>
               ) : null}
@@ -138,7 +141,7 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
           ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem className="min-h-12 px-3 font-semibold" onSelect={openCustom}>
-            Custom…
+            {t.custom}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

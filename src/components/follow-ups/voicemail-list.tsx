@@ -1,5 +1,6 @@
 import { Phone } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { DateTime, formatDuration } from "@/components/common/datetime";
 import { CallButton } from "@/components/dialer/call-button";
 import { VoicemailPlayer } from "@/components/leads/voicemail-player";
@@ -18,6 +19,8 @@ const TEL_CLASS =
 
 /** One dense row per voicemail: caller, received time and length, the player, and a call-back action. */
 export function VoicemailList({ rows, tz, now }: VoicemailListProps) {
+  const t = useTranslations("workspace").queueList;
+  const { locale } = useLocale();
   return (
     <ul className="flex flex-col divide-y rounded-xl border bg-card">
       {rows.map((row) => {
@@ -35,14 +38,14 @@ export function VoicemailList({ rows, tz, now }: VoicemailListProps) {
                   // -my-3/py-3 lifts a 24px-tall link to a 48px touch target without changing the row height.
                   className="-my-3 block truncate py-3 text-base font-bold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  {row.businessName ?? "Lead"}
+                  {row.businessName ?? t.lead}
                 </Link>
               ) : (
-                <p className="truncate text-base font-bold">Unknown caller</p>
+                <p className="truncate text-base font-bold">{t.unknownCaller}</p>
               )}
               {subtitle ? <p className="truncate text-sm text-muted-foreground tabular-nums">{subtitle}</p> : null}
               <p className="mt-0.5 text-xs text-muted-foreground">
-                <DateTime value={row.createdAt} tz={tz} now={now} />
+                <DateTime value={row.createdAt} tz={tz} now={now} locale={locale} />
                 {" · "}
                 <span className="tabular-nums">{formatDuration(row.durationSeconds)}</span>
               </p>
@@ -62,18 +65,18 @@ export function VoicemailList({ rows, tz, now }: VoicemailListProps) {
                 <CallButton
                   lead={{
                     id: row.leadId,
-                    businessName: row.businessName ?? "Lead",
+                    businessName: row.businessName ?? t.lead,
                     contactName: row.contactName,
                     phone: row.phone,
                     status: row.leadStatus,
                   }}
-                  label="Call back"
+                  label={t.callBack}
                   className="w-full md:w-auto"
                 />
               ) : row.phone ? (
-                <a href={telHref(row.phone)} aria-label={`Call back ${phone}`} className={TEL_CLASS}>
+                <a href={telHref(row.phone)} aria-label={t.callbackAria.replace("{phone}", phone)} className={TEL_CLASS}>
                   <Phone aria-hidden />
-                  Call back
+                  {t.callBack}
                 </a>
               ) : null}
             </div>

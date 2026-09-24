@@ -3,6 +3,7 @@
 import { CalendarClock, ChevronDown, Download, ListChecks, MoreHorizontal, Store, Tag, Trash2, UserMinus, UserPlus, X } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +68,9 @@ const BUTTON = "h-12 gap-2 px-4";
  * offer Undo. Export keeps the selection.
  */
 export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) {
+  const t = useTranslations("workspace").bulkUi;
+  const { locale } = useLocale();
+  const countLabel = (n: number) => `${n.toLocaleString(locale === "de" ? "de-DE" : "en-US")} ${n === 1 ? t.lead : t.leads}`;
   const selection = useLeadSelectionContext();
   const { count, ids, isAdmin, total, notice } = selection;
   const [pending, startTransition] = useTransition();
@@ -76,9 +80,9 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
   if (count === 0) {
     return notice === "filters-changed" ? (
       <p role="status" className="mb-3 flex min-h-12 items-center gap-2 rounded-xl border bg-card px-4 text-sm text-muted-foreground">
-        The search or filters changed, so the selection was cleared.
+        {t.clearedSelection}
         <Button variant="ghost" className="ms-auto h-10 px-3" onClick={selection.dismissNotice}>
-          Dismiss
+          {t.dismiss}
         </Button>
       </p>
     ) : null;
@@ -98,7 +102,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         result = null;
       }
       if (result === null) {
-        setMessage("The connection dropped before the server answered. Check the list, then try again.");
+        setMessage(t.connectionDropped);
         return;
       }
       if (!result.ok) {
@@ -131,11 +135,11 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
     toast.success(text, {
       duration: UNDO_MS,
       action: {
-        label: "Undo",
+        label: t.undo,
         onClick: () => {
           void undoBulkChangeAction(undo).then(
             (result) => (result.ok ? toast.success(describeUndoResult(result.data)) : toast.error(result.error.message)),
-            () => toast.error("Undo failed. Check the list and change the leads back by hand."),
+            () => toast.error(t.undoFailed),
           );
         },
       },
@@ -165,7 +169,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
   }
 
   function selectAllMatching() {
-    setMessage("Selecting every matching lead…");
+    setMessage(t.selectingAll);
     startTransition(async () => {
       try {
         const result = await listMatchingLeadIdsAction(selection.filters);
@@ -180,7 +184,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
             : `Selected all ${leadCount(result.data.ids.length)}.`,
         );
       } catch {
-        setMessage("Could not select every matching lead. Try again.");
+        setMessage(t.selectAllFailed);
       }
     });
   }
@@ -198,8 +202,8 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           const body = (await response.json().catch(() => null)) as { error?: string } | null;
           setMessage(
             body?.error === "rate_limited"
-              ? "Too many exports in the last few minutes. Try again shortly."
-              : "The export did not finish. Try again.",
+              ? t.exportRateLimited
+              : t.exportFailed,
           );
           return;
         }
@@ -217,21 +221,21 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         setMessage("");
         toast.success(`Exported ${leadCount(count)}.`);
       } catch {
-        setMessage("The export did not finish. Try again.");
+        setMessage(t.exportFailed);
       }
     });
   }
 
   return (
     <section
-      aria-label="Bulk actions for selected leads"
+      aria-label={t.bulkAria}
       className="sticky top-14 z-20 -mx-4 mb-3 border-y bg-background px-4 py-2 md:top-0 md:mx-0 md:rounded-xl md:border md:px-3"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <p className="flex min-h-12 items-center gap-2 pe-1 text-sm">
           <ListChecks aria-hidden className="size-5 text-primary" />
           <span>
-            <span className="text-base font-extrabold tabular-nums">{count.toLocaleString("en-US")}</span> selected
+            <span className="text-base font-extrabold tabular-nums">{count.toLocaleString(locale === "de" ? "de-DE" : "en-US")}</span> {t.selected}
           </span>
         </p>
         {selectAllLabel ? (
@@ -241,7 +245,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         ) : null}
         <Button variant="ghost" className="ms-auto h-12 gap-1 px-3 sm:ms-0" disabled={pending} onClick={selection.clear}>
           <X aria-hidden />
-          Clear selection
+          {t.clearSelection}
         </Button>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
@@ -250,15 +254,15 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
               <DropdownMenuTrigger asChild>
                 <Button className={cn(BUTTON, "font-bold")} disabled={pending}>
                   <UserPlus aria-hidden />
-                  Assign
+                  {t.assign}
                   <ChevronDown aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="max-h-80 w-64 overflow-y-auto">
-                <DropdownMenuLabel className="text-xs text-muted-foreground">Assign {leadCount(count)} to</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">{t.assignTo.replace("{count}", countLabel(count))}</DropdownMenuLabel>
                 {agents.length === 0 ? (
                   <DropdownMenuItem disabled className="min-h-12">
-                    No active agents
+                    {t.noAgents}
                   </DropdownMenuItem>
                 ) : (
                   agents.map((agent) => (
@@ -270,7 +274,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => assign(null)}>
                   <UserMinus aria-hidden />
-                  Unassign
+                  {t.unassign}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -279,12 +283,12 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className={BUTTON} disabled={pending}>
-                Set status
+                {t.setStatus}
                 <ChevronDown aria-hidden />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-80 w-60 overflow-y-auto">
-              <DropdownMenuLabel className="text-xs text-muted-foreground">Move {leadCount(count)} to</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">{t.moveTo.replace("{count}", countLabel(count))}</DropdownMenuLabel>
               {LEAD_STATUSES.map((status) => (
                 <DropdownMenuItem key={status} className="min-h-12" onSelect={() => chooseStatus(status)}>
                   <StatusBadge status={status} />
@@ -295,39 +299,39 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
 
           <Button variant="outline" className={cn(BUTTON, "hidden sm:inline-flex")} disabled={pending} onClick={() => setDialog("follow-up")}>
             <CalendarClock aria-hidden />
-            Follow-up
+            {t.followUp}
           </Button>
 
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="size-12" aria-label="More bulk actions" disabled={pending}>
+              <Button variant="outline" className="size-12" aria-label={t.moreActions} disabled={pending}>
                 <MoreHorizontal aria-hidden />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuItem className="min-h-12 gap-2 sm:hidden" onSelect={() => setDialog("follow-up")}>
                 <CalendarClock aria-hidden />
-                Set follow-up
+                {t.setFollowUp}
               </DropdownMenuItem>
               <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => setDialog("clear-follow-ups")}>
                 <CalendarClock aria-hidden />
-                Clear follow-ups
+                {t.clearFollowUps}
               </DropdownMenuItem>
               {isAdmin ? (
                 <>
                   <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => setDialog("source")}>
                     <Tag aria-hidden />
-                    Change source
+                    {t.changeSource}
                   </DropdownMenuItem>
                   <DropdownMenuItem className="min-h-12 gap-2" onSelect={() => setDialog("business-type")}>
                     <Store aria-hidden />
-                    Set business type
+                    {t.setBusinessType}
                   </DropdownMenuItem>
                 </>
               ) : null}
               <DropdownMenuItem className="min-h-12 gap-2" onSelect={exportSelected}>
                 <Download aria-hidden />
-                Export CSV
+                {t.exportCsv}
               </DropdownMenuItem>
               {isAdmin ? (
                 <>
@@ -337,7 +341,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
                     onSelect={() => setDialog("delete")}
                   >
                     <Trash2 aria-hidden />
-                    Delete leads…
+                    {t.deleteLeads}
                   </DropdownMenuItem>
                 </>
               ) : null}
@@ -347,8 +351,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Kept while you page or sort<span className="hidden sm:inline">. Changing the search or filters clears it</span>.
-        <span className="sr-only sm:hidden"> Changing the search or filters clears it.</span>
+        {t.keptHint}
       </p>
       <p role="status" aria-live="polite" className={cn("text-sm font-semibold", message === "" && "sr-only")}>
         {message}
@@ -398,9 +401,9 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
       ) : null}
       {dialog === "clear-follow-ups" ? (
         <BulkConfirmDialog
-          title={`Clear follow-ups on ${leadCount(count)}?`}
-          description="Every open follow-up on these leads is marked complete, so they leave the Overdue, Today and Upcoming lists. They stay in Completed."
-          confirmLabel="Clear follow-ups"
+          title={t.clearFollowUpsTitle.replace("{count}", countLabel(count))}
+          description={t.clearFollowUpsDescription}
+          confirmLabel={t.clearFollowUps}
           onClose={() => setDialog(null)}
           onConfirm={() =>
             run(`Clearing follow-ups on ${leadCount(count)}…`, () => bulkCompleteFollowUpsAction(selectedIds), (data) =>
@@ -411,9 +414,9 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
       ) : null}
       {dialog === "do-not-contact" ? (
         <BulkConfirmDialog
-          title={`Mark ${leadCount(count)} Do Not Contact?`}
-          description="Calling is blocked for these leads, and only an admin can reopen them. This cannot be undone from here."
-          confirmLabel="Mark Do Not Contact"
+          title={t.dncTitle.replace("{count}", countLabel(count))}
+          description={t.dncDescription}
+          confirmLabel={t.markDnc}
           destructive
           onClose={() => setDialog(null)}
           onConfirm={() => setStatus("DO_NOT_CONTACT")}
@@ -421,9 +424,9 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
       ) : null}
       {dialog === "delete" ? (
         <BulkConfirmDialog
-          title={`Delete ${leadCount(count)}?`}
-          description={`This permanently deletes ${count === 1 ? "this lead" : `these ${count.toLocaleString("en-US")} leads`} with ${count === 1 ? "its" : "their"} call history, voicemails and follow-ups. Reports lose those calls too. This cannot be undone.`}
-          confirmLabel={`Delete ${leadCount(count)}`}
+          title={t.deleteTitle.replace("{count}", countLabel(count))}
+          description={t.deleteDescription.replace("{count}", countLabel(count))}
+          confirmLabel={t.delete.replace("{count}", countLabel(count))}
           destructive
           onClose={() => setDialog(null)}
           onConfirm={() =>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useOptimistic, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { DateTime } from "@/components/common/datetime";
 import { CallButton } from "@/components/dialer/call-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,6 +44,8 @@ const LINK_CLASS =
  * instead of in their own columns. COMPLETE removes the row at once and restores it if the save fails.
  */
 export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpListProps) {
+  const t = useTranslations("workspace").queueList;
+  const { locale } = useLocale();
   const [visibleRows, hideRow] = useOptimistic(rows, (state: FollowUpRow[], id: string) => state.filter((row) => row.id !== id));
   const [, startTransition] = useTransition();
   const open = tab !== "completed";
@@ -51,7 +54,7 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
     startTransition(async () => {
       hideRow(row.id);
       const result = await completeFollowUpAction(row.id);
-      if (result.ok) toast.success(`Follow-up completed: ${row.businessName}`);
+      if (result.ok) toast.success(t.followUpCompleted.replace("{name}", row.businessName));
       else toast.error(result.error.message);
     });
   }
@@ -64,14 +67,14 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="h-11 pl-4">Business</TableHead>
-              <TableHead className="hidden 2xl:table-cell">Phone</TableHead>
-              <TableHead>{open ? "Due" : "Completed"}</TableHead>
-              <TableHead>Note</TableHead>
-              {isAdmin ? <TableHead className="hidden 2xl:table-cell">Agent</TableHead> : null}
+              <TableHead className="h-11 pl-4">{t.business}</TableHead>
+              <TableHead className="hidden 2xl:table-cell">{t.phone}</TableHead>
+              <TableHead>{open ? t.due : t.completed}</TableHead>
+              <TableHead>{t.note}</TableHead>
+              {isAdmin ? <TableHead className="hidden 2xl:table-cell">{t.agent}</TableHead> : null}
               {open ? (
                 <TableHead className="pr-4 text-right">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t.actions}</span>
                 </TableHead>
               ) : null}
             </TableRow>
@@ -91,7 +94,7 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
                   </span>
                   {isAdmin ? (
                     <span className="block truncate text-xs text-muted-foreground 2xl:hidden">
-                      Agent: <span className="text-foreground">{row.ownerName ?? "Unknown"}</span>
+                      {t.agent}: <span className="text-foreground">{row.ownerName ?? t.unknown}</span>
                     </span>
                   ) : null}
                 </TableCell>
@@ -103,7 +106,7 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
                     <span className="flex flex-col gap-0.5">
                       <DateTime value={row.completedAt} tz={tz} now={now} className="text-sm whitespace-nowrap" />
                       <span className="text-xs whitespace-nowrap text-muted-foreground">
-                        Due <DateTime value={row.dueAt} tz={tz} now={now} />
+                        {t.due} <DateTime value={row.dueAt} tz={tz} now={now} locale={locale} />
                       </span>
                     </span>
                   )}
@@ -118,7 +121,7 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
                   )}
                 </TableCell>
                 {isAdmin ? (
-                  <TableCell className="hidden max-w-40 truncate 2xl:table-cell">{row.ownerName ?? "Unknown"}</TableCell>
+                  <TableCell className="hidden max-w-40 truncate 2xl:table-cell">{row.ownerName ?? t.unknown}</TableCell>
                 ) : null}
                 {open ? (
                   <TableCell className="py-3 pr-4">
@@ -154,7 +157,7 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
                 <DueLabel dueAt={row.dueAt} tz={tz} now={now} align="end" className="shrink-0" />
               ) : (
                 <span className="flex shrink-0 flex-col items-end text-right text-xs text-muted-foreground">
-                  Completed
+                  {t.completed}
                   <DateTime value={row.completedAt} tz={tz} now={now} className="text-sm text-foreground" />
                 </span>
               )}
@@ -162,7 +165,7 @@ export function FollowUpList({ rows, tab, tz, now, isAdmin, empty }: FollowUpLis
             {row.note ? <p className="line-clamp-3 text-sm break-words">{row.note}</p> : null}
             {isAdmin ? (
               <p className="truncate text-xs text-muted-foreground">
-                Agent: <span className="text-foreground">{row.ownerName ?? "Unknown"}</span>
+                {t.agent}: <span className="text-foreground">{row.ownerName ?? t.unknown}</span>
               </p>
             ) : null}
             {open ? (

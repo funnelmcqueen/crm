@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { cn } from "@/lib/utils";
 import type { FollowUpCounts } from "@/server/services/follow-ups";
-import { FOLLOW_UP_TAB_LABELS, FOLLOW_UP_TABS, followUpsHref, type FollowUpTab } from "./params";
+import { FOLLOW_UP_TABS, followUpsHref, type FollowUpTab } from "./params";
 
 export interface FollowUpTabsProps {
   active: FollowUpTab;
@@ -27,8 +28,11 @@ function countFor(tab: FollowUpTab, counts: FollowUpCounts): number {
  * phones instead of being clipped here.
  */
 export function FollowUpTabs({ active, counts }: FollowUpTabsProps) {
+  const t = useTranslations("workspace").queues;
+  const { locale } = useLocale();
+  const labels = { overdue: t.overdue, today: t.today, upcoming: t.upcoming, completed: t.completed, voicemails: t.voicemails, skipped: t.skipped };
   return (
-    <nav aria-label="Follow-up lists" className="relative -mx-4 mb-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+    <nav aria-label={t.navigation} className="relative -mx-4 mb-4 overflow-x-auto px-4 md:mx-0 md:px-0">
       <ul className="flex min-w-max gap-1 border-b">
         {FOLLOW_UP_TABS.map((tab) => {
           const selected = tab === active;
@@ -46,7 +50,7 @@ export function FollowUpTabs({ active, counts }: FollowUpTabsProps) {
                   selected ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
-                {FOLLOW_UP_TAB_LABELS[tab]}
+                {labels[tab]}
                 <span
                   className={cn(
                     "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-extrabold tabular-nums",
@@ -57,9 +61,9 @@ export function FollowUpTabs({ active, counts }: FollowUpTabsProps) {
                       : "bg-muted text-muted-foreground",
                   )}
                 >
-                  {count.toLocaleString("en-US")}
+                  {count.toLocaleString(locale === "de" ? "de-DE" : "en-US")}
                   <span className="sr-only">
-                    {tab === "voicemails" ? ` voicemails${unheard > 0 ? `, ${unheard.toLocaleString("en-US")} unheard` : ""}` : ""}
+                    {tab === "voicemails" ? ` ${t.voicemails}${unheard > 0 ? `, ${unheard.toLocaleString(locale === "de" ? "de-DE" : "en-US")} ${t.unheard}` : ""}` : ""}
                   </span>
                 </span>
               </Link>

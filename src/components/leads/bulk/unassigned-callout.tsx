@@ -3,8 +3,8 @@
 import { UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useTransition, useState } from "react";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { Button } from "@/components/ui/button";
-import { leadCount } from "@/lib/domain/bulk-leads";
 import { listMatchingLeadIdsAction } from "@/server/actions/bulk-leads";
 import { useLeadSelectionContext } from "./selection-context";
 
@@ -22,6 +22,9 @@ export interface UnassignedCalloutProps {
  * bulk bar with Assign first. Hidden while a selection is active (the bulk bar takes over).
  */
 export function UnassignedCallout({ unassigned, showingUnassigned, unassignedHref }: UnassignedCalloutProps) {
+  const t = useTranslations("workspace").bulkUi;
+  const { locale } = useLocale();
+  const countLabel = (n: number) => `${n.toLocaleString(locale === "de" ? "de-DE" : "en-US")} ${n === 1 ? t.lead : t.leads}`;
   const selection = useLeadSelectionContext();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -35,31 +38,30 @@ export function UnassignedCallout({ unassigned, showingUnassigned, unassignedHre
         if (result.ok) selection.replace(result.data.ids);
         else setError(result.error.message);
       } catch {
-        setError("Could not select the unassigned leads. Try again.");
+        setError(t.selectFailed);
       }
     });
   }
 
   return (
     <section
-      aria-label="Unassigned leads"
+      aria-label={t.unassignedAria}
       className="mb-3 flex flex-col gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3 sm:flex-row sm:items-center md:px-4"
     >
       <UserPlus aria-hidden className="hidden size-6 shrink-0 text-primary sm:block" />
       <p className="min-w-0 flex-1 text-sm">
-        <span className="font-extrabold">{leadCount(unassigned)}</span> {unassigned === 1 ? "has" : "have"} no agent and{" "}
-        {unassigned === 1 ? "is" : "are"} not in anyone&rsquo;s call queue.
-        {showingUnassigned && selection.total > 0 ? " Select them to assign them in one go." : null}
+        {t.unassignedMessage.replace("{count}", countLabel(unassigned))}
+        {showingUnassigned && selection.total > 0 ? ` ${t.unassignedHint}` : null}
       </p>
       {showingUnassigned ? (
         selection.total > 0 ? (
           <Button className="h-12 px-5 font-bold" disabled={pending} onClick={selectAll}>
-            {pending ? "Selecting…" : `Select ${leadCount(Math.min(selection.total, 5000))} to assign`}
+            {pending ? t.selecting : t.selectToAssign.replace("{count}", countLabel(Math.min(selection.total, 5000)))}
           </Button>
         ) : null
       ) : (
         <Button asChild className="h-12 px-5 font-bold">
-          <Link href={unassignedHref}>Review unassigned</Link>
+          <Link href={unassignedHref}>{t.reviewUnassigned}</Link>
         </Button>
       )}
       <p role="status" aria-live="polite" className={error ? "text-sm font-semibold text-destructive" : "sr-only"}>

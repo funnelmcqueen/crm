@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import de from "@/lib/i18n/messages/de/workspace";
 import { DIALER_MESSAGES, microphoneErrorMessage, outboundErrorMessage } from "@/lib/dialer/messages";
 
 describe("outboundErrorMessage", () => {
+  it("uses German recovery copy while preserving the server conflict reason", () => {
+    expect(outboundErrorMessage(409, { reason: "do_not_contact" }, de.dialerErrors)).toBe("Dieser Lead ist als „Nicht kontaktieren“ markiert");
+  });
   it.each([
     [404, { error: "not_found" }, "This lead is no longer available"],
     [409, { error: "conflict", reason: "do_not_contact" }, "This lead is marked Do Not Contact"],

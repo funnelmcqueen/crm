@@ -12,6 +12,7 @@ import { defaultFollowUpTab, followUpsHref, parseFollowUpParams, type FollowUpTa
 import { SkippedLeadList } from "@/components/follow-ups/skipped-list";
 import { VoicemailList } from "@/components/follow-ups/voicemail-list";
 import { Button } from "@/components/ui/button";
+import { getServerWorkspace } from "@/lib/i18n/server-workspace";
 import { requireUserPage } from "@/server/context";
 import { followUpCounts, listFollowUps, listVoicemails } from "@/server/services/follow-ups";
 import { listAgentsForFilter } from "@/server/services/leads";
@@ -28,46 +29,44 @@ interface EmptyCopy {
   admin: string;
 }
 
-const EMPTY: Record<FollowUpTab, EmptyCopy> = {
+function emptyCopy(t: Awaited<ReturnType<typeof getServerWorkspace>>["t"]["queuePage"]): Record<FollowUpTab, EmptyCopy> { return {
   overdue: {
     icon: <CircleCheck />,
-    title: "Nothing overdue",
-    agent: "You're caught up.",
-    admin: "No overdue follow-ups across the team.",
+    title: t.nothingOverdue,
+    agent: t.caughtUp,
+    admin: t.teamNothingOverdue,
   },
   today: {
     icon: <CalendarCheck />,
-    title: "Nothing else due today",
-    agent: "Follow-ups due before midnight show up here.",
-    admin: "No team follow-ups are due before midnight.",
+    title: t.nothingToday,
+    agent: t.todayAgent,
+    admin: t.todayTeam,
   },
   upcoming: {
     icon: <CalendarClock />,
-    title: "No upcoming follow-ups",
-    agent: "Schedule one from a lead, or log a call as Follow Up.",
-    admin: "No follow-ups are scheduled after today.",
+    title: t.noUpcoming,
+    agent: t.upcomingAgent,
+    admin: t.upcomingTeam,
   },
   completed: {
     icon: <History />,
-    title: "No completed follow-ups yet",
-    agent: "Completed follow-ups show up here, newest first.",
-    admin: "Completed follow-ups show up here, newest first.",
+    title: t.noCompleted,
+    agent: t.completedDescription,
+    admin: t.completedDescription,
   },
   voicemails: {
     icon: <Voicemail />,
-    title: "No voicemails",
-    agent: "Voicemails from your leads and your number show up here.",
-    admin: "Voicemails from every lead and number show up here.",
+    title: t.noVoicemails,
+    agent: t.voicemailAgent,
+    admin: t.voicemailTeam,
   },
   skipped: {
     icon: <SkipForward />,
-    title: "No skipped leads",
-    agent:
-      "When you skip a lead in your call queue, it waits here with your reason instead of coming back on its own. Resume it, schedule a follow-up or change its status when you're ready.",
-    admin:
-      "Leads an agent skips wait here with the reason until they are called, rescheduled, reassigned, change status or are resumed.",
+    title: t.noSkipped,
+    agent: t.skippedAgent,
+    admin: t.skippedTeam,
   },
-};
+}; }
 
 export default async function FollowUpsPage({
   searchParams,
@@ -75,6 +74,7 @@ export default async function FollowUpsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireUserPage();
+  const { t } = await getServerWorkspace(ctx.profile.primary_locale);
   const isAdmin = ctx.profile.role === "ADMIN";
   const params = parseFollowUpParams(await searchParams);
   const counts = await followUpCounts(ctx);
@@ -82,7 +82,7 @@ export default async function FollowUpsPage({
   const tz = ctx.profile.timezone;
   const now = currentTime();
 
-  const copy = EMPTY[tab];
+  const copy = emptyCopy(t.queuePage)[tab];
   const emptyState = (
     <EmptyState
       icon={copy.icon}
@@ -91,7 +91,7 @@ export default async function FollowUpsPage({
       action={
         !isAdmin && (tab === "overdue" || tab === "today") ? (
           <Button asChild className="h-12 px-5 font-bold">
-            <Link href="/next">Next lead</Link>
+            <Link href="/next">{t.nextLeadUi.nextLead}</Link>
           </Button>
         ) : null
       }
@@ -100,11 +100,11 @@ export default async function FollowUpsPage({
   const pastLastPage = (
     <EmptyState
       icon={<SearchX />}
-      title="Nothing on this page"
-      description="The list is shorter than this page number."
+      title={t.queuePage.shortPage}
+      description={t.queuePage.shortDescription}
       action={
         <Button asChild className="h-12 px-5 font-bold">
-          <Link href={followUpsHref(tab)}>Go to page 1</Link>
+          <Link href={followUpsHref(tab)}>{t.queuePage.pageOne}</Link>
         </Button>
       }
     />
@@ -174,10 +174,10 @@ export default async function FollowUpsPage({
   return (
     <>
       <PageHeader
-        title="Follow-ups"
+        title={t.queues.title}
         description={
           <>
-            {isAdmin ? "Every agent's follow-ups, voicemails and skipped leads." : "Your callbacks, voicemails and skipped leads."} Times in{" "}
+            {isAdmin ? t.queuePage.teamDescription : t.queuePage.agentDescription} {t.queuePage.timesIn}{" "}
             <span className="font-semibold text-foreground">{tz.replace(/_/g, " ")}</span>.
           </>
         }
