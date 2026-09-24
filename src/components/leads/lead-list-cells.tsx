@@ -1,4 +1,5 @@
 import { DateTime } from "@/components/common/datetime";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { cn } from "@/lib/utils";
 
 export function locationLabel(city: string | null, state: string | null): string {
@@ -20,11 +21,13 @@ export interface FollowUpCellProps {
 
 /** Next follow-up in the viewer's time zone; overdue ones are highlighted and announced. */
 export function FollowUpCell({ value, tz, now, className }: FollowUpCellProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("workspace").leadList;
   const overdue = isOverdue(value, now);
   return (
     <span className={cn("inline-flex items-center gap-1.5", overdue && "font-semibold text-destructive", className)}>
-      <DateTime value={value} tz={tz} now={now} />
-      {overdue ? <span className="sr-only"> (overdue)</span> : null}
+      <DateTime value={value} tz={tz} now={now} locale={locale} />
+      {overdue ? <span className="sr-only"> ({t.overdue})</span> : null}
     </span>
   );
 }

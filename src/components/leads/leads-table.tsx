@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 import { DateTime } from "@/components/common/datetime";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
@@ -24,6 +26,8 @@ export interface LeadsTableProps {
  * selects rows for bulk actions (docs/DEVIATIONS.md D41); clicks in that cell never open the lead.
  */
 export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("workspace").leadList;
   const router = useRouter();
   const { ids: selected } = useLeadSelectionContext();
 
@@ -44,15 +48,15 @@ export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
             <TableHead className="h-11 w-10 pr-0 pl-4" data-select-cell>
               <LeadSelectPageCheckbox />
             </TableHead>
-            <TableHead className="h-11 pl-3">Business</TableHead>
-            <TableHead>Phone</TableHead>
+            <TableHead className="h-11 pl-3">{t.business}</TableHead>
+            <TableHead>{t.phone}</TableHead>
             {/* SPEC 8 lists location among the desktop columns with no width condition. */}
-            <TableHead>Location</TableHead>
-            <TableHead>Status</TableHead>
-            {agentNames ? <TableHead>Agent</TableHead> : null}
-            <TableHead>Last contacted</TableHead>
-            <TableHead>Next follow-up</TableHead>
-            <TableHead className="pr-4 text-right">Calls</TableHead>
+            <TableHead>{t.location}</TableHead>
+            <TableHead>{t.status}</TableHead>
+            {agentNames ? <TableHead>{t.agent}</TableHead> : null}
+            <TableHead>{t.lastContacted}</TableHead>
+            <TableHead>{t.nextFollowUp}</TableHead>
+            <TableHead className="pr-4 text-right">{t.calls}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -87,19 +91,19 @@ export function LeadsTable({ rows, tz, now, agentNames }: LeadsTableProps) {
               {agentNames ? (
                 <TableCell className="max-w-40 truncate">
                   {row.assignedTo ? (
-                    (agentNames[row.assignedTo] ?? "Unknown")
+                    (agentNames[row.assignedTo] ?? t.unknown)
                   ) : (
-                    <span className="text-muted-foreground">Unassigned</span>
+                    <span className="text-muted-foreground">{t.unassigned}</span>
                   )}
                 </TableCell>
               ) : null}
               <TableCell className="whitespace-nowrap text-muted-foreground">
-                <DateTime value={row.lastContactedAt} tz={tz} now={now} />
+                <DateTime value={row.lastContactedAt} tz={tz} now={now} locale={locale} />
               </TableCell>
               <TableCell className="whitespace-nowrap">
                 <FollowUpCell value={row.nextFollowUpAt} tz={tz} now={now} />
               </TableCell>
-              <TableCell className="pr-4 text-right font-extrabold tabular-nums">{row.callCount}</TableCell>
+              <TableCell className="pr-4 text-right font-extrabold tabular-nums">{formatNumber(row.callCount, locale)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

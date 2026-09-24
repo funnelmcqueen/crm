@@ -1,27 +1,17 @@
 import { PhoneIncoming, PhoneOutgoing } from "lucide-react";
 import { DateTime, formatDuration } from "@/components/common/datetime";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { EmptyState } from "@/components/common/empty-state";
-import { OUTCOME_LABELS, isCallOutcome } from "@/lib/domain/outcomes";
+import { isCallOutcome } from "@/lib/domain/outcomes";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import type { CallHistoryEntry } from "@/server/services/leads";
 import { VoicemailPlayer } from "./voicemail-player";
 
-const CALL_STATUS_LABELS: Record<string, string> = {
-  queued: "Queued",
-  ringing: "Ringing",
-  "in-progress": "In progress",
-  completed: "Completed, not logged",
-  busy: "Busy",
-  "no-answer": "No answer",
-  failed: "Failed",
-  canceled: "Canceled",
-};
-
-function callTitle(call: CallHistoryEntry): string {
-  if (call.outcome && isCallOutcome(call.outcome)) return OUTCOME_LABELS[call.outcome];
-  if (call.hasVoicemail) return "Voicemail left";
-  if (call.callStatus) return CALL_STATUS_LABELS[call.callStatus] ?? "Not logged";
-  return "Not logged";
+function callTitle(call: CallHistoryEntry, t: ReturnType<typeof useTranslations>): string {
+  if (call.outcome && isCallOutcome(call.outcome)) return t.outcomes[call.outcome];
+  if (call.hasVoicemail) return t.leadHistory.voicemailLeft;
+  const statuses: Record<string, string> = { queued: t.leadHistory.queued, ringing: t.leadHistory.ringing, "in-progress": t.leadHistory.inProgress, completed: t.leadHistory.completedNotLogged, busy: t.leadHistory.busy, "no-answer": t.leadHistory.noAnswer, failed: t.leadHistory.failed, canceled: t.leadHistory.canceled };
+  return call.callStatus ? statuses[call.callStatus] ?? t.leadHistory.notLogged : t.leadHistory.notLogged;
 }
 
 export interface CallHistoryProps {
@@ -34,8 +24,10 @@ export interface CallHistoryProps {
 }
 
 export function CallHistory({ history, tz, now, isAdmin, canMarkHeard }: CallHistoryProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("workspace");
   if (history.length === 0) {
-    return <EmptyState title="No calls yet" description="Calls and voicemails for this lead show up here." className="py-8" />;
+    return <EmptyState title={t.leadHistory.noCalls} description={t.leadHistory.empty} className="py-8" />;
   }
 
   return (
@@ -44,8 +36,8 @@ export function CallHistory({ history, tz, now, isAdmin, canMarkHeard }: CallHis
         const inbound = call.direction === "INBOUND";
         const Icon = inbound ? PhoneIncoming : PhoneOutgoing;
         const meta = [
-          inbound ? "Inbound" : "Outbound",
-          call.mode === "IN_APP" ? "In-app" : "Phone",
+          inbound ? t.leadHistory.inbound : t.leadHistory.outbound,
+          call.mode === "IN_APP" ? t.leadHistory.inApp : t.leadHistory.phone,
           call.durationSeconds !== null ? formatDuration(call.durationSeconds) : null,
         ].filter(Boolean);
 
@@ -53,30 +45,30 @@ export function CallHistory({ history, tz, now, isAdmin, canMarkHeard }: CallHis
           <li key={call.id} className="flex gap-3 py-3 first:pt-0 last:pb-0">
             <span
               className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-              title={inbound ? "Inbound call" : "Outbound call"}
+              title={inbound ? t.leadHistory.inboundCall : t.leadHistory.outboundCall}
             >
               <Icon aria-hidden className="size-4" />
-              <span className="sr-only">{inbound ? "Inbound call" : "Outbound call"}</span>
+              <span className="sr-only">{inbound ? t.leadHistory.inboundCall : t.leadHistory.outboundCall}</span>
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <p className="font-bold">{callTitle(call)}</p>
-                <DateTime value={call.createdAt} tz={tz} now={now} className="text-xs text-muted-foreground" />
+                <p className="font-bold">{callTitle(call, t)}</p>
+                <DateTime value={call.createdAt} tz={tz} now={now} locale={locale} className="text-xs text-muted-foreground" />
               </div>
               <p className="text-xs text-muted-foreground tabular-nums">{meta.join(" · ")}</p>
               {isAdmin && call.caller ? (
                 <p className="text-xs text-muted-foreground">
                   {call.caller.name ? (
                     <>
-                      {inbound ? "Routed to" : "Called by"} <span className="text-foreground">{call.caller.name}</span>
+                      {inbound ? t.leadHistory.routedTo : t.leadHistory.calledBy} <span className="text-foreground">{call.caller.name}</span>
                     </>
                   ) : (
-                    "No agent"
+                    t.leadHistory.noAgent
                   )}
                   {call.caller.callerIdE164 ? (
                     <>
                       {" · "}
-                      {inbound ? "Line" : "Caller ID"}{" "}
+                      {inbound ? t.leadHistory.line : t.leadHistory.callerId}{" "}
                       <span className="text-foreground tabular-nums">{formatPhoneDisplay(call.caller.callerIdE164)}</span>
                     </>
                   ) : null}
@@ -88,7 +80,7 @@ export function CallHistory({ history, tz, now, isAdmin, canMarkHeard }: CallHis
                   <VoicemailPlayer callId={call.id} unheard={call.handledAt === null} canMarkHeard={canMarkHeard} />
                   {call.voicemailDurationSeconds !== null ? (
                     <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                      Length {formatDuration(call.voicemailDurationSeconds)}
+                      {t.leadHistory.length} {formatDuration(call.voicemailDurationSeconds)}
                     </p>
                   ) : null}
                 </div>

@@ -1,6 +1,8 @@
 import { Phone } from "lucide-react";
 import Link from "next/link";
 import { DateTime } from "@/components/common/datetime";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import { StatusBadge } from "@/components/common/status-badge";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import type { LeadListRow } from "@/server/services/leads";
@@ -17,6 +19,8 @@ export interface LeadCardsProps {
 
 /** Mobile (below md) lead cards. The card is the link; the checkbox beside it selects the lead for bulk actions. */
 export function LeadCards({ rows, tz, now, agentNames }: LeadCardsProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("workspace");
   return (
     <ul className="flex flex-col gap-2 md:hidden">
       {rows.map((row) => {
@@ -45,25 +49,25 @@ export function LeadCards({ rows, tz, now, agentNames }: LeadCardsProps) {
               </p>
 
               <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-xs">
-                <dt className="text-muted-foreground">Next</dt>
+                <dt className="text-muted-foreground">{t.leadList.next}</dt>
                 <dd className="truncate">
                   <FollowUpCell value={row.nextFollowUpAt} tz={tz} now={now} />
                 </dd>
                 <dd className="row-span-2 flex flex-col items-end justify-center">
-                  <span className="text-lg leading-none font-extrabold tabular-nums">{row.callCount}</span>
-                  <span className="text-muted-foreground">{row.callCount === 1 ? "call" : "calls"}</span>
+                  <span className="text-lg leading-none font-extrabold tabular-nums">{formatNumber(row.callCount, locale)}</span>
+                  <span className="text-muted-foreground">{row.callCount === 1 ? t.leadDetail.call : t.leadList.calls}</span>
                 </dd>
-                <dt className="text-muted-foreground">Last</dt>
+                <dt className="text-muted-foreground">{t.leadList.last}</dt>
                 <dd className="truncate text-muted-foreground">
-                  <DateTime value={row.lastContactedAt} tz={tz} now={now} empty="Never" />
+                  <DateTime value={row.lastContactedAt} tz={tz} now={now} empty={t.leadList.never} locale={locale} />
                 </dd>
               </dl>
 
               {agentNames ? (
                 <p className="truncate text-xs text-muted-foreground">
-                  Agent:{" "}
+                  {t.leadDetail.agent}{" "}
                   <span className="text-foreground">
-                    {row.assignedTo ? (agentNames[row.assignedTo] ?? "Unknown") : "Unassigned"}
+                    {row.assignedTo ? (agentNames[row.assignedTo] ?? t.leadList.unknown) : t.leadList.unassigned}
                   </span>
                 </p>
               ) : null}

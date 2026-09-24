@@ -10,7 +10,9 @@ import { CallButton } from "@/components/dialer/call-button";
 import { CallReadiness } from "@/components/dialer/call-readiness";
 import { CallingSetupNotice } from "@/components/dashboard/calling-setup-notice";
 import { getDialerDriver, type DialerDriver } from "@/server/env";
-import { OUTCOME_LABELS } from "@/lib/domain/outcomes";
+import { isCallOutcome } from "@/lib/domain/outcomes";
+import { formatNumber } from "@/lib/i18n/format";
+import { getServerWorkspace } from "@/lib/i18n/server-workspace";
 import { NextLeadControls } from "@/components/dialer/next-lead-controls";
 import { AdminLeadPanel } from "@/components/leads/admin-lead-panel";
 import { CallHistory } from "@/components/leads/call-history";
@@ -48,6 +50,7 @@ export default async function LeadDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireUserPage();
+  const { locale, t } = await getServerWorkspace(ctx.profile.primary_locale);
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getLeadDetail(ctx, id);
   if (!detail) notFound();
@@ -90,14 +93,14 @@ export default async function LeadDetailPage({
         className="-ml-2 mb-2 inline-flex min-h-12 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <ChevronLeft aria-hidden className="size-4" />
-        {isAdmin ? "All Leads" : "My Leads"}
+        {isAdmin ? t.leadsPage.allLeads : t.leadsPage.myLeads}
       </Link>
 
       {flow === "next" ? <NextLeadControls leadId={lead.id} businessName={lead.businessName} /> : null}
 
       <header className="mb-3 flex flex-col gap-4 rounded-xl border border-primary/25 bg-card p-4 md:flex-row md:items-start md:justify-between md:p-5">
         <div className="min-w-0">
-          <p className="mb-2 text-xs font-bold tracking-wide text-primary uppercase">{flow === "next" ? "Current lead · Call queue" : "Lead workspace"}</p>
+          <p className="mb-2 text-xs font-bold tracking-wide text-primary uppercase">{flow === "next" ? t.leadDetail.currentQueue : t.leadDetail.workspace}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="text-2xl font-extrabold tracking-tight break-words md:text-3xl">{lead.businessName}</h1>
             <StatusBadge status={lead.status} />
@@ -105,8 +108,8 @@ export default async function LeadDetailPage({
           {lead.contactName ? <p className="mt-1 text-base text-muted-foreground">{lead.contactName}</p> : null}
           {isAdmin && detail.admin ? (
             <p className="mt-1 text-sm text-muted-foreground">
-              Agent:{" "}
-              <span className="font-semibold text-foreground">{detail.admin.assignedTo?.name ?? "Unassigned"}</span>
+              {t.leadDetail.agent}{" "}
+              <span className="font-semibold text-foreground">{detail.admin.assignedTo?.name ?? t.leadDetail.unassigned}</span>
             </p>
           ) : null}
         </div>
@@ -119,21 +122,21 @@ export default async function LeadDetailPage({
         {!callerId.error ? <CallingSetupNotice driver={driver} inAppEnabled={ctx.profile.in_app_calling_enabled} callerIdAvailable={callerId.data === true} isAdmin={isAdmin} /> : null}
       </div>
 
-      <section aria-label="Before you call" className="mb-4 grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-3">
+      <section aria-label={t.leadDetail.beforeCall} className="mb-4 grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-3">
         <div className="min-w-0">
-          <h2 className="text-xs font-semibold text-muted-foreground">Latest call</h2>
-          <p className="mt-1 text-sm font-bold">{lastCall ? (lastCall.outcome ? OUTCOME_LABELS[lastCall.outcome] : "Outcome not logged") : "No calls yet"}</p>
-          {lastCall ? <DateTime value={lastCall.createdAt} tz={tz} now={now} className="text-xs text-muted-foreground" /> : null}
+          <h2 className="text-xs font-semibold text-muted-foreground">{t.leadDetail.latestCall}</h2>
+          <p className="mt-1 text-sm font-bold">{lastCall ? (lastCall.outcome && isCallOutcome(lastCall.outcome) ? t.outcomes[lastCall.outcome] : t.leadDetail.outcomeNotLogged) : t.leadDetail.noCalls}</p>
+          {lastCall ? <DateTime value={lastCall.createdAt} tz={tz} now={now} locale={locale} className="text-xs text-muted-foreground" /> : null}
           {lastCall?.notes ? <p className="mt-1 line-clamp-2 text-sm break-words">{lastCall.notes}</p> : null}
-          {lastCall ? <a href="#lead-history" className="inline-flex min-h-12 items-center rounded text-xs font-semibold underline focus-visible:ring-3 focus-visible:ring-ring/50">View call history</a> : null}
+          {lastCall ? <a href="#lead-history" className="inline-flex min-h-12 items-center rounded text-xs font-semibold underline focus-visible:ring-3 focus-visible:ring-ring/50">{t.leadDetail.viewHistory}</a> : null}
         </div>
         <div className="min-w-0">
-          <h2 className="text-xs font-semibold text-muted-foreground">Next follow-up</h2>
-          <p className="mt-1 text-sm font-bold"><DateTime value={lead.nextFollowUpAt} tz={tz} now={now} empty="Nothing scheduled" /></p>
+          <h2 className="text-xs font-semibold text-muted-foreground">{t.leadDetail.nextFollowUp}</h2>
+          <p className="mt-1 text-sm font-bold"><DateTime value={lead.nextFollowUpAt} tz={tz} now={now} empty={t.leadDetail.nothingScheduled} locale={locale} /></p>
         </div>
         <details className="min-w-0">
-          <summary className="min-h-12 cursor-pointer rounded text-sm font-semibold focus-visible:ring-3 focus-visible:ring-ring/50">Previous notes {lead.notes ? "" : "· none yet"}</summary>
-          <p className="max-h-40 overflow-auto text-sm break-words whitespace-pre-wrap">{lead.notes || "Add useful context in Notes below."}</p>
+          <summary className="min-h-12 cursor-pointer rounded text-sm font-semibold focus-visible:ring-3 focus-visible:ring-ring/50">{t.leadDetail.previousNotes} {lead.notes ? "" : t.leadDetail.noneYet}</summary>
+          <p className="max-h-40 overflow-auto text-sm break-words whitespace-pre-wrap">{lead.notes || t.leadDetail.addContext}</p>
         </details>
       </section>
 
@@ -171,14 +174,14 @@ export default async function LeadDetailPage({
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
           <ShieldBan aria-hidden className="mt-0.5 size-5 shrink-0 text-destructive" />
           <p>
-            <span className="font-bold">Do Not Contact.</span> Calling is blocked for this lead.
+            <span className="font-bold">{t.leadDetail.dnc}</span> {t.leadDetail.callingBlocked}
           </p>
         </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_22rem] md:items-start">
         <section aria-labelledby="lead-contact" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:col-start-1 md:row-start-1">
-          {sectionTitle("Contact", "lead-contact")}
+          {sectionTitle(t.leadDetail.contact, "lead-contact")}
           <div className="flex flex-col gap-1">
             <CopyPhoneButton phone={lead.phone} />
             {lead.email ? (
@@ -200,7 +203,7 @@ export default async function LeadDetailPage({
                 >
                   <Globe aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   {lead.websiteDomain ?? lead.website}
-                  <span className="sr-only"> (opens in a new tab)</span>
+                  <span className="sr-only"> ({t.leadDetail.opensNewTab})</span>
                 </a>
               ) : (
                 <p className="inline-flex min-h-12 items-center gap-2 break-all text-muted-foreground">
@@ -218,28 +221,28 @@ export default async function LeadDetailPage({
           </div>
           <dl className="grid grid-cols-3 gap-3 border-t pt-4 text-sm">
             <div>
-              <dt className="text-xs text-muted-foreground">Calls</dt>
-              <dd className="text-xl font-extrabold tabular-nums">{lead.callCount}</dd>
+              <dt className="text-xs text-muted-foreground">{t.leadDetail.calls}</dt>
+              <dd className="text-xl font-extrabold tabular-nums">{formatNumber(lead.callCount, locale)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Last contacted</dt>
+              <dt className="text-xs text-muted-foreground">{t.leadDetail.lastContacted}</dt>
               <dd className="font-semibold">
-                <DateTime value={lead.lastContactedAt} tz={tz} now={now} style="date" empty="Never" />
+                <DateTime value={lead.lastContactedAt} tz={tz} now={now} style="date" empty={t.leadDetail.never} locale={locale} />
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Source</dt>
+              <dt className="text-xs text-muted-foreground">{t.leadDetail.source}</dt>
               <dd className="truncate font-semibold">{lead.source ?? "—"}</dd>
             </div>
           </dl>
         </section>
 
         <div className="flex flex-col gap-4 md:col-start-2 md:row-span-2 md:row-start-1">
-          <section aria-label="Lead status and follow-up" className="flex flex-col gap-5 rounded-xl border bg-card p-4">
+          <section aria-label={t.leadDetail.statusFollowUp} className="flex flex-col gap-5 rounded-xl border bg-card p-4">
             <LeadStatusSelect leadId={lead.id} status={lead.status} isAdmin={isAdmin} />
             <FollowUpPicker leadId={lead.id} nextFollowUpAt={lead.nextFollowUpAt} tz={tz} now={now} />
           </section>
-          <section aria-label="Notes" className="rounded-xl border bg-card p-4">
+          <section aria-label={t.leadDetail.notes} className="rounded-xl border bg-card p-4">
             <LeadNotesForm key={lead.id} userId={ctx.userId} leadId={lead.id} notes={lead.notes} />
           </section>
           {isAdmin && detail.admin ? (
@@ -266,9 +269,9 @@ export default async function LeadDetailPage({
 
         <section aria-labelledby="lead-history" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:col-start-1 md:row-start-2">
           <div className="flex items-baseline justify-between">
-            {sectionTitle("Call history", "lead-history")}
+            {sectionTitle(t.leadDetail.callHistory, "lead-history")}
             <span className="text-xs text-muted-foreground tabular-nums">
-              {history.length} {history.length === 1 ? "call" : "calls"}
+              {formatNumber(history.length, locale)} {history.length === 1 ? t.leadDetail.call : t.leadDetail.calls}
             </span>
           </div>
           <CallHistory history={history} tz={tz} now={now} isAdmin={isAdmin} canMarkHeard={canMarkHeard} />

@@ -19,13 +19,13 @@ const cards = read('lead-cards.tsx');
 function locationLines(): string[] {
   return table
     .split('\n')
-    .filter((line) => line.includes('>Location<') || line.includes('locationLabel(row.city, row.state)'));
+    .filter((line) => line.includes('>{t.location}<') || line.includes('locationLabel(row.city, row.state)'));
 }
 
 describe('leads desktop table (SPEC 8)', () => {
   it('shows every field the spec lists', () => {
-    for (const heading of ['Business', 'Phone', 'Location', 'Status', 'Last contacted', 'Next follow-up', 'Calls']) {
-      expect(table, `the desktop table is missing the ${heading} column`).toContain(`>${heading}<`);
+    for (const heading of ['business', 'phone', 'location', 'status', 'lastContacted', 'nextFollowUp', 'calls']) {
+      expect(table, `the desktop table is missing the ${heading} column`).toContain(`>{t.${heading}}<`);
     }
     // Contact name rides under the business name rather than in a column of its own.
     expect(table).toContain('row.contactName');

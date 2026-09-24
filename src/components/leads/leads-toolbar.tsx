@@ -10,12 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/domain/statuses";
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_SORT_DIR,
   LEAD_SORT_KEYS,
-  LEAD_SORT_LABELS,
   MAX_QUERY_LENGTH,
   hasActiveFilters,
   leadListHref,
@@ -42,6 +43,9 @@ export interface LeadsToolbarProps {
 }
 
 export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("workspace");
+  const sortLabels: Record<LeadSortKey, string> = { business_name: t.leadSort.business, last_contacted_at: t.leadSort.lastContacted, next_follow_up_at: t.leadSort.nextFollowUp, call_count: t.leadSort.calls, created_at: t.leadSort.created };
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
@@ -119,8 +123,8 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
           type="search"
           inputMode="search"
           enterKeyHint="search"
-          aria-label="Search leads"
-          placeholder="Search business, contact, phone, email, website, city"
+          aria-label={t.leadToolbar.search}
+          placeholder={t.leadToolbar.searchPlaceholder}
           value={query}
           maxLength={MAX_QUERY_LENGTH}
           onChange={(event) => setQuery(event.target.value)}
@@ -133,16 +137,16 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
           <PopoverTrigger asChild>
             <Button variant="outline" className="h-12 gap-2 px-3">
               <ListFilter aria-hidden />
-              Status
+              {t.status}
               {statuses.length > 0 ? (
                 <span className="min-w-5 rounded-full bg-primary px-1.5 text-xs font-extrabold text-primary-foreground tabular-nums">
-                  {statuses.length}
+                  {formatNumber(statuses.length, locale)}
                 </span>
               ) : null}
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-64 gap-0 p-1">
-            <div role="group" aria-label="Filter by status" className="max-h-[min(24rem,60dvh)] overflow-y-auto">
+            <div role="group" aria-label={t.leadToolbar.filterStatus} className="max-h-[min(24rem,60dvh)] overflow-y-auto">
               {LEAD_STATUSES.map((status) => {
                 const id = `lead-status-filter-${status}`;
                 return (
@@ -156,7 +160,7 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
                       checked={statuses.includes(status)}
                       onCheckedChange={(checked) => toggleStatus(status, checked === true)}
                     />
-                    {STATUS_LABELS[status]}
+                    {t.statuses[status]}
                   </label>
                 );
               })}
@@ -170,19 +174,19 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
                   update({ statuses: [] });
                 }}
               >
-                Clear statuses
+                {t.leadToolbar.clearStatuses}
               </Button>
             ) : null}
           </PopoverContent>
         </Popover>
 
         <Select value={params.source ?? ALL} onValueChange={(value) => update({ source: value === ALL ? null : value })}>
-          <SelectTrigger aria-label="Filter by source" className={cn(TALL_TRIGGER, "min-w-36")}>
+          <SelectTrigger aria-label={t.leadToolbar.filterSource} className={cn(TALL_TRIGGER, "min-w-36")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent position="popper" align="start">
             <SelectItem value={ALL} className="min-h-12">
-              All sources
+              {t.leadToolbar.allSources}
             </SelectItem>
             {sourceOptions.map((source) => (
               <SelectItem key={source} value={source} className="min-h-12">
@@ -199,17 +203,17 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
               disabled={params.unassigned}
               onValueChange={(value) => update({ agent: value === ALL ? null : value })}
             >
-              <SelectTrigger aria-label="Filter by agent" className={cn(TALL_TRIGGER, "min-w-40")}>
+              <SelectTrigger aria-label={t.leadToolbar.filterAgent} className={cn(TALL_TRIGGER, "min-w-40")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start">
                 <SelectItem value={ALL} className="min-h-12">
-                  All agents
+                  {t.leadToolbar.allAgents}
                 </SelectItem>
                 {agents.map((agent) => (
                   <SelectItem key={agent.id} value={agent.id} className="min-h-12">
                     {agent.name}
-                    {agent.active ? "" : " (disabled)"}
+                    {agent.active ? "" : ` (${t.leadToolbar.disabled})`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -221,7 +225,7 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
                 onCheckedChange={(checked) => update({ unassigned: checked, agent: checked ? null : params.agent })}
               />
               <Label htmlFor="leads-unassigned-filter" className="cursor-pointer text-sm">
-                Unassigned
+                {t.leadToolbar.unassigned}
               </Label>
             </div>
           </>
@@ -235,14 +239,14 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
               if (LEAD_SORT_KEYS.includes(sort)) update({ sort, dir: DEFAULT_SORT_DIR[sort] });
             }}
           >
-            <SelectTrigger aria-label="Sort by" className={cn(TALL_TRIGGER, "min-w-40")}>
-              <span className="text-muted-foreground">Sort:</span>
+            <SelectTrigger aria-label={t.leadToolbar.sortBy} className={cn(TALL_TRIGGER, "min-w-40")}>
+              <span className="text-muted-foreground">{t.leadToolbar.sort}</span>
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="start">
               {LEAD_SORT_KEYS.map((key) => (
                 <SelectItem key={key} value={key} className="min-h-12">
-                  {LEAD_SORT_LABELS[key]}
+                  {sortLabels[key]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -250,7 +254,7 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
           <Button
             variant="outline"
             className="size-12"
-            aria-label={params.dir === "asc" ? "Sorted ascending. Sort descending" : "Sorted descending. Sort ascending"}
+            aria-label={params.dir === "asc" ? t.leadToolbar.sortedAsc : t.leadToolbar.sortedDesc}
             onClick={() => update({ dir: params.dir === "asc" ? "desc" : "asc" })}
           >
             <SortIcon aria-hidden className="size-5" />
@@ -261,19 +265,19 @@ export function LeadsToolbar({ params, sources, agents, isAdmin }: LeadsToolbarP
           {/* Exports every lead matching the current search and filters (RLS scopes agents to their own). */}
           <a href={leadListHref({ ...params, statuses, q: query.trim().slice(0, MAX_QUERY_LENGTH), page: 1 }, "/api/leads/export")} download>
             <Download aria-hidden />
-            Export CSV
+            {t.leadToolbar.exportCsv}
           </a>
         </Button>
 
         {filtersActive ? (
           <Button variant="ghost" className="h-12 gap-1.5 px-3 text-muted-foreground" onClick={clearAll}>
             <X aria-hidden />
-            Clear
+            {t.leadToolbar.clear}
           </Button>
         ) : null}
 
         <span aria-live="polite" className="text-xs text-muted-foreground">
-          {pending ? "Updating…" : ""}
+          {pending ? t.leadToolbar.updating : ""}
         </span>
       </div>
     </div>
