@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "@/components/i18n/locale-provider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
@@ -8,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
-  RANGE_PROBLEM_MESSAGES,
   reportRangeHref,
   validateLocalRange,
   type LocalDateRange,
@@ -33,6 +33,7 @@ export interface ReportRangePickerProps {
 }
 
 export function ReportRangePicker({ range, preset, presets, problem, timezone }: ReportRangePickerProps) {
+  const t = useTranslations("admin");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [from, setFrom] = useState(range.from);
@@ -52,7 +53,7 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
     event.preventDefault();
     const rangeProblem = validateLocalRange(from, to);
     if (rangeProblem) {
-      setError(RANGE_PROBLEM_MESSAGES[rangeProblem]);
+      setError(rangeProblem === "invalid_date" ? t["Enter a valid date."] : rangeProblem === "reversed" ? t["The end date must be on or after the start date."] : t["Choose a range of 366 days or less."]);
       return;
     }
     setError(null);
@@ -62,8 +63,8 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
   const message = error ?? problem;
 
   return (
-    <section aria-label="Date range" className="mb-6 flex flex-col gap-3">
-      <nav aria-label="Date range presets" className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+    <section aria-label={t["Date range"]} className="mb-6 flex flex-col gap-3">
+      <nav aria-label={t["Date range presets"]} className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
         <ul className="flex w-max gap-2">
           {presets.map((item) => {
             const selected = item.preset === preset;
@@ -90,7 +91,7 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
       <form onSubmit={apply} className="flex flex-wrap items-end gap-2" noValidate>
         <div className="flex min-w-36 flex-1 flex-col gap-1.5 sm:flex-none">
           <Label htmlFor="report-from" className="text-xs text-muted-foreground">
-            From
+            {t["From"]}
           </Label>
           <Input
             id="report-from"
@@ -104,7 +105,7 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
         </div>
         <div className="flex min-w-36 flex-1 flex-col gap-1.5 sm:flex-none">
           <Label htmlFor="report-to" className="text-xs text-muted-foreground">
-            To
+            {t["To"]}
           </Label>
           <Input
             id="report-to"
@@ -122,10 +123,10 @@ export function ReportRangePicker({ range, preset, presets, problem, timezone }:
           className="h-12 w-full px-5 font-bold sm:w-auto"
           disabled={pending || (from === range.from && to === range.to)}
         >
-          {pending ? "Loading…" : "Apply"}
+          {pending ? t["Loading…"] : t["Apply"]}
         </Button>
         <p className="w-full text-xs text-muted-foreground sm:ml-2 sm:w-auto sm:self-center">
-          Dates are inclusive, in {timezone}.
+          {t["Dates are inclusive, in {zone}."].replace("{zone}", timezone)}
         </p>
       </form>
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { Check, Copy, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
@@ -29,7 +30,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/domain/statuses";
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import {
   agentDeleteCheckAction,
   bulkReassignAction,
@@ -59,8 +61,6 @@ function parseTarget(value: string): number | null {
   return n <= 1000 ? n : null;
 }
 
-const TARGET_ERROR = "Enter a daily call target between 0 and 1000.";
-
 // ---------------------------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------------------------
@@ -71,6 +71,8 @@ export interface CreateAgentDialogProps {
 }
 
 export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgentDialogProps) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const blank = { name: "", email: "", target: String(defaultTarget), timezone: defaultTimezone, primaryLocale: "en" as "en" | "de" };
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blank);
@@ -94,7 +96,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
     event.preventDefault();
     const target = parseTarget(form.target);
     if (target === null) {
-      setError(TARGET_ERROR);
+      setError(t["Target must be between 0 and 1000."]);
       return;
     }
     setError(null);
@@ -108,9 +110,9 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
       });
       if (result.ok) {
         setCreated(result.data);
-        toast.success(`${result.data.name} was created`);
+        toast.success(t["{name} was created"].replace("{name}", result.data.name));
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -121,7 +123,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
       await navigator.clipboard.writeText(created.password);
       setCopied(true);
     } catch {
-      toast.error("Copy failed. Select the password and copy it manually.");
+      toast.error(t["Copy failed. Select the password and copy it manually."]);
     }
   }
 
@@ -130,7 +132,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
       <DialogTrigger asChild>
         <Button className="h-12 gap-2 px-4 font-bold">
           <UserPlus aria-hidden />
-          Create agent
+          {t["Create agent"]}
         </Button>
       </DialogTrigger>
       <DialogContent
@@ -143,26 +145,23 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
         {created ? (
           <div className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>Agent created</DialogTitle>
-              <DialogDescription>
-                {created.name} signs in with <span className="font-semibold text-foreground">{created.email}</span> and
-                this one-time password.
-              </DialogDescription>
+              <DialogTitle>{t["Agent created"]}</DialogTitle>
+              <DialogDescription>{t["{name} signs in with {email} and this one-time password."].replace("{name}", created.name).replace("{email}", created.email)}</DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-muted p-2 pl-3">
               <code
-                aria-label="One-time password"
+                aria-label={t["One-time password"]}
                 className="min-w-0 flex-1 font-mono text-base font-bold break-all select-all"
               >
                 {created.password}
               </code>
               <Button type="button" variant="outline" className="h-12 gap-2 px-3" onClick={() => void copyPassword()}>
                 {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                {copied ? "Copied" : "Copy"}
+                {copied ? t["Copied"] : t["Copy"]}
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Share it securely; the agent can change it in Settings. It is shown only once.
+              {t["Share it securely; the agent can change it in Settings. It is shown only once."]}
             </p>
             {created.warning ? (
               <p role="alert" className="text-sm font-semibold text-destructive">
@@ -171,18 +170,18 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
             ) : null}
             <DialogFooter>
               <Button type="button" className="h-12 font-bold" onClick={() => onOpenChange(false)}>
-                Done
+                {t["Done"]}
               </Button>
             </DialogFooter>
           </div>
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>Create agent</DialogTitle>
-              <DialogDescription>They get a one-time password to sign in with.</DialogDescription>
+              <DialogTitle>{t["Create agent"]}</DialogTitle>
+              <DialogDescription>{t["They get a one-time password to sign in with."]}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-agent-name">Name</Label>
+              <Label htmlFor="create-agent-name">{t["Name"]}</Label>
               <Input
                 id="create-agent-name"
                 required
@@ -194,7 +193,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-agent-email">Email</Label>
+              <Label htmlFor="create-agent-email">{t["Email"]}</Label>
               <Input
                 id="create-agent-email"
                 type="email"
@@ -208,7 +207,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="create-agent-target">Daily calls</Label>
+                <Label htmlFor="create-agent-target">{t["Daily calls"]}</Label>
                 <Input
                   id="create-agent-target"
                   type="number"
@@ -223,7 +222,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
                 />
               </div>
               <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor="create-agent-timezone">Time zone</Label>
+                <Label htmlFor="create-agent-timezone">{t["Time zone"]}</Label>
                 <TimeZoneSelect
                   id="create-agent-timezone"
                   value={form.timezone}
@@ -233,24 +232,24 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-agent-language">Primary language</Label>
+              <Label htmlFor="create-agent-language">{t["Primary language"]}</Label>
               <Select value={form.primaryLocale} onValueChange={(primaryLocale: "en" | "de") => setForm((prev) => ({ ...prev, primaryLocale }))}>
                 <SelectTrigger id="create-agent-language" className={INPUT_CLASS} disabled={pending}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="de">Deutsch</SelectItem>
+                  <SelectItem value="en">{t["English"]}</SelectItem>
+                  <SelectItem value="de">{t["Deutsch"]}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <FormError message={error} />
             <DialogFooter>
               <Button type="button" variant="outline" className="h-12" onClick={() => onOpenChange(false)} disabled={pending}>
-                Cancel
+                {t["Cancel"]}
               </Button>
               <Button type="submit" className="h-12 font-bold" disabled={pending}>
-                {pending ? "Creating…" : "Create agent"}
+                {pending ? t["Creating…"] : t["Create agent"]}
               </Button>
             </DialogFooter>
           </form>
@@ -273,6 +272,8 @@ export interface EditableAgent {
 }
 
 export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onClose(): void }) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const [form, setForm] = useState({ name: agent.name, target: String(agent.dailyCallTarget), timezone: agent.timezone, primaryLocale: agent.primaryLocale });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -281,7 +282,7 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
     event.preventDefault();
     const target = parseTarget(form.target);
     if (target === null) {
-      setError(TARGET_ERROR);
+      setError(t["Target must be between 0 and 1000."]);
       return;
     }
     setError(null);
@@ -293,10 +294,10 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
         primaryLocale: form.primaryLocale,
       });
       if (result.ok) {
-        toast.success(`${result.data.name} was updated`);
+        toast.success(t["{name} was updated"].replace("{name}", result.data.name));
         onClose();
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -306,11 +307,11 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Edit agent</DialogTitle>
-            <DialogDescription>&ldquo;Today&rdquo; in their stats follows this time zone.</DialogDescription>
+            <DialogTitle>{t["Edit agent"]}</DialogTitle>
+            <DialogDescription>{t["“Today” in their stats follows this time zone."]}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-agent-name">Name</Label>
+            <Label htmlFor="edit-agent-name">{t["Name"]}</Label>
             <Input
               id="edit-agent-name"
               required
@@ -322,7 +323,7 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-agent-target">Daily calls</Label>
+              <Label htmlFor="edit-agent-target">{t["Daily calls"]}</Label>
               <Input
                 id="edit-agent-target"
                 type="number"
@@ -337,7 +338,7 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1.5">
-              <Label htmlFor="edit-agent-timezone">Time zone</Label>
+              <Label htmlFor="edit-agent-timezone">{t["Time zone"]}</Label>
               <TimeZoneSelect
                 id="edit-agent-timezone"
                 value={form.timezone}
@@ -347,24 +348,24 @@ export function EditAgentDialog({ agent, onClose }: { agent: EditableAgent; onCl
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-agent-language">Primary language</Label>
+            <Label htmlFor="edit-agent-language">{t["Primary language"]}</Label>
             <Select value={form.primaryLocale} onValueChange={(primaryLocale: "en" | "de") => setForm((prev) => ({ ...prev, primaryLocale }))}>
               <SelectTrigger id="edit-agent-language" className={INPUT_CLASS} disabled={pending}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="de">Deutsch</SelectItem>
+                <SelectItem value="en">{t["English"]}</SelectItem>
+                <SelectItem value="de">{t["Deutsch"]}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" className="h-12" onClick={onClose} disabled={pending}>
-              Cancel
+              {t["Cancel"]}
             </Button>
             <Button type="submit" className="h-12 font-bold" disabled={pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? t["Saving…"] : t["Save"]}
             </Button>
           </DialogFooter>
         </form>
@@ -385,6 +386,8 @@ export interface ActiveToggleAgent {
 }
 
 export function SetAgentActiveDialog({ agent, onClose }: { agent: ActiveToggleAgent; onClose(): void }) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const [pending, startTransition] = useTransition();
   const disabling = agent.active;
 
@@ -392,10 +395,10 @@ export function SetAgentActiveDialog({ agent, onClose }: { agent: ActiveToggleAg
     startTransition(async () => {
       const result = await setAgentActiveAction(agent.userId, !disabling);
       if (result.ok) {
-        toast.success(disabling ? `${agent.name} was disabled` : `${agent.name} was reactivated`);
+        toast.success((disabling ? t["{name} was disabled"] : t["{name} was reactivated"]).replace("{name}", agent.name));
         onClose();
       } else {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -404,24 +407,24 @@ export function SetAgentActiveDialog({ agent, onClose }: { agent: ActiveToggleAg
     <AlertDialog open onOpenChange={(next) => (next || pending ? undefined : onClose())}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{disabling ? `Disable ${agent.name}?` : `Reactivate ${agent.name}?`}</AlertDialogTitle>
+          <AlertDialogTitle>{(disabling ? t["Disable {name}?"] : t["Reactivate {name}?"]).replace("{name}", agent.name)}</AlertDialogTitle>
           <AlertDialogDescription>
             {disabling ? (
               <>
-                Sign-in is blocked right away and any open session stops working. Callbacks go to voicemail.{" "}
+                {t["Sign-in is blocked right away and any open session stops working. Callbacks go to voicemail."]}{" "}
                 {agent.leadsAssigned > 0
-                  ? `Their ${formatCount(agent.leadsAssigned)} ${agent.leadsAssigned === 1 ? "lead stays" : "leads stay"} assigned until you reassign ${agent.leadsAssigned === 1 ? "it" : "them"}.`
-                  : "They have no leads assigned."}{" "}
-                Call history and stats are kept.
+                  ? t["Their {count} leads remain assigned until you reassign them."].replace("{count}", formatCount(agent.leadsAssigned))
+                  : t["They have no leads assigned."]}{" "}
+                {t["Call history and stats are kept."]}
               </>
             ) : (
-              "They can sign in again with their existing password and see their assigned leads."
+              t["They can sign in again with their existing password and see their assigned leads."]
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel className="h-12" disabled={pending}>
-            Cancel
+            {t["Cancel"]}
           </AlertDialogCancel>
           <AlertDialogAction
             variant={disabling ? "destructive" : "default"}
@@ -432,7 +435,7 @@ export function SetAgentActiveDialog({ agent, onClose }: { agent: ActiveToggleAg
               confirm();
             }}
           >
-            {pending ? (disabling ? "Disabling…" : "Reactivating…") : disabling ? "Disable agent" : "Reactivate"}
+            {pending ? (disabling ? t["Disabling…"] : t["Reactivating…"]) : disabling ? t["Disable agent"] : t["Reactivate"]}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -461,6 +464,8 @@ export interface DeleteAgentDialogProps {
 }
 
 export function DeleteAgentDialog({ agent, onClose, onReassign }: DeleteAgentDialogProps) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   // Keyed by `checkKey`, so a check that belongs to an earlier attempt is never shown as current.
   const [loaded, setLoaded] = useState<{ key: number; check: AgentDeleteCheck | null; error: string | null }>({
     key: -1,
@@ -479,26 +484,26 @@ export function DeleteAgentDialog({ agent, onClose, onReassign }: DeleteAgentDia
         setLoaded(
           result.ok
             ? { key: checkKey, check: result.data, error: null }
-            : { key: checkKey, check: null, error: result.error.message },
+            : { key: checkKey, check: null, error: getAppErrorMessage(result.error.code, locale, result.error.message) },
         );
       })
       .catch(() => {
-        if (!cancelled) setLoaded({ key: checkKey, check: null, error: "This agent could not be checked. Try again." });
+        if (!cancelled) setLoaded({ key: checkKey, check: null, error: t["This agent could not be checked. Try again."] });
       });
     return () => {
       cancelled = true;
     };
-  }, [agent.userId, checkKey]);
+  }, [agent.userId, checkKey, locale, t]);
 
   function confirm() {
     setError(null);
     startTransition(async () => {
       const result = await deleteAgentAction(agent.userId);
       if (result.ok) {
-        toast.success(`${agent.name} was deleted`);
+        toast.success(t["{name} was deleted"].replace("{name}", agent.name));
         onClose();
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
         // Whatever went wrong (new work was assigned meanwhile, or closing the login stopped half way),
         // check again so the dialog offers what is possible now.
         setCheckKey((key) => key + 1);
@@ -513,51 +518,39 @@ export function DeleteAgentDialog({ agent, onClose, onReassign }: DeleteAgentDia
   const unfinished = check?.reason === "deleted" && !check.loginClosed;
   const deletable = check?.deletable === true;
 
-  let title = `Delete ${agent.name}?`;
+  let title = t["Delete {name}?"].replace("{name}", agent.name);
   let description: ReactNode;
   if (loading) {
-    description = "Checking their leads and follow-ups…";
+    description = t["Checking their leads and follow-ups…"];
   } else if (loadError !== null || check === null) {
-    description = loadError ?? "This agent could not be checked. Try again.";
+    description = loadError ?? t["This agent could not be checked. Try again."];
   } else if (hasWork) {
-    title = `${agent.name} still has work`;
+    title = t["{name} still has work"].replace("{name}", agent.name);
     const work = [
-      check.leads > 0 ? countText(check.leads, "lead", "leads") : null,
-      check.openFollowUps > 0 ? countText(check.openFollowUps, "open follow-up", "open follow-ups") : null,
+      check.leads > 0 ? countText(check.leads, t["lead"], t["leads"]) : null,
+      check.openFollowUps > 0 ? countText(check.openFollowUps, t["open follow-up"], t["open follow-ups"]) : null,
     ]
       .filter(Boolean)
-      .join(" and ");
-    description =
-      check.leads > 0 ? (
-        <>
-          They still have {work}. Reassign their leads to another agent first (open follow-ups go with the leads).
-          Then you can delete them.
-        </>
-      ) : (
-        <>
-          They still have {work} on leads they no longer own. Complete those on the Follow-ups page, then you can delete
-          them.
-        </>
-      );
+      .join(locale === "de" ? " und " : " and ");
+    description = (check.leads > 0 ? t["They still have {work}. Reassign their leads to another agent first (open follow-ups go with the leads). Then you can delete them."] : t["They still have {work} on leads they no longer own. Complete those on the Follow-ups page, then you can delete them."]).replace("{work}", work);
   } else if (unfinished) {
-    title = `Finish deleting ${agent.name}?`;
-    description =
-      "They’re already removed from the CRM, but closing their login didn’t finish. Finish now to sign them out for good and free their email for a new agent.";
+    title = t["Finish deleting {name}?"].replace("{name}", agent.name);
+    description = t["They’re already removed from the CRM, but closing their login didn’t finish. Finish now to sign them out for good and free their email for a new agent."];
   } else if (check.reason === "deleted") {
-    description = "This agent was already deleted.";
+    description = t["This agent was already deleted."];
   } else if (!deletable) {
-    description = "Only agents can be deleted, and never your own account.";
+    description = t["Only agents can be deleted, and never your own account."];
   } else {
     const kept = [
-      check.calls > 0 ? countText(check.calls, "call", "calls") : null,
-      check.completedFollowUps > 0 ? countText(check.completedFollowUps, "completed follow-up", "completed follow-ups") : null,
+      check.calls > 0 ? countText(check.calls, t["call"], t["calls"]) : null,
+      check.completedFollowUps > 0 ? countText(check.completedFollowUps, t["completed follow-up"], t["completed follow-ups"]) : null,
     ].filter(Boolean);
     description = (
       <>
-        They&rsquo;ll be signed out and can&rsquo;t sign in again. Their email can be reused for a new agent.{" "}
-        {kept.length > 0 ? `Their ${kept.join(" and ")} stay in your reports.` : "Past calls stay in your reports."}{" "}
+        {t["They’ll be signed out and can’t sign in again. Their email can be reused for a new agent."]}{" "}
+        {kept.length > 0 ? t["Their {kept} stay in your reports."].replace("{kept}", kept.join(locale === "de" ? " und " : " and ")) : t["Past calls stay in your reports."]}{" "}
         {check.phoneNumbers > 0
-          ? `${countText(check.phoneNumbers, "phone number goes", "phone numbers go")} back to the pool.`
+          ? t["{count} phone numbers go back to the pool."].replace("{count}", formatCount(check.phoneNumbers))
           : null}
       </>
     );
@@ -573,16 +566,16 @@ export function DeleteAgentDialog({ agent, onClose, onReassign }: DeleteAgentDia
         <FormError message={error} />
         <AlertDialogFooter>
           <AlertDialogCancel className="h-12" disabled={pending}>
-            {hasWork ? "Close" : "Cancel"}
+            {hasWork ? t["Close"] : t["Cancel"]}
           </AlertDialogCancel>
           {hasWork && check && check.leads > 0 ? (
             <Button type="button" className="h-12 font-bold" onClick={onReassign}>
-              Reassign leads
+              {t["Reassign leads"]}
             </Button>
           ) : null}
           {hasWork && check && check.leads === 0 ? (
             <Button asChild className="h-12 font-bold">
-              <Link href="/follow-ups">Open Follow-ups</Link>
+              <Link href="/follow-ups">{t["Open Follow-ups"]}</Link>
             </Button>
           ) : null}
           {deletable || unfinished ? (
@@ -595,7 +588,7 @@ export function DeleteAgentDialog({ agent, onClose, onReassign }: DeleteAgentDia
                 confirm();
               }}
             >
-              {unfinished ? (pending ? "Finishing…" : "Finish deleting") : pending ? "Deleting…" : "Delete agent"}
+              {unfinished ? (pending ? t["Finishing…"] : t["Finish deleting"]) : pending ? t["Deleting…"] : t["Delete agent"]}
             </AlertDialogAction>
           ) : null}
         </AlertDialogFooter>
@@ -623,6 +616,9 @@ export interface ReassignLeadsDialogProps {
 }
 
 export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDialogProps) {
+  const t = useTranslations("admin");
+  const w = useTranslations("workspace");
+  const { locale } = useLocale();
   const options = targets.filter((t) => t.userId !== from.userId);
   const [target, setTarget] = useState<string>(options.find((t) => t.role === "AGENT")?.userId ?? UNASSIGNED);
   const [statuses, setStatuses] = useState<LeadStatus[]>([]);
@@ -647,7 +643,7 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
 
   const loading = counted.key !== countKey;
   const count = loading ? null : counted.count;
-  const targetName = target === UNASSIGNED ? null : (options.find((t) => t.userId === target)?.name ?? "this agent");
+  const targetName = target === UNASSIGNED ? null : (options.find((option) => option.userId === target)?.name ?? t["this agent"]);
 
   function toggleStatus(status: LeadStatus, checked: boolean) {
     setStatuses((prev) =>
@@ -665,11 +661,11 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
         statuses,
       });
       if (result.ok) {
-        const moved = `${formatCount(result.data.count)} ${result.data.count === 1 ? "lead" : "leads"}`;
-        toast.success(targetName ? `Moved ${moved} to ${targetName}` : `Unassigned ${moved}`);
+        const moved = formatCount(result.data.count);
+        toast.success(targetName ? t["Moved {count} leads to {name}"].replace("{count}", moved).replace("{name}", targetName) : t["Unassigned {count} leads"].replace("{count}", moved));
         onClose();
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -679,27 +675,24 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Reassign {from.name}&rsquo;s leads</DialogTitle>
-            <DialogDescription>
-              Open follow-ups move with the leads. Call history stays with the lead, and stats stay with whoever made the
-              calls.
-            </DialogDescription>
+            <DialogTitle>{t["Reassign {name}’s leads"].replace("{name}", from.name)}</DialogTitle>
+            <DialogDescription>{t["Open follow-ups move with the leads. Call history stays with the lead, and stats stay with whoever made the calls."]}</DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="reassign-to">Move to</Label>
+            <Label htmlFor="reassign-to">{t["Move to"]}</Label>
             <Select value={target} onValueChange={setTarget} disabled={pending}>
               <SelectTrigger id="reassign-to" className="w-full px-3 text-base data-[size=default]:h-12 lg:text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-80">
                 <SelectItem value={UNASSIGNED} className="min-h-12">
-                  Unassigned
+                  {t["Unassigned"]}
                 </SelectItem>
                 {options.map((option) => (
                   <SelectItem key={option.userId} value={option.userId} className="min-h-12">
                     {option.name}
-                    {option.role === "ADMIN" ? " (admin)" : ""}
+                    {option.role === "ADMIN" ? ` (${locale === "de" ? "Admin" : "admin"})` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -708,7 +701,7 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
 
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">
-              Only these statuses <span className="font-normal text-muted-foreground">(optional; none = all leads)</span>
+              {t["Only these statuses"]} <span className="font-normal text-muted-foreground">{t["(optional; none = all leads)"]}</span>
             </legend>
             <div className="grid grid-cols-2 gap-x-3 sm:grid-cols-3">
               {LEAD_STATUSES.map((status) => {
@@ -721,7 +714,7 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
                       onCheckedChange={(checked) => toggleStatus(status, checked === true)}
                       disabled={pending}
                     />
-                    {STATUS_LABELS[status]}
+                    {w.statuses[status]}
                   </label>
                 );
               })}
@@ -730,24 +723,21 @@ export function ReassignLeadsDialog({ from, targets, onClose }: ReassignLeadsDia
 
           <p aria-live="polite" className="text-sm">
             {loading ? (
-              <span className="text-muted-foreground">Counting leads…</span>
+              <span className="text-muted-foreground">{t["Counting leads…"]}</span>
             ) : count === null ? (
-              <span className="text-destructive">Could not count the leads.</span>
+              <span className="text-destructive">{t["Could not count the leads."]}</span>
             ) : (
-              <>
-                <span className="font-extrabold tabular-nums">{formatCount(count)}</span>{" "}
-                {count === 1 ? "lead" : "leads"} will move {targetName ? `to ${targetName}` : "to Unassigned"}.
-              </>
+              <span className="font-extrabold tabular-nums">{(targetName ? t["{count} leads will move to {name}."].replace("{name}", targetName) : t["{count} leads will become unassigned."]).replace("{count}", formatCount(count))}</span>
             )}
           </p>
 
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" className="h-12" onClick={onClose} disabled={pending}>
-              Cancel
+              {t["Cancel"]}
             </Button>
             <Button type="submit" className="h-12 font-bold" disabled={pending || loading || !count}>
-              {pending ? "Reassigning…" : "Reassign leads"}
+              {pending ? t["Reassigning…"] : t["Reassign leads"]}
             </Button>
           </DialogFooter>
         </form>

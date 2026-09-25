@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import {
   REPORT_PRESETS,
-  REPORT_PRESET_LABELS,
-  RANGE_PROBLEM_MESSAGES,
   formatRangeLabel,
   parseReportRangeParams,
   presetRange,
@@ -12,6 +10,9 @@ import { ReportRangePicker } from "@/components/admin/reports/report-range-picke
 import { AgentReport, NumberReport, TeamTotals } from "@/components/admin/reports/report-sections";
 import { currentTime } from "@/components/common/datetime";
 import { PageHeader } from "@/components/common/page-header";
+import { getServerWorkspace } from "@/lib/i18n/server-workspace";
+import adminEn from "@/lib/i18n/messages/en/admin";
+import adminDe from "@/lib/i18n/messages/de/admin";
 import { requireAdminPage } from "@/server/context";
 import { getReport } from "@/server/services/reports";
 
@@ -25,6 +26,8 @@ export default async function ReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireAdminPage();
+  const { locale } = await getServerWorkspace(ctx.profile.primary_locale);
+  const t = locale === "de" ? adminDe : adminEn;
   const tz = ctx.profile.timezone;
   const now = currentTime();
   const parsed = parseReportRangeParams(await searchParams, tz, now);
@@ -32,18 +35,18 @@ export default async function ReportsPage({
 
   const presets = REPORT_PRESETS.map((preset) => ({
     preset,
-    label: REPORT_PRESET_LABELS[preset],
+    label: preset === "today" ? t["Today"] : preset === "yesterday" ? t["Yesterday"] : preset === "last7" ? t["Last 7 days"] : preset === "last30" ? t["Last 30 days"] : t["This month"],
     href: reportRangeHref(presetRange(preset, tz, now)),
   }));
 
   return (
     <>
       <PageHeader
-        title="Reports"
+        title={t["Reports"]}
         description={
           <>
             <span className="font-semibold text-foreground">{formatRangeLabel(report.range)}</span> ·{" "}
-            <span className="tabular-nums">{report.days}</span> {report.days === 1 ? "day" : "days"}
+            <span className="tabular-nums">{report.days}</span> {report.days === 1 ? t["day"] : t["days"]}
           </>
         }
       />
@@ -52,7 +55,7 @@ export default async function ReportsPage({
         range={parsed.range}
         preset={parsed.preset}
         presets={presets}
-        problem={parsed.problem ? RANGE_PROBLEM_MESSAGES[parsed.problem] : null}
+        problem={parsed.problem ? parsed.problem === "invalid_date" ? t["Enter a valid date."] : parsed.problem === "reversed" ? t["The end date must be on or after the start date."] : t["Choose a range of 366 days or less."] : null}
         timezone={tz}
       />
 
@@ -61,9 +64,7 @@ export default async function ReportsPage({
       <NumberReport rows={report.numbers} />
 
       <p className="text-xs text-muted-foreground">
-        Dials are outbound calls that were logged or reached Twilio. Connected counts every logged outcome except No
-        Answer, Voicemail and Wrong Number, including answered callbacks. Clients are leads currently assigned with status
-        Client, whatever the range.
+        {t["Dials are outbound calls that were logged or reached Twilio. Connected counts every logged outcome except No Answer, Voicemail and Wrong Number, including answered callbacks. Clients are leads currently assigned with status Client, whatever the range."]}
       </p>
     </>
   );

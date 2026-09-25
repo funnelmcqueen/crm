@@ -1,8 +1,12 @@
+"use client";
+
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AgentActivityLoading() {
+  const t = useTranslations("admin");
   return (
-    <div role="status" aria-label="Loading agent activity">
+    <div role="status" aria-label={t["Loading agent activity"]}>
       <Skeleton className="mb-3 h-5 w-20" />
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">
@@ -28,7 +32,7 @@ export default function AgentActivityLoading() {
           ))}
         </div>
       </div>
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">{t["Loading…"]}</span>
     </div>
   );
 }

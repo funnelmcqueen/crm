@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,8 @@ export function isAssignmentComplete(assignment: ImportAssignment): boolean {
 }
 
 export function AssignStep({ total, assignment, onAssignmentChange }: AssignStepProps) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const [agents, setAgents] = useState<ImportAgentOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -42,16 +46,16 @@ export function AssignStep({ total, assignment, onAssignmentChange }: AssignStep
           setAgents(result.data);
           setLoadError(null);
         } else {
-          setLoadError(result.error.message);
+          setLoadError(getAppErrorMessage(result.error.code, locale, result.error.message));
         }
       })
       .catch(() => {
-        if (!cancelled) setLoadError("Could not load the agent list.");
+        if (!cancelled) setLoadError(t["Could not load the agent list."]);
       });
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, locale, t]);
 
   const agentId = assignment.mode === "agent" ? assignment.agentId : lastAgentId;
   const splitIds = assignment.mode === "split" ? assignment.agentIds : lastSplitIds;
@@ -77,30 +81,30 @@ export function AssignStep({ total, assignment, onAssignmentChange }: AssignStep
     <section aria-labelledby="import-assign-title" className="flex flex-col gap-4">
       <div>
         <h2 id="import-assign-title" className="text-lg font-bold">
-          Assign
+          {t["Assign"]}
         </h2>
         <p className="text-sm text-muted-foreground">
-          Who gets the <span className="font-extrabold text-foreground tabular-nums">{formatCount(total)}</span> new {total === 1 ? "lead" : "leads"}?
+          {t["Who gets the {count} new leads?"].replace("{count}", formatCount(total))}
         </p>
       </div>
 
-      <RadioGroup value={assignment.mode} onValueChange={chooseMode} aria-label="Assignment" className="gap-2">
+      <RadioGroup value={assignment.mode} onValueChange={chooseMode} aria-label={t["Assignment"]} className="gap-2">
         <label htmlFor="import-assign-unassigned" className={OPTION}>
           <RadioGroupItem id="import-assign-unassigned" value="unassigned" />
           <span className="flex flex-col">
-            <span className="font-semibold">Leave unassigned</span>
-            <span className="text-xs text-muted-foreground">Only admins see them until they are assigned.</span>
+            <span className="font-semibold">{t["Leave unassigned"]}</span>
+            <span className="text-xs text-muted-foreground">{t["Only admins see them until they are assigned."]}</span>
           </span>
         </label>
         <label htmlFor="import-assign-agent" className={OPTION}>
           <RadioGroupItem id="import-assign-agent" value="agent" />
-          <span className="font-semibold">All to one agent</span>
+          <span className="font-semibold">{t["All to one agent"]}</span>
         </label>
         <label htmlFor="import-assign-split" className={OPTION}>
           <RadioGroupItem id="import-assign-split" value="split" />
           <span className="flex flex-col">
-            <span className="font-semibold">Split evenly across agents</span>
-            <span className="text-xs text-muted-foreground">For example 34 / 33 / 33.</span>
+            <span className="font-semibold">{t["Split evenly across agents"]}</span>
+            <span className="text-xs text-muted-foreground">{t["For example 34 / 33 / 33."]}</span>
           </span>
         </label>
       </RadioGroup>
@@ -108,23 +112,23 @@ export function AssignStep({ total, assignment, onAssignmentChange }: AssignStep
       {assignment.mode !== "unassigned" ? (
         loadError ? (
           <Alert variant="destructive">
-            <AlertTitle>Agents could not be loaded</AlertTitle>
+            <AlertTitle>{t["Agents could not be loaded"]}</AlertTitle>
             <AlertDescription>
               {loadError}
               <Button variant="outline" className="mt-2 h-12" onClick={() => setAttempt((n) => n + 1)}>
-                Try again
+                {t["Try again"]}
               </Button>
             </AlertDescription>
           </Alert>
         ) : agents === null ? (
-          <div className="flex flex-col gap-2" role="status" aria-label="Loading agents">
+          <div className="flex flex-col gap-2" role="status" aria-label={t["Loading agents"]}>
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
           </div>
         ) : agents.length === 0 ? (
           <Alert>
-            <AlertTitle>No active agents</AlertTitle>
-            <AlertDescription>Create or reactivate an agent first, or leave the leads unassigned.</AlertDescription>
+            <AlertTitle>{t["No active agents"]}</AlertTitle>
+            <AlertDescription>{t["Create or reactivate an agent first, or leave the leads unassigned."]}</AlertDescription>
           </Alert>
         ) : assignment.mode === "agent" ? (
           <Select
@@ -134,8 +138,8 @@ export function AssignStep({ total, assignment, onAssignmentChange }: AssignStep
               onAssignmentChange({ mode: "agent", agentId: id });
             }}
           >
-            <SelectTrigger aria-label="Agent" className="w-full px-3 data-[size=default]:h-12 sm:max-w-sm">
-              <SelectValue placeholder="Choose an agent" />
+            <SelectTrigger aria-label={t["Agent"]} className="w-full px-3 data-[size=default]:h-12 sm:max-w-sm">
+              <SelectValue placeholder={t["Choose an agent"]} />
             </SelectTrigger>
             <SelectContent position="popper" align="start">
               {agents.map((agent) => (
@@ -147,7 +151,7 @@ export function AssignStep({ total, assignment, onAssignmentChange }: AssignStep
           </Select>
         ) : (
           <div className="flex flex-col gap-2">
-            <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Agents in the split">
+            <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label={t["Agents in the split"]}>
               {agents.map((agent) => {
                 const position = splitIds.indexOf(agent.id);
                 const id = `import-split-${agent.id}`;
@@ -169,10 +173,10 @@ export function AssignStep({ total, assignment, onAssignmentChange }: AssignStep
             </ul>
             <p className="text-sm text-muted-foreground" aria-live="polite">
               {splitIds.length === 0 ? (
-                "Choose at least one agent."
+                t["Choose at least one agent."]
               ) : (
                 <>
-                  Split: <span className="font-extrabold text-foreground tabular-nums">{counts.map(formatCount).join(" / ")}</span>
+                  {t["Split:"]} <span className="font-extrabold text-foreground tabular-nums">{counts.map(formatCount).join(" / ")}</span>
                 </>
               )}
             </p>

@@ -1,3 +1,6 @@
+"use client";
+
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { DateTime } from "@/components/common/datetime";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
@@ -13,6 +16,7 @@ export interface PhoneNumbersListProps {
 }
 
 function ActivePill({ active }: { active: boolean }) {
+  const t = useTranslations("admin");
   return (
     <span
       className={cn(
@@ -21,20 +25,21 @@ function ActivePill({ active }: { active: boolean }) {
       )}
     >
       <span aria-hidden className={cn("size-1.5 rounded-full", active ? "bg-success" : "bg-muted-foreground/60")} />
-      {active ? "Active" : "Inactive"}
+      {active ? t["Active"] : t["Inactive"]}
     </span>
   );
 }
 
 function Assignee({ row }: { row: PhoneNumberListRow }) {
-  if (!row.assignedTo) return <span className="font-semibold text-muted-foreground">Pool</span>;
+  const t = useTranslations("admin");
+  if (!row.assignedTo) return <span className="font-semibold text-muted-foreground">{t["Pool"]}</span>;
   return (
     <span className="flex min-w-0 flex-col">
-      <span className="truncate font-semibold">{row.assignedName ?? "Unknown agent"}</span>
+      <span className="truncate font-semibold">{row.assignedName ?? t["Unknown agent"]}</span>
       {row.assignedActive === false ? (
         // The number keeps its assignment so reactivating the agent restores it, but nobody can call
         // from it and it is not in the pool either.
-        <span className="text-xs font-semibold text-destructive">Disabled agent · number unused</span>
+        <span className="text-xs font-semibold text-destructive">{t["Disabled agent · number unused"]}</span>
       ) : null}
     </span>
   );
@@ -42,20 +47,21 @@ function Assignee({ row }: { row: PhoneNumberListRow }) {
 
 /** Desktop table (md+) and mobile cards of the admin's Twilio numbers. */
 export function PhoneNumbersList({ rows, agents, tz, now }: PhoneNumbersListProps) {
+  const t = useTranslations("admin");
   return (
     <>
       <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="h-11 pl-4">Number</TableHead>
-              <TableHead>Label</TableHead>
-              <TableHead>Assigned to</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Calls today</TableHead>
-              <TableHead>Last used</TableHead>
+              <TableHead className="h-11 pl-4">{t["Number"]}</TableHead>
+              <TableHead>{t["Label"]}</TableHead>
+              <TableHead>{t["Assigned to"]}</TableHead>
+              <TableHead>{t["Status"]}</TableHead>
+              <TableHead className="text-right">{t["Calls today"]}</TableHead>
+              <TableHead>{t["Last used"]}</TableHead>
               <TableHead className="pr-4 text-right">
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">{t["Actions"]}</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -72,7 +78,7 @@ export function PhoneNumbersList({ rows, agents, tz, now }: PhoneNumbersListProp
                 </TableCell>
                 <TableCell className="text-right text-base font-extrabold tabular-nums">{row.callsToday}</TableCell>
                 <TableCell className="whitespace-nowrap">
-                  <DateTime value={row.lastUsedAt} tz={tz} now={now} empty="Never" />
+                  <DateTime value={row.lastUsedAt} tz={tz} now={now} empty={t["Never"]} />
                 </TableCell>
                 <TableCell className="pr-4 text-right">
                   <NumberActions number={row} agents={agents} />
@@ -96,17 +102,17 @@ export function PhoneNumbersList({ rows, agents, tz, now }: PhoneNumbersListProp
               <ActivePill active={row.active} />
             </div>
             <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
-              <dt className="text-muted-foreground">Agent</dt>
+              <dt className="text-muted-foreground">{t["Agent"]}</dt>
               <dd className="truncate">
                 <Assignee row={row} />
               </dd>
               <dd className="row-span-2 flex flex-col items-end justify-center">
                 <span className="text-lg leading-none font-extrabold tabular-nums">{row.callsToday}</span>
-                <span className="text-xs text-muted-foreground">today</span>
+                <span className="text-xs text-muted-foreground">{t["Today"].toLowerCase()}</span>
               </dd>
-              <dt className="text-muted-foreground">Last used</dt>
+              <dt className="text-muted-foreground">{t["Last used"]}</dt>
               <dd className="truncate text-muted-foreground">
-                <DateTime value={row.lastUsedAt} tz={tz} now={now} empty="Never" />
+                <DateTime value={row.lastUsedAt} tz={tz} now={now} empty={t["Never"]} />
               </dd>
             </dl>
             <NumberActions number={row} agents={agents} className="w-full justify-center" />

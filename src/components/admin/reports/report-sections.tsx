@@ -1,3 +1,6 @@
+"use client";
+
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,19 +33,20 @@ function SectionTitle({ id, children, aside }: { id: string; children: ReactNode
 // ---------------------------------------------------------------------------------------------
 
 export function TeamTotals({ totals }: { totals: ReportTotals }) {
+  const t = useTranslations("admin");
   const stats: Array<{ label: string; value: string }> = [
-    { label: "Dials", value: formatCount(totals.dials) },
-    { label: "Connected", value: formatCount(totals.connected) },
-    { label: "Connect rate", value: formatPercent(totals.connectRate) },
-    { label: "Talk min", value: formatCount(talkMinutes(totals.talkSeconds)) },
-    { label: "Avg call", value: formatAvgCall(totals.avgCallSeconds) },
-    { label: "Interested", value: formatCount(totals.interested) },
-    { label: "Appointments", value: formatCount(totals.appointments) },
-    { label: "Clients", value: formatCount(totals.clients) },
+    { label: t["Dials"], value: formatCount(totals.dials) },
+    { label: t["Connected"], value: formatCount(totals.connected) },
+    { label: t["Connect rate"], value: formatPercent(totals.connectRate) },
+    { label: t["Talk min"], value: formatCount(talkMinutes(totals.talkSeconds)) },
+    { label: t["Avg call"], value: formatAvgCall(totals.avgCallSeconds) },
+    { label: t["Interested"], value: formatCount(totals.interested) },
+    { label: t["Appointments"], value: formatCount(totals.appointments) },
+    { label: t["Clients"], value: formatCount(totals.clients) },
   ];
   return (
     <section aria-labelledby="report-totals" className="mb-8">
-      <SectionTitle id="report-totals">Team totals</SectionTitle>
+      <SectionTitle id="report-totals">{t["Team totals"]}</SectionTitle>
       {/* 1px gaps over the border color draw the dividers at every column count. */}
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4 xl:grid-cols-8">
         {stats.map((stat) => (
@@ -61,31 +65,33 @@ export function TeamTotals({ totals }: { totals: ReportTotals }) {
 // ---------------------------------------------------------------------------------------------
 
 function DisabledTag() {
-  return <span className="ml-2 text-xs font-semibold text-muted-foreground">Disabled</span>;
+  const t = useTranslations("admin");
+  return <span className="ml-2 text-xs font-semibold text-muted-foreground">{t["Disabled"]}</span>;
 }
 
 export function AgentReport({ rows }: { rows: AgentReportRow[] }) {
+  const t = useTranslations("admin");
   return (
     <section aria-labelledby="report-agents" className="mb-8">
-      <SectionTitle id="report-agents" aside="Stats stay with whoever made the call">
-        Per agent
+      <SectionTitle id="report-agents" aside={t["Stats stay with whoever made the call"]}>
+        {t["Per agent"]}
       </SectionTitle>
       {rows.length === 0 ? (
-        <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No agents yet.</p>
+        <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">{t["No agents yet."]}</p>
       ) : (
         <>
           <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-11 pl-4">Agent</TableHead>
-                  <TableHead className="text-right">Dials</TableHead>
-                  <TableHead className="text-right">Connect rate</TableHead>
-                  <TableHead className="text-right">Talk min</TableHead>
-                  <TableHead className="text-right">Avg call</TableHead>
-                  <TableHead className="text-right">Interested</TableHead>
-                  <TableHead className="text-right">Appointments</TableHead>
-                  <TableHead className="pr-4 text-right">Clients</TableHead>
+                  <TableHead className="h-11 pl-4">{t["Agent"]}</TableHead>
+                  <TableHead className="text-right">{t["Dials"]}</TableHead>
+                  <TableHead className="text-right">{t["Connect rate"]}</TableHead>
+                  <TableHead className="text-right">{t["Talk min"]}</TableHead>
+                  <TableHead className="text-right">{t["Avg call"]}</TableHead>
+                  <TableHead className="text-right">{t["Interested"]}</TableHead>
+                  <TableHead className="text-right">{t["Appointments"]}</TableHead>
+                  <TableHead className="pr-4 text-right">{t["Clients"]}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -120,16 +126,16 @@ export function AgentReport({ rows }: { rows: AgentReportRow[] }) {
                     {row.active ? null : <DisabledTag />}
                   </p>
                   <p className="shrink-0 text-sm text-muted-foreground">
-                    <span className="text-lg font-extrabold text-foreground tabular-nums">{formatCount(row.dials)}</span> dials
+                    <span className="text-lg font-extrabold text-foreground tabular-nums">{formatCount(row.dials)}</span> {t["Dials"].toLowerCase()}
                   </p>
                 </div>
                 <dl className="grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
-                  <MiniStat label="Connect" value={formatPercent(row.connectRate)} />
-                  <MiniStat label="Talk min" value={formatCount(talkMinutes(row.talkSeconds))} />
-                  <MiniStat label="Avg call" value={formatAvgCall(row.avgCallSeconds)} />
-                  <MiniStat label="Interested" value={formatCount(row.interested)} />
-                  <MiniStat label="Appts" value={formatCount(row.appointments)} />
-                  <MiniStat label="Clients" value={formatCount(row.clients)} />
+                  <MiniStat label={t["Connect"]} value={formatPercent(row.connectRate)} />
+                  <MiniStat label={t["Talk min"]} value={formatCount(talkMinutes(row.talkSeconds))} />
+                  <MiniStat label={t["Avg call"]} value={formatAvgCall(row.avgCallSeconds)} />
+                  <MiniStat label={t["Interested"]} value={formatCount(row.interested)} />
+                  <MiniStat label={t["Appts"]} value={formatCount(row.appointments)} />
+                  <MiniStat label={t["Clients"]} value={formatCount(row.clients)} />
                 </dl>
               </li>
             ))}
@@ -154,23 +160,25 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 // ---------------------------------------------------------------------------------------------
 
 function SpamHint({ id }: { id: string }) {
+  const t = useTranslations("admin");
   return (
     <span id={id} className="inline-flex items-center gap-1 text-xs font-semibold text-destructive">
       <TriangleAlert aria-hidden className="size-3.5" />
-      Possible spam flag
+      {t["Possible spam flag"]}
     </span>
   );
 }
 
 export function NumberReport({ rows }: { rows: NumberReportRow[] }) {
+  const t = useTranslations("admin");
   return (
     <section aria-labelledby="report-numbers" className="mb-6">
-      <SectionTitle id="report-numbers" aside="Answered = completed outbound calls with talk time">
-        Per number
+      <SectionTitle id="report-numbers" aside={t["Answered = completed outbound calls with talk time"]}>
+        {t["Per number"]}
       </SectionTitle>
       {rows.length === 0 ? (
         <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-          No phone numbers yet.
+          {t["No phone numbers yet."]}
         </p>
       ) : (
         <>
@@ -178,11 +186,11 @@ export function NumberReport({ rows }: { rows: NumberReportRow[] }) {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-11 pl-4">Number</TableHead>
-                  <TableHead>Label</TableHead>
-                  <TableHead className="text-right">Dials</TableHead>
-                  <TableHead className="text-right">Answered</TableHead>
-                  <TableHead className="pr-4 text-right">Answer rate</TableHead>
+                  <TableHead className="h-11 pl-4">{t["Number"]}</TableHead>
+                  <TableHead>{t["Label"]}</TableHead>
+                  <TableHead className="text-right">{t["Dials"]}</TableHead>
+                  <TableHead className="text-right">{t["Answered"]}</TableHead>
+                  <TableHead className="pr-4 text-right">{t["Answer rate"]}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -234,17 +242,16 @@ export function NumberReport({ rows }: { rows: NumberReportRow[] }) {
                     {flagged ? <SpamHint id={`spam-card-${row.phoneNumberId}`} /> : null}
                   </div>
                   <dl className="grid grid-cols-3 gap-x-3 text-sm">
-                    <MiniStat label="Dials" value={formatCount(row.dials)} />
-                    <MiniStat label="Answered" value={formatCount(row.answered)} />
-                    <MiniStat label="Answer rate" value={formatPercent(row.answerRate)} />
+                    <MiniStat label={t["Dials"]} value={formatCount(row.dials)} />
+                    <MiniStat label={t["Answered"]} value={formatCount(row.answered)} />
+                    <MiniStat label={t["Answer rate"]} value={formatPercent(row.answerRate)} />
                   </dl>
                 </li>
               );
             })}
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            An answer rate under {formatPercent(SPAM_MAX_ANSWER_RATE)} over {SPAM_MIN_DIALS}+ dials can mean carriers label
-            the number as spam.
+            {t["An answer rate under {rate} after {count}+ dials can mean carriers label the number as spam."].replace("{rate}", formatPercent(SPAM_MAX_ANSWER_RATE)).replace("{count}", String(SPAM_MIN_DIALS))}
           </p>
         </>
       )}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { EllipsisVertical, Power, PowerOff, Undo2, UserRoundPlus } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -50,6 +52,8 @@ export interface NumberActionsProps {
 }
 
 export function NumberActions({ number, agents, className }: NumberActionsProps) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const display = formatPhoneDisplay(number.e164);
   const [assignOpen, setAssignOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
@@ -63,7 +67,7 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
         toast.success(success);
         onDone?.();
       } else {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -84,24 +88,24 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
             variant="outline"
             className={cn("h-12 gap-2 px-3", className)}
             disabled={pending}
-            aria-label={`Actions for ${display}`}
+            aria-label={t["Actions for {name}"].replace("{name}", display)}
           >
             <EllipsisVertical aria-hidden />
-            <span>{pending ? "Saving…" : "Actions"}</span>
+            <span>{pending ? t["Saving…"] : t["Actions"]}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-56">
           <DropdownMenuItem className="min-h-12 gap-2" onSelect={openAssign}>
             <UserRoundPlus aria-hidden />
-            {number.assignedTo ? "Reassign to agent…" : "Assign to agent…"}
+            {number.assignedTo ? t["Reassign to agent…"] : t["Assign to agent…"]}
           </DropdownMenuItem>
           <DropdownMenuItem
             className="min-h-12 gap-2"
             disabled={!number.assignedTo}
-            onSelect={() => run(() => unassignPhoneNumberAction(number.id), `${display} is back in the pool`)}
+            onSelect={() => run(() => unassignPhoneNumberAction(number.id), t["{number} is back in the pool"].replace("{number}", display))}
           >
             <Undo2 aria-hidden />
-            Unassign (back to pool)
+            {t["Unassign (back to pool)"]}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {number.active ? (
@@ -110,15 +114,15 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
               onSelect={() => setDeactivateOpen(true)}
             >
               <PowerOff aria-hidden className="text-destructive" />
-              Deactivate
+              {t["Deactivate"]}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem
               className="min-h-12 gap-2"
-              onSelect={() => run(() => reactivatePhoneNumberAction(number.id), `${display} is active again`)}
+              onSelect={() => run(() => reactivatePhoneNumberAction(number.id), t["{number} is active again"].replace("{number}", display))}
             >
               <Power aria-hidden />
-              Reactivate
+              {t["Reactivate"]}
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
@@ -127,16 +131,16 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign {display}</DialogTitle>
+            <DialogTitle>{t["Assign {number}"].replace("{number}", display)}</DialogTitle>
             <DialogDescription>
-              The agent calls out from this number, and unknown callers to it ring that agent.
+              {t["The agent calls out from this number, and unknown callers to it ring that agent."]}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`assign-${number.id}`}>Agent</Label>
+            <Label htmlFor={`assign-${number.id}`}>{t["Agent"]}</Label>
             <Select value={target} onValueChange={setTarget} disabled={pending}>
               <SelectTrigger id={`assign-${number.id}`} className="w-full px-3 data-[size=default]:h-12">
-                <SelectValue placeholder="Choose an agent" />
+                <SelectValue placeholder={t["Choose an agent"]} />
               </SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-80">
                 {agents.map((agent) => (
@@ -148,12 +152,12 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
               </SelectContent>
             </Select>
             {agents.length === 0 ? (
-              <p className="text-xs text-muted-foreground">There are no active agents to assign.</p>
+              <p className="text-xs text-muted-foreground">{t["There are no active agents to assign."]}</p>
             ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" className="h-12" onClick={() => setAssignOpen(false)} disabled={pending}>
-              Cancel
+              {t["Cancel"]}
             </Button>
             <Button
               type="button"
@@ -162,12 +166,12 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
               onClick={() =>
                 run(
                   () => assignPhoneNumberAction(number.id, target),
-                  `${display} assigned to ${targetName ?? "the agent"}`,
+                  t["{number} assigned to {name}"].replace("{number}", display).replace("{name}", targetName ?? t["the agent"]),
                   () => setAssignOpen(false),
                 )
               }
             >
-              {pending ? "Assigning…" : "Assign"}
+              {pending ? t["Assigning…"] : t["Assign"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -176,15 +180,14 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
       <AlertDialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate {display}?</AlertDialogTitle>
+            <AlertDialogTitle>{t["Deactivate {number}?"].replace("{number}", display)}</AlertDialogTitle>
             <AlertDialogDescription>
-              It stops being used as a caller ID, and unknown callers to it go to admin voicemail. Leads calling back
-              still reach their agent. The number stays in your Twilio account.
+              {t["It stops being used as a caller ID, and unknown callers to it go to admin voicemail. Leads calling back still reach their agent. The number stays in your Twilio account."]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="h-12" disabled={pending}>
-              Cancel
+              {t["Cancel"]}
             </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
@@ -192,10 +195,10 @@ export function NumberActions({ number, agents, className }: NumberActionsProps)
               disabled={pending}
               onClick={(event) => {
                 event.preventDefault();
-                run(() => deactivatePhoneNumberAction(number.id), `${display} deactivated`, () => setDeactivateOpen(false));
+                run(() => deactivatePhoneNumberAction(number.id), t["{number} deactivated"].replace("{number}", display), () => setDeactivateOpen(false));
               }}
             >
-              {pending ? "Deactivating…" : "Deactivate"}
+              {pending ? t["Deactivating…"] : t["Deactivate"]}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

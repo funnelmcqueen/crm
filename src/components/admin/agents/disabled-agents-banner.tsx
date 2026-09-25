@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export interface DisabledAgentsBannerProps {
 
 /** Shown while leads are still assigned to disabled agents: nobody calls those leads until they are reassigned. */
 export function DisabledAgentsBanner({ disabled, reassignTargets }: DisabledAgentsBannerProps) {
+  const t = useTranslations("admin");
   const [from, setFrom] = useState<{ userId: string; name: string } | null>(null);
   if (disabled.agents.length === 0) return null;
 
@@ -28,10 +30,9 @@ export function DisabledAgentsBanner({ disabled, reassignTargets }: DisabledAgen
         <div className="min-w-0">
           <h2 id="disabled-agents-title" className="font-bold">
             <span className="tabular-nums">{formatCount(disabled.leadCount)}</span>{" "}
-            {disabled.leadCount === 1 ? "lead is" : "leads are"} still assigned to {formatCount(agentCount)} disabled{" "}
-            {agentCount === 1 ? "agent" : "agents"}
+            {disabled.leadCount === 1 ? t["lead"] : t["leads"]} · {formatCount(agentCount)} {agentCount === 1 ? t["agent"] : t["agents"]} {t["Disabled"].toLowerCase()}
           </h2>
-          <p className="text-sm text-muted-foreground">Nobody is calling them. Reassign them to an active agent.</p>
+          <p className="text-sm text-muted-foreground">{t["Nobody is calling them. Reassign them to an active agent."]}</p>
         </div>
       </div>
       <ul className="flex flex-col divide-y divide-destructive/20 rounded-lg border border-destructive/20 bg-background/40">
@@ -42,7 +43,7 @@ export function DisabledAgentsBanner({ disabled, reassignTargets }: DisabledAgen
               <span className="text-muted-foreground">
                 {" "}
                 · <span className="tabular-nums">{formatCount(agent.leadsAssigned)}</span>{" "}
-                {agent.leadsAssigned === 1 ? "lead" : "leads"}
+                {agent.leadsAssigned === 1 ? t["lead"] : t["leads"]}
               </span>
             </span>
             <Button
@@ -50,7 +51,7 @@ export function DisabledAgentsBanner({ disabled, reassignTargets }: DisabledAgen
               className="h-12 shrink-0 px-4"
               onClick={() => setFrom({ userId: agent.userId, name: agent.name })}
             >
-              Reassign
+              {t["Reassign"]}
             </Button>
           </li>
         ))}

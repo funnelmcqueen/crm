@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { Download, FileUp, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type DragEvent } from "react";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { guessMapping, missingRequiredImportFields, type ImportFieldKey, type ImportMapping } from "@/lib/domain/import-mapping";
 import { cn } from "@/lib/utils";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { checkImportDuplicatesAction, importLeadsBatchAction } from "@/server/actions/import";
 import { AssignStep, isAssignmentComplete } from "./assign-step";
 import {
@@ -37,6 +39,7 @@ import {
 import { MappingStep } from "./mapping-step";
 import { PreviewStep } from "./preview-step";
 import { StatCell, StepActions } from "./step-actions";
+import { getImportValidationMessage } from "./import-validation-message";
 
 type Step = "upload" | "mapping" | "preview" | "assign" | "importing" | "done";
 
@@ -73,9 +76,10 @@ function downloadCsv(filename: string, csv: string): void {
 }
 
 function Stepper({ step }: { step: Step }) {
+  const t = useTranslations("admin");
   const current = STEP_INDEX[step];
   return (
-    <ol aria-label="Import steps" className="mb-6 flex gap-1 text-xs font-semibold">
+    <ol aria-label={t["Import steps"]} className="mb-6 flex gap-1 text-xs font-semibold">
       {STEPS.map((label, index) => (
         <li
           key={label}
@@ -84,7 +88,7 @@ function Stepper({ step }: { step: Step }) {
         >
           <span aria-hidden className={cn("h-1 rounded-full", index <= current ? "bg-primary" : "bg-muted")} />
           <span className="truncate">
-            <span className="tabular-nums">{index + 1}.</span> <span className={index === current ? "" : "max-sm:sr-only"}>{label}</span>
+            <span className="tabular-nums">{index + 1}.</span> <span className={index === current ? "" : "max-sm:sr-only"}>{t[label]}</span>
           </span>
         </li>
       ))}
@@ -93,6 +97,8 @@ function Stepper({ step }: { step: Step }) {
 }
 
 export function ImportWizard() {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>("upload");
   const [loaded, setLoaded] = useState<LoadedFile | null>(null);
@@ -128,14 +134,14 @@ export function ImportWizard() {
     setUploadError(null);
     const problem = checkImportFile(file);
     if (problem) {
-      setUploadError(problem);
+      setUploadError(getImportValidationMessage(problem, locale));
       return;
     }
     setReading(true);
     try {
       const result = parseImportCsv(await file.text());
       if (!result.ok) {
-        setUploadError(result.error);
+        setUploadError(getImportValidationMessage(result.error, locale));
         return;
       }
       setLoaded({ name: file.name, file: result.file });
@@ -145,7 +151,7 @@ export function ImportWizard() {
       setDecisions({});
       setSummary(null);
     } catch {
-      setUploadError("This file could not be read. Check that it is a CSV file.");
+      setUploadError(t["This file could not be read. Check that it is a CSV file."]);
     } finally {
       setReading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -169,14 +175,14 @@ export function ImportWizard() {
       const existing: ExistingDuplicateLead[] = [];
       for (const chunk of chunkDuplicateKeys(duplicateKeysFor(checks))) {
         const result = await checkImportDuplicatesAction(chunk);
-        if (!result.ok) throw new Error(result.error.message);
+        if (!result.ok) throw new Error(getAppErrorMessage(result.error.code, locale, result.error.message));
         existing.push(...result.data);
       }
       setPreview(buildImportPreview(checks, existing));
       setDecisions({});
       setStep("preview");
     } catch (error) {
-      setCheckError(error instanceof Error && error.message ? error.message : "The duplicate check failed. Try again.");
+      setCheckError(error instanceof Error && error.message ? error.message : t["The duplicate check failed. Try again."]);
     } finally {
       setChecking(false);
     }
@@ -199,7 +205,7 @@ export function ImportWizard() {
         const result = await importLeadsBatchAction({ mapping, appendUnmappedToNotes: appendUnmapped, rows: batch }, batchAssignment);
         batchResults = result.ok
           ? result.data.results
-          : batch.map((row) => ({ rowIndex: row.rowIndex, ok: false as const, reason: `Not saved: ${result.error.message}` }));
+          : batch.map((row) => ({ rowIndex: row.rowIndex, ok: false as const, reason: `${t["Not saved"]}: ${getAppErrorMessage(result.error.code, locale, result.error.message)}` }));
       } catch {
         // A failed batch never stops the remaining batches.
         batchResults = batch.map((row) => ({ rowIndex: row.rowIndex, ok: false as const, reason: BATCH_FAILED_REASON }));
@@ -233,7 +239,7 @@ export function ImportWizard() {
       {step === "upload" ? (
         <section aria-labelledby="import-upload-title" className="flex flex-col gap-4">
           <h2 id="import-upload-title" className="sr-only">
-            Upload
+            {t["Upload"]}
           </h2>
           <div
             onDragOver={(event) => {
@@ -251,25 +257,25 @@ export function ImportWizard() {
               {reading ? <Loader2 className="size-6 animate-spin" /> : <FileUp className="size-6" />}
             </div>
             <div className="flex flex-col gap-1">
-              <p className="font-bold">Drop a CSV file here</p>
-              <p className="text-sm text-muted-foreground">.csv only, up to 10 MB and 50,000 rows. The first row must name the columns.</p>
+              <p className="font-bold">{t["Drop a CSV file here"]}</p>
+              <p className="text-sm text-muted-foreground">{t[".csv only, up to 10 MB and 50,000 rows. The first row must name the columns."]}</p>
             </div>
             <input
               ref={inputRef}
               type="file"
               accept=".csv,text/csv"
-              aria-label="CSV file"
+              aria-label={t["CSV file"]}
               className="sr-only"
               onChange={(event) => void handleFile(event.target.files?.[0])}
             />
             <Button className="h-12 px-5 font-bold" disabled={reading} onClick={() => inputRef.current?.click()}>
-              {reading ? "Reading…" : "Choose CSV file"}
+              {reading ? t["Reading…"] : t["Choose CSV file"]}
             </Button>
           </div>
 
           {uploadError ? (
             <Alert variant="destructive" role="alert">
-              <AlertTitle>File not accepted</AlertTitle>
+              <AlertTitle>{t["File not accepted"]}</AlertTitle>
               <AlertDescription>{uploadError}</AlertDescription>
             </Alert>
           ) : null}
@@ -280,7 +286,7 @@ export function ImportWizard() {
                 <p className="truncate font-semibold">{loaded.name}</p>
                 <p className="text-sm text-muted-foreground">
                   <span className="font-extrabold text-foreground tabular-nums">{formatCount(loaded.file.rows.length)}</span>{" "}
-                  {loaded.file.rows.length === 1 ? "row" : "rows"} · {formatCount(loaded.file.headers.length)} columns · {formatBytes(fileSize)}
+                  {loaded.file.rows.length === 1 ? t["row"] : t["rows"]} · {formatCount(loaded.file.headers.length)} {t["columns"]} · {formatBytes(fileSize)}
                 </p>
               </div>
             </div>
@@ -289,7 +295,7 @@ export function ImportWizard() {
           {loaded ? (
             <StepActions>
               <Button className="h-12 px-6 font-bold" onClick={() => setStep("mapping")}>
-                Map columns
+                {t["Map columns"]}
               </Button>
             </StepActions>
           ) : null}
@@ -307,26 +313,26 @@ export function ImportWizard() {
           />
           {checkError ? (
             <Alert variant="destructive" role="alert" className="mt-4">
-              <AlertTitle>Preview failed</AlertTitle>
+              <AlertTitle>{t["Preview failed"]}</AlertTitle>
               <AlertDescription>{checkError}</AlertDescription>
             </Alert>
           ) : null}
           <StepActions>
             {missing.length > 0 ? (
               <p className="text-sm text-muted-foreground sm:mr-auto" aria-live="polite">
-                Map {requiredFieldLabels(missing).join(" and ")} to continue.
+                {t["Map {fields} to continue."].replace("{fields}", requiredFieldLabels(missing).map((field) => field === "Business name" ? t["Business name"] : field === "Phone" ? t["Phone"] : field).join(locale === "de" ? " und " : " and "))}
               </p>
             ) : null}
             <Button variant="outline" className="h-12 px-5" disabled={checking} onClick={() => setStep("upload")}>
-              Back
+              {t["Back"]}
             </Button>
             <Button className="h-12 px-6 font-bold" disabled={missing.length > 0 || checking} onClick={() => void runPreview()}>
               {checking ? (
                 <>
-                  <Loader2 aria-hidden className="animate-spin" /> Checking duplicates…
+                  <Loader2 aria-hidden className="animate-spin" /> {t["Checking duplicates…"]}
                 </>
               ) : (
-                "Preview import"
+                t["Preview import"]
               )}
             </Button>
           </StepActions>
@@ -344,10 +350,10 @@ export function ImportWizard() {
           />
           <StepActions>
             <Button variant="outline" className="h-12 px-5" onClick={() => setStep("mapping")}>
-              Back
+              {t["Back"]}
             </Button>
             <Button className="h-12 px-6 font-bold" onClick={() => setStep("assign")}>
-              Continue with {formatCount(plan.insert.length)} {plan.insert.length === 1 ? "lead" : "leads"}
+              {t["Continue with {count} leads"].replace("{count}", formatCount(plan.insert.length))}
             </Button>
           </StepActions>
         </>
@@ -357,19 +363,18 @@ export function ImportWizard() {
         <>
           <AssignStep total={plan.insert.length} assignment={assignment} onAssignmentChange={setAssignment} />
           <p className="mt-4 text-sm text-muted-foreground">
-            {formatCount(plan.skipped.length)} {plan.skipped.length === 1 ? "duplicate" : "duplicates"} skipped · {formatCount(plan.invalid.length)} invalid{" "}
-            {plan.invalid.length === 1 ? "row" : "rows"} not imported.
+            {formatCount(plan.skipped.length)} {plan.skipped.length === 1 ? t["duplicate"] : t["duplicates"]} {t["skipped"]} · {formatCount(plan.invalid.length)} {t["invalid"]} {plan.invalid.length === 1 ? t["row"] : t["rows"]} {t["not imported"]}.
           </p>
           <StepActions>
             <Button variant="outline" className="h-12 px-5" onClick={() => setStep("preview")}>
-              Back
+              {t["Back"]}
             </Button>
             <Button
               className="h-12 px-6 font-bold"
               disabled={plan.insert.length > 0 && !isAssignmentComplete(assignment)}
               onClick={() => void runImport()}
             >
-              {plan.insert.length === 0 ? "Finish" : `Import ${formatCount(plan.insert.length)} ${plan.insert.length === 1 ? "lead" : "leads"}`}
+              {plan.insert.length === 0 ? t["Finish"] : t["Import {count} leads"].replace("{count}", formatCount(plan.insert.length))}
             </Button>
           </StepActions>
         </>
@@ -378,16 +383,15 @@ export function ImportWizard() {
       {step === "importing" ? (
         <section aria-labelledby="import-progress-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
           <h2 id="import-progress-title" className="flex items-center gap-2 text-lg font-bold">
-            <Loader2 aria-hidden className="size-5 animate-spin" /> Importing…
+            <Loader2 aria-hidden className="size-5 animate-spin" /> {t["Importing…"]}
           </h2>
           <Progress
             value={progress.rowsTotal === 0 ? 100 : Math.round((progress.rowsDone / progress.rowsTotal) * 100)}
-            aria-label="Import progress"
+            aria-label={t["Import progress"]}
             className="h-2"
           />
           <p className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
-            Batch {formatCount(progress.batchesDone)} of {formatCount(progress.batchesTotal)} · {formatCount(progress.rowsDone)} of{" "}
-            {formatCount(progress.rowsTotal)} rows sent. Keep this page open.
+            {t["Batch {done} of {total} · {rowsDone} of {rowsTotal} rows sent. Keep this page open."].replace("{done}", formatCount(progress.batchesDone)).replace("{total}", formatCount(progress.batchesTotal)).replace("{rowsDone}", formatCount(progress.rowsDone)).replace("{rowsTotal}", formatCount(progress.rowsTotal))}
           </p>
         </section>
       ) : null}
@@ -396,23 +400,23 @@ export function ImportWizard() {
         <section aria-labelledby="import-result-title" className="flex flex-col gap-4">
           <div className="rounded-xl border bg-card p-4">
             <h2 id="import-result-title" className="text-lg font-bold">
-              Import finished
+              {t["Import finished"]}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {formatCount(summary.counts.total)} {summary.counts.total === 1 ? "row" : "rows"} in {loaded.name}
+              {formatCount(summary.counts.total)} {summary.counts.total === 1 ? t["row"] : t["rows"]} · {loaded.name}
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 sm:grid-cols-4">
-              <StatCell label="Inserted" value={formatCount(summary.counts.inserted)} className={summary.counts.inserted > 0 ? "text-gold" : undefined} />
-              <StatCell label="Skipped (duplicates)" value={formatCount(summary.counts.skipped)} />
-              <StatCell label="Invalid" value={formatCount(summary.counts.invalid)} />
-              <StatCell label="Failed" value={formatCount(summary.counts.failed)} className={summary.counts.failed > 0 ? "text-destructive" : undefined} />
+              <StatCell label={t["Inserted"]} value={formatCount(summary.counts.inserted)} className={summary.counts.inserted > 0 ? "text-gold" : undefined} />
+              <StatCell label={t["Skipped (duplicates)"]} value={formatCount(summary.counts.skipped)} />
+              <StatCell label={t["Invalid"]} value={formatCount(summary.counts.invalid)} />
+              <StatCell label={t["Failed"]} value={formatCount(summary.counts.failed)} className={summary.counts.failed > 0 ? "text-destructive" : undefined} />
             </div>
           </div>
 
           {summary.counts.failed > 0 ? (
             <Alert variant="destructive">
-              <AlertTitle>Some rows were not saved</AlertTitle>
-              <AlertDescription>Download the rows below, fix them if needed, and import that file again.</AlertDescription>
+              <AlertTitle>{t["Some rows were not saved"]}</AlertTitle>
+              <AlertDescription>{t["Download the rows below, fix them if needed, and import that file again."]}</AlertDescription>
             </Alert>
           ) : null}
 
@@ -429,14 +433,14 @@ export function ImportWizard() {
                 }
               >
                 <Download aria-hidden />
-                Download skipped and failed rows
+                {t["Download skipped and failed rows"]}
               </Button>
             ) : null}
             <Button variant="outline" className="h-12 px-5" onClick={reset}>
-              Import another file
+              {t["Import another file"]}
             </Button>
             <Button asChild className="h-12 px-6 font-bold">
-              <Link href="/leads">View leads</Link>
+              <Link href="/leads">{t["View leads"]}</Link>
             </Button>
           </StepActions>
         </section>

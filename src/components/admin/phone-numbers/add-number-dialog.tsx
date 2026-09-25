@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { FlaskConical, Plus, TriangleAlert } from "lucide-react";
 import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -26,13 +28,14 @@ export interface AddNumberDialogProps {
 const LABEL_MAX = 100;
 
 function ModeNote({ mode }: { mode: NumberVerificationMode }) {
+  const t = useTranslations("admin");
   if (mode === "mock") {
     return (
       <div role="note" className="flex gap-3 rounded-lg border border-gold/60 bg-muted/60 p-3 text-sm">
         <FlaskConical aria-hidden className="mt-0.5 size-4 shrink-0 text-gold" />
         <div>
-          <p className="font-bold">Mock mode: not verified with Twilio</p>
-          <p className="text-muted-foreground">Only fictional 555-01xx numbers are accepted, and a fake Twilio SID is stored.</p>
+          <p className="font-bold">{t["Mock mode: not verified with Twilio"]}</p>
+          <p className="text-muted-foreground">{t["Only fictional 555-01xx numbers are accepted, and a fake Twilio SID is stored."]}</p>
         </div>
       </div>
     );
@@ -42,9 +45,9 @@ function ModeNote({ mode }: { mode: NumberVerificationMode }) {
       <div role="alert" className="flex gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm">
         <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div>
-          <p className="font-bold">Twilio is not configured</p>
+          <p className="font-bold">{t["Twilio is not configured"]}</p>
           <p className="text-muted-foreground">
-            Numbers cannot be verified until the Twilio environment variables are set on the server.
+            {t["Numbers cannot be verified until the Twilio environment variables are set on the server."]}
           </p>
         </div>
       </div>
@@ -54,6 +57,8 @@ function ModeNote({ mode }: { mode: NumberVerificationMode }) {
 }
 
 export function AddNumberDialog({ mode }: AddNumberDialogProps) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const [open, setOpen] = useState(false);
   const [e164, setE164] = useState("");
   const [label, setLabel] = useState("");
@@ -78,10 +83,10 @@ export function AddNumberDialog({ mode }: AddNumberDialogProps) {
     startTransition(async () => {
       const result = await addPhoneNumberAction({ e164, label });
       if (result.ok) {
-        toast.success(`Added ${formatPhoneDisplay(result.data.e164)} to the pool`);
+        toast.success(t["Added {number} to the pool"].replace("{number}", formatPhoneDisplay(result.data.e164)));
         setOpen(false);
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -91,23 +96,22 @@ export function AddNumberDialog({ mode }: AddNumberDialogProps) {
       <DialogTrigger asChild>
         <Button className="h-12 gap-2 px-5 font-bold">
           <Plus aria-hidden />
-          Add number
+          {t["Add number"]}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Add a Twilio number</DialogTitle>
+            <DialogTitle>{t["Add a Twilio number"]}</DialogTitle>
             <DialogDescription>
-              Enter a number you already bought in Twilio. The CRM looks it up in your account, points its voice
-              handler at the TwiML App and adds it to the shared pool.
+              {t["Enter a number you already bought in Twilio. The CRM looks it up in your account, points its voice handler at the TwiML App and adds it to the shared pool."]}
             </DialogDescription>
           </DialogHeader>
 
           <ModeNote mode={mode} />
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-number-e164">Number (E.164)</Label>
+            <Label htmlFor="add-number-e164">{t["Number (E.164)"]}</Label>
             <Input
               id="add-number-e164"
               type="tel"
@@ -125,18 +129,18 @@ export function AddNumberDialog({ mode }: AddNumberDialogProps) {
             />
             <p id="add-number-e164-hint" className="min-h-5 text-xs text-muted-foreground tabular-nums">
               {normalized === null
-                ? "Country code first, e.g. +1 for the US."
+                ? t["Country code first, e.g. +1 for the US."]
                 : normalized.ok
-                  ? `Saves as ${normalized.e164}`
-                  : "Not a valid phone number yet."}
+                  ? t["Saves as {number}"].replace("{number}", normalized.e164)
+                  : t["Not a valid phone number yet."]}
             </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-number-label">Label (optional)</Label>
+            <Label htmlFor="add-number-label">{t["Label (optional)"]}</Label>
             <Input
               id="add-number-label"
-              placeholder="Main line, Chicago local…"
+              placeholder={t["Main line, Chicago local…"]}
               maxLength={LABEL_MAX}
               value={label}
               disabled={disabled}
@@ -151,10 +155,10 @@ export function AddNumberDialog({ mode }: AddNumberDialogProps) {
 
           <DialogFooter>
             <Button type="button" variant="outline" className="h-12" onClick={() => setOpen(false)} disabled={pending}>
-              Cancel
+              {t["Cancel"]}
             </Button>
             <Button type="submit" className="h-12 font-bold" disabled={disabled || normalized === null || !normalized.ok}>
-              {pending ? "Checking Twilio…" : "Add number"}
+              {pending ? t["Checking Twilio…"] : t["Add number"]}
             </Button>
           </DialogFooter>
         </form>

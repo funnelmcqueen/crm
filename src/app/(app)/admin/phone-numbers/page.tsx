@@ -5,6 +5,9 @@ import { PhoneNumbersList } from "@/components/admin/phone-numbers/phone-numbers
 import { currentTime } from "@/components/common/datetime";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
+import { getServerWorkspace } from "@/lib/i18n/server-workspace";
+import adminEn from "@/lib/i18n/messages/en/admin";
+import adminDe from "@/lib/i18n/messages/de/admin";
 import { requireAdminPage } from "@/server/context";
 import { listAssignableAgents, listPhoneNumbers, numberVerificationMode } from "@/server/services/phone-numbers";
 
@@ -14,6 +17,8 @@ export const metadata: Metadata = {
 
 export default async function PhoneNumbersPage() {
   const ctx = await requireAdminPage();
+  const { locale } = await getServerWorkspace(ctx.profile.primary_locale);
+  const t = locale === "de" ? adminDe : adminEn;
   const [numbers, agents] = await Promise.all([listPhoneNumbers(ctx), listAssignableAgents(ctx)]);
   const mode = numberVerificationMode();
   const now = currentTime();
@@ -24,13 +29,13 @@ export default async function PhoneNumbersPage() {
   return (
     <>
       <PageHeader
-        title="Phone Numbers"
+        title={t["Phone Numbers"]}
         description={
           numbers.length > 0 ? (
             <>
-              <span className="font-extrabold text-foreground tabular-nums">{active.length}</span> active ·{" "}
-              <span className="font-extrabold text-foreground tabular-nums">{pool}</span> in the pool
-              {mode === "mock" ? " · Mock mode" : null}
+              <span className="font-extrabold text-foreground tabular-nums">{active.length}</span> {t["active"]} ·{" "}
+              <span className="font-extrabold text-foreground tabular-nums">{pool}</span> {t["in the pool"]}
+              {mode === "mock" ? ` · ${t["Mock mode"]}` : null}
             </>
           ) : null
         }
@@ -42,14 +47,13 @@ export default async function PhoneNumbersPage() {
       ) : (
         <EmptyState
           icon={<Phone />}
-          title="No numbers yet"
-          description="Add a number you already bought in Twilio. Agents without their own number call from the pool."
+          title={t["No numbers yet"]}
+          description={t["Add a number you already bought in Twilio. Agents without their own number call from the pool."]}
         />
       )}
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Buy and release numbers in Twilio. The CRM only verifies them and points them at the TwiML App. Calls today use
-        your timezone.
+        {t["Buy and release numbers in Twilio. The CRM only verifies them and points them at the TwiML App. Calls today use your timezone."]}
       </p>
     </>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { Check, CircleAlert } from "lucide-react";
 import { useMemo } from "react";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,12 @@ export interface MappingStepProps {
 }
 
 export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, onAppendUnmappedChange }: MappingStepProps) {
+  const t = useTranslations("admin");
+  const fieldLabels: Record<ImportFieldKey, string> = {
+    business_name: t["Business name"], contact_name: t["Contact name"], phone: t["Phone"], email: t["Email"],
+    website: t["Website"], address: t["Address"], city: t["City"], state: t["State"], country: t["Country"],
+    source: t["Source"], business_type: t["Business type"], notes: t["Notes"],
+  };
   const samples = useMemo(() => {
     const rows = file.rows.slice(0, SAMPLE_ROWS);
     return file.headers.map((header) => rows.map((row) => (row[header] ?? "").trim()).find((value) => value !== "") ?? "");
@@ -34,12 +41,12 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
     <section aria-labelledby="import-mapping-title" className="flex flex-col gap-4">
       <div>
         <h2 id="import-mapping-title" className="text-lg font-bold">
-          Map columns
+          {t["Map columns"]}
         </h2>
-        <p className="text-sm text-muted-foreground">Match each CSV column to a CRM field. Business name and phone are required.</p>
+        <p className="text-sm text-muted-foreground">{t["Match each CSV column to a CRM field. Business name and phone are required."]}</p>
       </div>
 
-      <ul className="flex flex-wrap gap-2" aria-label="Required fields">
+      <ul className="flex flex-wrap gap-2" aria-label={t["Required fields"]}>
         {REQUIRED_FIELDS.map((field) => {
           const mapped = usage.has(field.key);
           return (
@@ -51,8 +58,8 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
               )}
             >
               {mapped ? <Check aria-hidden className="size-3.5" /> : <CircleAlert aria-hidden className="size-3.5" />}
-              {field.label}
-              <span className="sr-only">{mapped ? " is mapped" : " is not mapped yet"}</span>
+              {fieldLabels[field.key]}
+              <span className="sr-only">{mapped ? t[" is mapped"] : t[" is not mapped yet"]}</span>
             </li>
           );
         })}
@@ -60,9 +67,9 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
 
       <div className="overflow-hidden rounded-xl border bg-card">
         <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_16rem] gap-4 border-b px-4 py-2 text-xs font-semibold text-muted-foreground md:grid">
-          <span>CSV column</span>
-          <span>Example value</span>
-          <span>CRM field</span>
+          <span>{t["CSV column"]}</span>
+          <span>{t["Example value"]}</span>
+          <span>{t["CRM field"]}</span>
         </div>
         <ul className="divide-y">
           {file.headers.map((header, index) => {
@@ -73,7 +80,7 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
             return (
               <li key={header} className="grid gap-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_16rem] md:items-center md:gap-4">
                 <label htmlFor={id} className="min-w-0 truncate font-semibold">
-                  {header.trim() || `Column ${index + 1}`}
+                  {header.trim() || t["Column {number}"].replace("{number}", String(index + 1))}
                 </label>
                 <span className="min-w-0 truncate text-sm text-muted-foreground">{samples[index] || "—"}</span>
                 <div className="flex flex-col gap-1">
@@ -83,17 +90,17 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
                     </SelectTrigger>
                     <SelectContent position="popper" align="end">
                       <SelectItem value={SKIP} className="min-h-12">
-                        Don&apos;t import
+                        {t["Don&apos;t import"]}
                       </SelectItem>
                       {CRM_IMPORT_FIELDS.map((option) => (
                         <SelectItem key={option.key} value={option.key} className="min-h-12">
-                          {option.label}
-                          {option.required ? " (required)" : ""}
+                          {fieldLabels[option.key]}
+                          {option.required ? t[" (required)"] : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {shared ? <span className="text-xs text-muted-foreground">Mapped more than once: later values go to notes.</span> : null}
+                  {shared ? <span className="text-xs text-muted-foreground">{t["Mapped more than once: later values go to notes."]}</span> : null}
                 </div>
               </li>
             );
@@ -103,8 +110,8 @@ export function MappingStep({ file, mapping, onMappingChange, appendUnmapped, on
 
       <div className="flex min-h-12 items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3">
         <Label htmlFor="import-append-unmapped" className="flex cursor-pointer flex-col items-start gap-0.5">
-          <span className="font-semibold">Append unmapped columns to notes</span>
-          <span className="text-xs font-normal text-muted-foreground">Adds lines like &quot;Employees: 12&quot; so nothing is lost.</span>
+          <span className="font-semibold">{t["Append unmapped columns to notes"]}</span>
+          <span className="text-xs font-normal text-muted-foreground">{t["Adds lines like &quot;Employees: 12&quot; so nothing is lost."]}</span>
         </Label>
         <Switch id="import-append-unmapped" checked={appendUnmapped} onCheckedChange={onAppendUnmappedChange} />
       </div>

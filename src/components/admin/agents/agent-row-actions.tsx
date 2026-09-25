@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { Activity, ArrowRightLeft, MoreHorizontal, Pencil, PhoneOff, PhoneCall, Trash2, UserCheck, UserX } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
@@ -34,6 +36,8 @@ const ITEM = "min-h-12 gap-2";
 const DESTRUCTIVE_ITEM = `${ITEM} text-destructive focus:text-destructive`;
 
 export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [pending, startTransition] = useTransition();
 
@@ -42,9 +46,9 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
     startTransition(async () => {
       const result = await setInAppCallingAction(agent.userId, enable);
       if (result.ok) {
-        toast.success(enable ? `In-app calling is on for ${agent.name}` : `${agent.name} now calls from their phone`);
+        toast.success((enable ? t["In-app calling is on for {name}"] : t["{name} now calls from their phone"]).replace("{name}", agent.name));
       } else {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -56,7 +60,7 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
       {/* Non-modal so the dialogs opened from it get focus back cleanly. */}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="size-12" aria-label={`Actions for ${agent.name}`} disabled={pending}>
+          <Button variant="outline" className="size-12" aria-label={t["Actions for {name}"].replace("{name}", agent.name)} disabled={pending}>
             <MoreHorizontal aria-hidden />
           </Button>
         </DropdownMenuTrigger>
@@ -65,37 +69,37 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
           <DropdownMenuItem asChild className={ITEM}>
             <Link href={`/admin/agents/${agent.userId}`}>
               <Activity aria-hidden />
-              View activity
+              {t["View activity"]}
             </Link>
           </DropdownMenuItem>
           {agent.deletePending ? (
             // Already deleted in the CRM, so nothing is left to manage but finishing the delete (D40).
             <DropdownMenuItem className={DESTRUCTIVE_ITEM} onSelect={() => setDialog("delete")}>
               <Trash2 aria-hidden />
-              Finish deleting
+              {t["Finish deleting"]}
             </DropdownMenuItem>
           ) : (
             <>
               <DropdownMenuItem className={ITEM} onSelect={() => setDialog("edit")}>
                 <Pencil aria-hidden />
-                Edit name, target, time zone
+                {t["Edit name, target, time zone"]}
               </DropdownMenuItem>
               <DropdownMenuItem className={ITEM} onSelect={toggleInApp}>
                 {agent.inAppCallingEnabled ? <PhoneOff aria-hidden /> : <PhoneCall aria-hidden />}
-                {agent.inAppCallingEnabled ? "Turn off in-app calling" : "Turn on in-app calling"}
+                {agent.inAppCallingEnabled ? t["Turn off in-app calling"] : t["Turn on in-app calling"]}
               </DropdownMenuItem>
               <DropdownMenuItem className={ITEM} disabled={agent.leadsAssigned === 0} onSelect={() => setDialog("reassign")}>
                 <ArrowRightLeft aria-hidden />
-                Reassign leads
+                {t["Reassign leads"]}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className={agent.active ? DESTRUCTIVE_ITEM : ITEM} onSelect={() => setDialog("active")}>
                 {agent.active ? <UserX aria-hidden /> : <UserCheck aria-hidden />}
-                {agent.active ? "Disable agent" : "Reactivate agent"}
+                {agent.active ? t["Disable agent"] : t["Reactivate agent"]}
               </DropdownMenuItem>
               <DropdownMenuItem className={DESTRUCTIVE_ITEM} onSelect={() => setDialog("delete")}>
                 <Trash2 aria-hidden />
-                Delete agent
+                {t["Delete agent"]}
               </DropdownMenuItem>
             </>
           )}

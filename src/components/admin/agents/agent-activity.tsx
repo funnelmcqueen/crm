@@ -1,24 +1,23 @@
+"use client";
+
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { PhoneIncoming, PhoneOutgoing } from "lucide-react";
 import Link from "next/link";
 import { DateTime, formatDuration } from "@/components/common/datetime";
 import { EmptyState } from "@/components/common/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CALL_OUTCOMES, OUTCOME_LABELS, isCallOutcome } from "@/lib/domain/outcomes";
+import { CALL_OUTCOMES, isCallOutcome, type CallOutcome } from "@/lib/domain/outcomes";
 import { cn } from "@/lib/utils";
 import type { ActivityRange, AgentActivity, AgentActivityCall } from "@/server/services/agents";
 import { formatCount, formatPercent, formatTalkTime } from "./format";
 
 // Components may import only types from src/server; the Record type keeps this list in step with ActivityRange.
-const ACTIVITY_RANGE_LABELS: Readonly<Record<ActivityRange, string>> = {
-  today: "Today",
-  "7d": "7 days",
-  "30d": "30 days",
-};
-const ACTIVITY_RANGES = Object.keys(ACTIVITY_RANGE_LABELS) as ActivityRange[];
+const ACTIVITY_RANGES: ActivityRange[] = ["today", "7d", "30d"];
 
 export function ActivityRangeTabs({ userId, range }: { userId: string; range: ActivityRange }) {
+  const t = useTranslations("admin");
   return (
-    <nav aria-label="Date range" className="inline-flex rounded-lg border bg-card p-1">
+    <nav aria-label={t["Date range"]} className="inline-flex rounded-lg border bg-card p-1">
       {ACTIVITY_RANGES.map((key) => {
         const current = key === range;
         return (
@@ -32,7 +31,7 @@ export function ActivityRangeTabs({ userId, range }: { userId: string; range: Ac
               current ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {ACTIVITY_RANGE_LABELS[key]}
+            {key === "today" ? t["Today"] : key === "7d" ? t["Last 7 days"] : t["Last 30 days"]}
           </Link>
         );
       })}
@@ -41,14 +40,15 @@ export function ActivityRangeTabs({ userId, range }: { userId: string; range: Ac
 }
 
 export function ActivityStats({ stats }: { stats: AgentActivity["stats"] }) {
+  const t = useTranslations("admin");
   const items: Array<{ label: string; value: string; hint?: string }> = [
-    { label: "Dials", value: formatCount(stats.dials) },
-    { label: "Connect rate", value: formatPercent(stats.connectRate), hint: `${formatCount(stats.connected)} connected` },
-    { label: "Talk time", value: formatTalkTime(stats.talkSeconds) },
-    { label: "Avg call", value: formatDuration(stats.avgCallSeconds) },
-    { label: "Interested", value: formatCount(stats.interested) },
-    { label: "Appointments", value: formatCount(stats.appointments) },
-    { label: "Clients", value: formatCount(stats.clients), hint: "assigned now" },
+    { label: t["Dials"], value: formatCount(stats.dials) },
+    { label: t["Connect rate"], value: formatPercent(stats.connectRate), hint: `${formatCount(stats.connected)} ${t["connected"]}` },
+    { label: t["Talk"], value: formatTalkTime(stats.talkSeconds) },
+    { label: t["Avg call"], value: formatDuration(stats.avgCallSeconds) },
+    { label: t["Interested"], value: formatCount(stats.interested) },
+    { label: t["Appointments"], value: formatCount(stats.appointments) },
+    { label: t["Clients"], value: formatCount(stats.clients), hint: t["assigned now"] },
   ];
   return (
     <dl className="grid grid-cols-2 overflow-hidden rounded-xl border bg-card sm:grid-cols-4 lg:grid-cols-7">
@@ -64,6 +64,8 @@ export function ActivityStats({ stats }: { stats: AgentActivity["stats"] }) {
 }
 
 export function OutcomeBreakdown({ outcomes }: { outcomes: AgentActivity["outcomes"] }) {
+  const t = useTranslations("admin");
+  const w = useTranslations("workspace");
   const rows = CALL_OUTCOMES.map((outcome) => ({ outcome, count: outcomes[outcome] ?? 0 }));
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const max = Math.max(1, ...rows.map((row) => row.count));
@@ -71,15 +73,15 @@ export function OutcomeBreakdown({ outcomes }: { outcomes: AgentActivity["outcom
   return (
     <section aria-labelledby="outcomes-title" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
       <h2 id="outcomes-title" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Outcomes <span className="normal-case tabular-nums">({formatCount(total)} logged)</span>
+        {t["Outcomes"]} <span className="normal-case tabular-nums">({formatCount(total)} {t["logged"]})</span>
       </h2>
       {total === 0 ? (
-        <p className="text-sm text-muted-foreground">No outcomes logged in this range.</p>
+        <p className="text-sm text-muted-foreground">{t["No outcomes logged in this range."]}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((row) => (
             <li key={row.outcome} className="grid grid-cols-[7.5rem_1fr_2.5rem] items-center gap-3 text-sm">
-              <span className={cn("truncate", row.count === 0 && "text-muted-foreground")}>{OUTCOME_LABELS[row.outcome]}</span>
+              <span className={cn("truncate", row.count === 0 && "text-muted-foreground")}>{w.outcomes[row.outcome]}</span>
               <span aria-hidden className="h-2 overflow-hidden rounded-full bg-muted">
                 <span
                   className="block h-full rounded-full bg-foreground/70"
@@ -95,27 +97,29 @@ export function OutcomeBreakdown({ outcomes }: { outcomes: AgentActivity["outcom
   );
 }
 
-function outcomeLabel(call: AgentActivityCall): string {
-  if (call.outcome && isCallOutcome(call.outcome)) return OUTCOME_LABELS[call.outcome];
-  return call.direction === "INBOUND" ? "Not logged" : "Not logged";
+function outcomeLabel(call: AgentActivityCall, messages: { outcomes: Readonly<Record<CallOutcome, string>> }, notLogged: string): string {
+  if (call.outcome && isCallOutcome(call.outcome)) return messages.outcomes[call.outcome];
+  return notLogged;
 }
 
 function LeadCell({ call }: { call: AgentActivityCall }) {
-  if (!call.leadId) return <span className="text-muted-foreground">Unknown caller</span>;
+  const t = useTranslations("admin");
+  if (!call.leadId) return <span className="text-muted-foreground">{t["Unknown caller"]}</span>;
   return (
     <Link
       href={`/leads/${call.leadId}`}
       className="block truncate font-semibold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50"
     >
-      {call.businessName ?? "Lead"}
+      {call.businessName ?? t["Lead"]}
     </Link>
   );
 }
 
 function DirectionIcon({ call }: { call: AgentActivityCall }) {
+  const t = useTranslations("admin");
   const inbound = call.direction === "INBOUND";
   const Icon = inbound ? PhoneIncoming : PhoneOutgoing;
-  const label = `${inbound ? "Inbound" : "Outbound"} · ${call.mode === "IN_APP" ? "In-app" : "Phone"}`;
+  const label = `${inbound ? t["Inbound"] : t["Outbound"]} · ${call.mode === "IN_APP" ? t["In-app"] : t["Phone"]}`;
   return (
     <span className="inline-flex items-center gap-1.5 text-muted-foreground" title={label}>
       <Icon aria-hidden className="size-4" />
@@ -131,26 +135,28 @@ export interface RecentCallsProps {
 }
 
 export function RecentCalls({ calls, tz, now }: RecentCallsProps) {
+  const t = useTranslations("admin");
+  const w = useTranslations("workspace");
   return (
     <section aria-labelledby="recent-calls-title" className="flex flex-col gap-3">
       <h2 id="recent-calls-title" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Recent calls <span className="normal-case">(latest 50 in range)</span>
+        {t["Recent calls"]} <span className="normal-case">({t["latest 50 in range"]})</span>
       </h2>
       {calls.length === 0 ? (
-        <EmptyState title="No calls in this range" description="Calls this agent makes or answers show up here." />
+        <EmptyState title={t["No calls in this range"]} description={t["Calls this agent makes or answers show up here."]} />
       ) : (
         <>
           <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-11 pl-4">When</TableHead>
+                  <TableHead className="h-11 pl-4">{t["When"]}</TableHead>
                   <TableHead>
-                    <span className="sr-only">Direction</span>
+                    <span className="sr-only">{t["Direction"]}</span>
                   </TableHead>
-                  <TableHead>Lead</TableHead>
-                  <TableHead>Outcome</TableHead>
-                  <TableHead className="pr-4 text-right">Duration</TableHead>
+                  <TableHead>{t["Lead"]}</TableHead>
+                  <TableHead>{t["Outcome"]}</TableHead>
+                  <TableHead className="pr-4 text-right">{t["Duration"]}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -165,7 +171,7 @@ export function RecentCalls({ calls, tz, now }: RecentCallsProps) {
                     <TableCell className="max-w-72">
                       <LeadCell call={call} />
                     </TableCell>
-                    <TableCell className={cn(!call.outcome && "text-muted-foreground")}>{outcomeLabel(call)}</TableCell>
+                    <TableCell className={cn(!call.outcome && "text-muted-foreground")}>{outcomeLabel(call, w, t["Not logged"])}</TableCell>
                     <TableCell className="pr-4 text-right tabular-nums">
                       {call.durationSeconds === null ? "—" : formatDuration(call.durationSeconds)}
                     </TableCell>
@@ -181,7 +187,7 @@ export function RecentCalls({ calls, tz, now }: RecentCallsProps) {
                 <div className="min-w-0 flex-1">
                   <LeadCell call={call} />
                   <p className="truncate text-xs text-muted-foreground">
-                    <DateTime value={call.createdAt} tz={tz} now={now} /> · {outcomeLabel(call)}
+                    <DateTime value={call.createdAt} tz={tz} now={now} /> · {outcomeLabel(call, w, t["Not logged"])}
                   </p>
                 </div>
                 <span className="text-sm tabular-nums">

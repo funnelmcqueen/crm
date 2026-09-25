@@ -1,3 +1,6 @@
+"use client";
+
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { PhoneOff } from "lucide-react";
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,6 +24,7 @@ export function AgentStatusBadge({
   deletePending?: boolean;
   className?: string;
 }) {
+  const t = useTranslations("admin");
   const tone = deletePending ? "warn" : deleted ? "muted" : active ? "ok" : "warn";
   return (
     <span
@@ -41,28 +45,30 @@ export function AgentStatusBadge({
           tone === "muted" ? "bg-muted-foreground" : tone === "ok" ? "bg-success" : "bg-destructive",
         )}
       />
-      {deletePending ? "Delete unfinished" : deleted ? "Deleted" : active ? "Active" : "Disabled"}
+      {deletePending ? t["Delete unfinished"] : deleted ? t["Deleted"] : active ? t["Active"] : t["Disabled"]}
     </span>
   );
 }
 
 function InAppOffNote() {
+  const t = useTranslations("admin");
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
       <PhoneOff aria-hidden className="size-3" />
-      Phone only
+      {t["Phone only"]}
     </span>
   );
 }
 
 /** "37 / 50", gold once the target is reached; "37 calls · no target" for a target of 0 (dailyGoal, D43). */
 function CallsVsTarget({ dials, target }: { dials: number; target: number }) {
+  const t = useTranslations("admin");
   const goal = dailyGoal(dials, target);
   if (!goal.hasTarget) {
     return (
       <span className="whitespace-nowrap tabular-nums">
         <span className="font-extrabold">{goalFraction(goal)}</span>
-        <span className="text-muted-foreground"> · no target</span>
+        <span className="text-muted-foreground"> · {t["No target"]}</span>
       </span>
     );
   }
@@ -75,7 +81,8 @@ function CallsVsTarget({ dials, target }: { dials: number; target: number }) {
 }
 
 function Numbers({ numbers }: { numbers: string[] }) {
-  if (numbers.length === 0) return <span className="text-muted-foreground">Pool</span>;
+  const t = useTranslations("admin");
+  if (numbers.length === 0) return <span className="text-muted-foreground">{t["Pool"]}</span>;
   return (
     <span className="flex flex-col tabular-nums">
       {numbers.map((n) => (
@@ -93,20 +100,21 @@ export interface AgentsListProps {
 }
 
 export function AgentsTable({ agents, reassignTargets }: AgentsListProps) {
+  const t = useTranslations("admin");
   return (
     <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="h-11 pl-4">Agent</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Leads</TableHead>
-            <TableHead className="text-right">Calls today</TableHead>
-            <TableHead className="text-right">Talk today</TableHead>
-            <TableHead className="text-right">Appts today</TableHead>
-            <TableHead>Number</TableHead>
+            <TableHead className="h-11 pl-4">{t["Agent"]}</TableHead>
+            <TableHead>{t["Status"]}</TableHead>
+            <TableHead className="text-right">{t["Leads"]}</TableHead>
+            <TableHead className="text-right">{t["Calls today"]}</TableHead>
+            <TableHead className="text-right">{t["Talk today"]}</TableHead>
+            <TableHead className="text-right">{t["Appts today"]}</TableHead>
+            <TableHead>{t["Number"]}</TableHead>
             <TableHead className="pr-4 text-right">
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{t["Actions"]}</span>
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -149,6 +157,7 @@ export function AgentsTable({ agents, reassignTargets }: AgentsListProps) {
 }
 
 export function AgentCards({ agents, reassignTargets }: AgentsListProps) {
+  const t = useTranslations("admin");
   return (
     <ul className="flex flex-col gap-2 md:hidden">
       {agents.map((agent) => (
@@ -169,26 +178,26 @@ export function AgentCards({ agents, reassignTargets }: AgentsListProps) {
           </div>
           <dl className="grid grid-cols-4 gap-2 border-t pt-3 text-center">
             <div>
-              <dt className="text-xs text-muted-foreground">Calls</dt>
+              <dt className="text-xs text-muted-foreground">{t["Calls"]}</dt>
               <dd className="text-sm">
                 <CallsVsTarget dials={agent.dialsToday} target={agent.dailyCallTarget} />
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Talk</dt>
+              <dt className="text-xs text-muted-foreground">{t["Talk"]}</dt>
               <dd className="text-sm font-extrabold tabular-nums">{formatTalkTime(agent.talkSecondsToday)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Appts</dt>
+              <dt className="text-xs text-muted-foreground">{t["Appts"]}</dt>
               <dd className="text-sm font-extrabold tabular-nums">{formatCount(agent.appointmentsToday)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Leads</dt>
+              <dt className="text-xs text-muted-foreground">{t["Leads"]}</dt>
               <dd className="text-sm font-extrabold tabular-nums">{formatCount(agent.leadsAssigned)}</dd>
             </div>
           </dl>
           <p className="text-xs text-muted-foreground">
-            Number: <Numbers numbers={agent.assignedNumbers} />
+            {t["Number:"]} <Numbers numbers={agent.assignedNumbers} />
           </p>
         </li>
       ))}
