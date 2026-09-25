@@ -1,4 +1,8 @@
 import { formatTalkTime } from "@/components/common/format";
+import { formatNumber } from "@/lib/i18n/format";
+import type { Locale } from "@/lib/i18n/locales";
+import operationsEn from "@/lib/i18n/messages/en/operations";
+import operationsDe from "@/lib/i18n/messages/de/operations";
 import type { TeamTotals } from "@/server/services/dashboard";
 
 export { formatTalkTime };
@@ -9,8 +13,8 @@ export function targetPercent(dials: number, target: number): number {
   return Math.max(0, Math.min(100, Math.round((dials / target) * 100)));
 }
 
-export function formatCount(value: number): string {
-  return value.toLocaleString("en-US");
+export function formatCount(value: number, locale: Locale = "en"): string {
+  return formatNumber(value, locale);
 }
 
 export interface TeamTotalItem {
@@ -31,22 +35,24 @@ export interface TeamTotalItem {
  *     by "Clients". Unassigned client leads are still surfaced, as a sub-line, rather than folded
  *     into a number that no other screen agrees with.
  */
-export function teamTotalsItems(totals: TeamTotals): TeamTotalItem[] {
+export function teamTotalsItems(totals: TeamTotals, locale: Locale = "en"): TeamTotalItem[] {
+  const t = locale === "de" ? operationsDe : operationsEn;
+  const count = (value: number) => formatCount(value, locale);
   return [
     {
-      label: "Leads",
-      value: formatCount(totals.leadsTotal),
-      sub: totals.leadsUnassigned > 0 ? `${formatCount(totals.leadsUnassigned)} unassigned` : undefined,
+      label: t.leads,
+      value: count(totals.leadsTotal),
+      sub: totals.leadsUnassigned > 0 ? `${count(totals.leadsUnassigned)} ${t.unassigned.toLowerCase()}` : undefined,
     },
-    { label: "Calls today", value: formatCount(totals.callsToday) },
-    { label: "Connected", value: formatCount(totals.connectedToday) },
-    { label: "Interested", value: formatCount(totals.interestedToday) },
-    { label: "Appointments", value: formatCount(totals.appointmentsToday) },
+    { label: t.callsToday, value: count(totals.callsToday) },
+    { label: t.connected, value: count(totals.connectedToday) },
+    { label: t.interested, value: count(totals.interestedToday) },
+    { label: t.appointments, value: count(totals.appointmentsToday) },
     {
-      label: "Clients",
-      value: formatCount(totals.clientsAssigned),
-      sub: totals.clientsUnassigned > 0 ? `${formatCount(totals.clientsUnassigned)} unassigned` : undefined,
+      label: t.clients,
+      value: count(totals.clientsAssigned),
+      sub: totals.clientsUnassigned > 0 ? `${count(totals.clientsUnassigned)} ${t.unassigned.toLowerCase()}` : undefined,
     },
-    { label: "Talk time", value: formatTalkTime(totals.talkSecondsToday) },
+    { label: t.talkTime, value: formatTalkTime(totals.talkSecondsToday) },
   ];
 }

@@ -3,12 +3,15 @@
 import { Loader2 } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { useDialer } from "@/components/dialer/dialer-context";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { CALENDAR_LOAD_FAILED_MESSAGE, STATUS_NOT_UPDATED_MESSAGE } from "@/lib/domain/booking-messages";
+import { formatDate } from "@/lib/i18n/format";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { BUSINESS_TYPES, BUSINESS_TYPE_BEST_FOR, BUSINESS_TYPE_LABELS, isBusinessType } from "@/lib/domain/business-type";
 import { cn } from "@/lib/utils";
 import { bookAppointmentAction, setLeadBusinessTypeAction } from "@/server/actions/calendar-booking";
@@ -27,7 +30,10 @@ export interface BookingPanelProps {
   onBooked(): void;
 }
 
-function SlotButton({ slot, suggested, onChoose }: { slot: SlotView; suggested: boolean; onChoose(slot: SlotView): void }) {
+function SlotButton({ slot, suggested, timeZone, onChoose }: { slot: SlotView; suggested: boolean; timeZone: string; onChoose(slot: SlotView): void }) {
+  const { locale } = useLocale();
+  const time = formatDate(new Date(slot.start), locale, { hour: "numeric", minute: "2-digit", timeZone });
+  const phrase = locale === "de" ? formatDate(new Date(slot.start), locale, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit", timeZone }) : slot.phrase;
   return (
     <Button
       type="button"
@@ -38,14 +44,16 @@ function SlotButton({ slot, suggested, onChoose }: { slot: SlotView; suggested: 
       onClick={() => onChoose(slot)}
     >
       <span className="font-bold">
-        {suggested ? `${slot.phrase} ${slot.zone}` : slot.phrase.replace(/^.* at /, "")}
+        {suggested ? `${phrase} ${slot.zone}` : locale === "de" ? time : slot.phrase.replace(/^.* at /, "")}
       </span>
-      {slot.yourTime ? <span className="text-xs font-normal opacity-80">{slot.yourTime}</span> : null}
+      {slot.yourTime ? <span className="text-xs font-normal opacity-80">{locale === "de" ? slot.yourTime.replace("your time", "deine Zeit") : slot.yourTime}</span> : null}
     </Button>
   );
 }
 
 export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanelProps) {
+  const t = useTranslations("operations");
+  const { locale } = useLocale();
   const dialer = useDialer();
   const [dayKey, setDayKey] = useState<string | null>(null);
   const [chosen, setChosen] = useState<SlotView | null>(null);
@@ -56,13 +64,13 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
   const [saving, startSaving] = useTransition();
 
   const availability = state.kind === "ready" ? state.availability : null;
-  const days = useMemo(() => (availability ? buildBookingDays(availability) : []), [availability]);
+  const days = useMemo(() => (availability ? buildBookingDays(availability, 14, locale) : []), [availability, locale]);
 
   if (state.kind === "loading") {
     return (
       <p role="status" className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
         <Loader2 aria-hidden className="size-4 animate-spin" />
-        Loading the calendar…
+        {t.bookingLoading}
       </p>
     );
   }
@@ -70,10 +78,10 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
   if (state.kind === "error" || !availability) {
     return (
       <div role="alert" className="flex flex-col gap-3 p-4 text-sm">
-        <p>{state.kind === "error" ? state.message : CALENDAR_LOAD_FAILED_MESSAGE}</p>
+        <p>{state.kind === "error" ? state.message : locale === "de" ? t.bookingError : CALENDAR_LOAD_FAILED_MESSAGE}</p>
         {state.kind === "error" && state.unavailable ? null : (
           <Button type="button" variant="outline" className="min-h-12 self-start" onClick={onReload}>
-            Retry
+            {t.retry}
           </Button>
         )}
       </div>
@@ -98,7 +106,7 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
     startSaving(async () => {
       const result = await setLeadBusinessTypeAction(leadId, value).catch(() => null);
       if (!result || !result.ok) {
-        setMessage(result ? result.error.message : "The connection dropped. Try again.");
+        setMessage(result ? getAppErrorMessage(result.error.code, locale, result.error.message) : locale === "de" ? "Die Verbindung wurde unterbrochen. Bitte versuche es erneut." : "The connection dropped. Try again.");
         return;
       }
       onReload();
@@ -111,19 +119,19 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
     startBooking(async () => {
       const result = await bookAppointmentAction({ leadId, start: slot.start, note: note.trim() === "" ? null : note, clientRequestId: requestId, inCall }).catch(() => null);
       if (!result) {
-        setMessage("The connection dropped before the server answered. Try again; it will not book twice.");
+        setMessage(locale === "de" ? "Die Verbindung wurde vor der Antwort des Servers unterbrochen. Versuche es erneut; der Termin wird nicht doppelt gebucht." : "The connection dropped before the server answered. Try again; it will not book twice.");
         return;
       }
       if (!result.ok) {
-        setMessage(result.error.message);
+        setMessage(getAppErrorMessage(result.error.code, locale, result.error.message));
         if (result.error.code === "conflict") {
           setChosen(null);
           onReload();
         }
         return;
       }
-      toast.success(`Booked: ${result.data.phrase} ${result.data.zone}`);
-      if (result.data.statusNeedsAttention) toast.warning(STATUS_NOT_UPDATED_MESSAGE);
+      toast.success(locale === "de" ? `Gebucht: ${formatDate(new Date(slot.start), locale, { dateStyle: "medium", timeStyle: "short", timeZone: availability?.leadTimeZone ?? "UTC" })} ${result.data.zone}` : `Booked: ${result.data.phrase} ${result.data.zone}`);
+      if (result.data.statusNeedsAttention) toast.warning(locale === "de" ? "Gebucht, aber der Lead-Status wurde nicht geändert. Setze ihn bitte selbst auf „Termin“." : STATUS_NOT_UPDATED_MESSAGE);
       if (inCall) dialer?.markMeetingBooked(leadId);
       onBooked();
     });
@@ -132,7 +140,7 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
   return (
     <div className="flex flex-col gap-5 p-4" data-time-zone={availability.leadTimeZone}>
       <div className="flex flex-col gap-2">
-        <Label htmlFor={`booking-type-${leadId}`}>Business type</Label>
+        <Label htmlFor={`booking-type-${leadId}`}>{t.businessType}</Label>
         <Select value={availability.businessType} onValueChange={changeType} disabled={saving}>
           <SelectTrigger id={`booking-type-${leadId}`} className="min-h-12 w-full">
             <SelectValue />
@@ -140,34 +148,34 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
           <SelectContent>
             {BUSINESS_TYPES.map((type) => (
               <SelectItem key={type} value={type} className="min-h-12">
-                {BUSINESS_TYPE_LABELS[type]}
+                {locale === "de" ? ({ restaurant: "Restaurant", cafe_bakery: "Café / Bäckerei", hotel_motel: "Hotel / Motel", home_services: "Dienstleistungen rund ums Haus", auto: "Kfz", retail: "Einzelhandel", beauty: "Kosmetik", other: "Sonstige" } as const)[type] : BUSINESS_TYPE_LABELS[type]}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          {availability.businessTypeIsGuess ? "Guessed from the name. " : ""}
-          Their time: {availability.zone}
-          {availability.leadTimeZoneIsGuess ? " (their time zone is unknown, so this is yours)" : ""}
+          {availability.businessTypeIsGuess ? locale === "de" ? "Aus dem Namen geschätzt. " : "Guessed from the name. " : ""}
+          {locale === "de" ? "Dortige Zeit: " : "Their time: "}{availability.zone}
+          {availability.leadTimeZoneIsGuess ? locale === "de" ? " (Zeitzone unbekannt; daher wird deine verwendet)" : " (their time zone is unknown, so this is yours)" : ""}
         </p>
       </div>
 
       {availability.suggestions.length > 0 ? (
         <section aria-labelledby={`booking-best-${leadId}`} className="flex flex-col gap-2">
           <h3 id={`booking-best-${leadId}`} className="text-sm font-bold">
-            Best for {BUSINESS_TYPE_BEST_FOR[availability.businessType]}
+            {locale === "de" ? `Am besten für ${availability.businessType === "other" ? "diesen Lead" : "diesen Unternehmenstyp"}` : `Best for ${BUSINESS_TYPE_BEST_FOR[availability.businessType]}`}
           </h3>
           {availability.suggestions.map((slot) => (
-            <SlotButton key={slot.start} slot={slot} suggested onChoose={choose} />
+            <SlotButton key={slot.start} slot={slot} suggested timeZone={availability.leadTimeZone} onChoose={choose} />
           ))}
         </section>
       ) : null}
 
       <section aria-labelledby={`booking-all-${leadId}`} className="flex flex-col gap-3">
         <h3 id={`booking-all-${leadId}`} className="text-sm font-bold">
-          All open times
+          {t.allOpenTimes}
         </h3>
-        <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Days">
+        <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label={t.days}>
           {days.map((day) => (
             <Button
               key={day.key}
@@ -179,7 +187,7 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
               className="min-h-12 shrink-0"
               onClick={() => setDayKey(day.key)}
             >
-              {day.label}
+              {locale === "de" ? formatDate(new Date(`${day.key}T12:00:00Z`), locale, { weekday: "short", day: "numeric", timeZone: "UTC" }) : day.label}
             </Button>
           ))}
         </div>
@@ -188,39 +196,39 @@ export function BookingPanel({ leadId, state, onReload, onBooked }: BookingPanel
             {selectedDay.entries.map((entry) => (
               <li key={`${entry.kind}-${entry.start}`}>
                 {entry.kind === "slot" ? (
-                  <SlotButton slot={entry.slot} suggested={false} onChoose={choose} />
+                  <SlotButton slot={entry.slot} suggested={false} timeZone={availability.leadTimeZone} onChoose={choose} />
                 ) : entry.kind === "busy" ? (
                   <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                    <span className="font-semibold">Busy</span> {entry.label}
+                    <span className="font-semibold">{t.busy}</span> {entry.label}
                   </p>
                 ) : (
                   <p className="rounded-lg border px-3 py-2 text-sm">
-                    <span className="font-semibold">Your meeting</span> {entry.label}
+                    <span className="font-semibold">{t.yourMeeting}</span> {entry.label}
                   </p>
                 )}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">No open times on this day.</p>
+          <p className="text-sm text-muted-foreground">{t.noOpenTimes}</p>
         )}
       </section>
 
       {chosen ? (
-        <section aria-label="Confirm the meeting" className="flex flex-col gap-3 rounded-xl border p-4">
+        <section aria-label={t.confirmMeeting} className="flex flex-col gap-3 rounded-xl border p-4">
           <p className="font-bold">
-            Book {chosen.phrase} {chosen.zone} with {availability.businessName}?
+            {locale === "de" ? `${formatDate(new Date(chosen.start), locale, { dateStyle: "medium", timeStyle: "short", timeZone: availability.leadTimeZone })} ${chosen.zone} mit ${availability.businessName} buchen?` : `Book ${chosen.phrase} ${chosen.zone} with ${availability.businessName}?`}
           </p>
           <div className="flex flex-col gap-2">
-            <Label htmlFor={`booking-note-${leadId}`}>Note on the meeting (optional)</Label>
+            <Label htmlFor={`booking-note-${leadId}`}>{t.meetingNote}</Label>
             <Textarea id={`booking-note-${leadId}`} value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" className="min-h-12" disabled={booking} onClick={book}>
-              {booking ? "Booking…" : "Book"}
+              {booking ? t.booking : t.book}
             </Button>
             <Button type="button" variant="outline" className="min-h-12" disabled={booking} onClick={() => setChosen(null)}>
-              Pick another time
+              {t.pickAnother}
             </Button>
           </div>
         </section>

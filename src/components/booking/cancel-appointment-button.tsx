@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -21,36 +23,38 @@ import { cancelAppointmentAction } from "@/server/actions/calendar-booking";
  * Google tells the guests — the copy below said the opposite until D48 and was stale from the moment D47 shipped.
  */
 export function CancelAppointmentButton({ appointmentId }: { appointmentId: string }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [pending, startTransition] = useTransition();
 
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <Button type="button" variant="outline" className="min-h-12" disabled={pending}>
-          Mark cancelled
+          {t.markCancelled}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Mark this meeting cancelled?</AlertDialogTitle>
+          <AlertDialogTitle>{t.markCancelledQuestion}</AlertDialogTitle>
           <AlertDialogDescription>
-            The meeting is removed from Google Calendar too, and Google tells everyone invited. That time frees up again.
+            {t.cancelDescription}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="min-h-12">Keep it</AlertDialogCancel>
+          <AlertDialogCancel className="min-h-12">{t.keepIt}</AlertDialogCancel>
           <AlertDialogAction
             className="min-h-12"
             onClick={() =>
               startTransition(async () => {
                 const result = await cancelAppointmentAction(appointmentId).catch(() => null);
-                if (!result) toast.error("The connection dropped before the server answered. Check the lead, then try again.");
-                else if (!result.ok) toast.error(result.error.message);
-                else toast.success("Meeting marked cancelled.");
+                if (!result) toast.error(t.connectionDropped);
+                else if (!result.ok) toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
+                else toast.success(t.meetingCancelled);
               })
             }
           >
-            Mark cancelled
+            {t.markCancelled}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

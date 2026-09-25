@@ -3,6 +3,8 @@
 // The Settings card for Google Calendar (design §9, §5, §8): connection status, connect/reconnect (a
 // redirect, not an action), disconnect behind a confirmation, and the bookable-hours editor. Never renders
 // a token, a ciphertext or any Google event detail — CalendarConnectionStatus carries none of those.
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -28,33 +30,30 @@ import { SettingsSection } from "./settings-section";
 const GOOGLE_START_HREF = "/api/google/start";
 
 // Set by the /api/google/callback redirect (Task 6). Copy is exact, per the brief.
-const CALENDAR_NOTICES: Record<string, { message: string; kind: "success" | "error" }> = {
-  connected: { message: "Google Calendar connected.", kind: "success" },
-  denied: { message: "Google sign-in was cancelled.", kind: "error" },
-  error: { message: "Couldn't connect Google Calendar. Try again.", kind: "error" },
-};
-
 /**
  * Reads `?calendar=` off the URL on mount (never during a static/server render), toasts once, then strips
  * it from the address bar with `history.replaceState` so a refresh doesn't re-fire the toast.
  */
 function useCalendarQueryNotice(): void {
+  const t = useTranslations("operations");
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     const value = url.searchParams.get("calendar");
     if (!value) return;
-    const notice = CALENDAR_NOTICES[value];
+    const notice = { connected: { message: t.calendarConnected, kind: "success" }, denied: { message: t.calendarDenied, kind: "error" }, error: { message: t.calendarError, kind: "error" } }[value];
     if (notice) {
       if (notice.kind === "success") toast.success(notice.message);
       else toast.error(notice.message);
     }
     url.searchParams.delete("calendar");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, []);
+  }, [t]);
 }
 
 function DisconnectButton() {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -62,10 +61,10 @@ function DisconnectButton() {
     startTransition(async () => {
       const result = await disconnectCalendarAction();
       if (result.ok) {
-        toast.success("Google Calendar disconnected.");
+        toast.success(t.calendarDisconnected);
         setOpen(false);
       } else {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -77,20 +76,19 @@ function DisconnectButton() {
     <AlertDialog open={open} onOpenChange={(next) => (pending ? undefined : setOpen(next))}>
       <AlertDialogTrigger asChild>
         <Button type="button" variant="outline" className="min-h-12" disabled={pending}>
-          Disconnect
+          {t.disconnect}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Disconnect Google Calendar?</AlertDialogTitle>
+          <AlertDialogTitle>{t.disconnectQuestion}</AlertDialogTitle>
           <AlertDialogDescription>
-            Nobody will be able to book meetings until you reconnect, and everyone will need a new calendar afterwards.
-            Meetings already on your Google Calendar are not affected.
+            {t.disconnectDesc}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel className="min-h-12" disabled={pending}>
-            Keep it
+            {t.keepIt}
           </AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
@@ -101,7 +99,7 @@ function DisconnectButton() {
               confirm();
             }}
           >
-            {pending ? "Disconnecting…" : "Disconnect"}
+            {pending ? t.disconnecting : t.disconnect}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -110,12 +108,13 @@ function DisconnectButton() {
 }
 
 function ConnectionStatus({ status }: { status: CalendarConnectionStatus }) {
+  const t = useTranslations("operations");
   if (!status.connected) {
     return (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-semibold">Not connected</p>
+        <p className="text-sm font-semibold">{t.notConnected}</p>
         <Button asChild className="min-h-12 font-bold">
-          <a href={GOOGLE_START_HREF}>Connect Google Calendar</a>
+          <a href={GOOGLE_START_HREF}>{t.connectCalendar}</a>
         </Button>
       </div>
     );
@@ -129,16 +128,16 @@ function ConnectionStatus({ status }: { status: CalendarConnectionStatus }) {
           className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <p className="text-sm font-semibold text-destructive">
-            The connection to Google broke. Reconnect to keep booking meetings.
+            {t.connectionBroken}
           </p>
           <Button asChild variant="destructive" className="min-h-12 font-bold">
-            <a href={GOOGLE_START_HREF}>Reconnect</a>
+            <a href={GOOGLE_START_HREF}>{t.reconnect}</a>
           </Button>
         </div>
       ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm">
-          Connected as <span className="font-semibold">{status.googleEmail}</span>
+          {t.connectedAs} <span className="font-semibold">{status.googleEmail}</span>
         </p>
         <DisconnectButton />
       </div>
@@ -157,18 +156,20 @@ export interface CalendarSectionProps {
 
 export function CalendarSection({ status, hours, agentCalendars, timeZone }: CalendarSectionProps) {
   useCalendarQueryNotice();
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
 
   return (
-    <SettingsSection id="calendar" title="Google Calendar" description={`Times are in ${timeZone}.`}>
+    <SettingsSection id="calendar" title="Google Calendar" description={locale === "de" ? `Zeiten in ${timeZone}.` : `Times are in ${timeZone}.`}>
       <ConnectionStatus status={status} />
       <div className="border-t pt-4">
         <AgentCalendarsList rows={agentCalendars} connected={status.connected && !status.broken} />
       </div>
       <div className="flex flex-col gap-3 border-t pt-4">
-        <h3 className="text-sm font-bold">Bookable hours</h3>
+        <h3 className="text-sm font-bold">{t.bookableHours}</h3>
         {status.hoursSet ? null : (
           <p role="alert" className="text-sm font-semibold text-destructive">
-            No bookable hours set, so agents cannot book.
+            {t.noBookableHours}
           </p>
         )}
         <BookableHoursForm hours={hours} />

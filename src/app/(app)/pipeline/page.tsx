@@ -7,6 +7,10 @@ import { PageHeader } from "@/components/common/page-header";
 import { parsePipelineParams, pipelineHref } from "@/components/pipeline/params";
 import { PipelineBoard } from "@/components/pipeline/pipeline-board";
 import { PipelineToolbar } from "@/components/pipeline/pipeline-toolbar";
+import { getServerWorkspace } from "@/lib/i18n/server-workspace";
+import { formatNumber } from "@/lib/i18n/format";
+import operationsEn from "@/lib/i18n/messages/en/operations";
+import operationsDe from "@/lib/i18n/messages/de/operations";
 import { Button } from "@/components/ui/button";
 import { requireUserPage } from "@/server/context";
 import { listAgentsForFilter, type AgentOption } from "@/server/services/leads";
@@ -22,6 +26,8 @@ export default async function PipelinePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireUserPage();
+  const { locale } = await getServerWorkspace(ctx.profile.primary_locale);
+  const t = locale === "de" ? operationsDe : operationsEn;
   const isAdmin = ctx.profile.role === "ADMIN";
   const parsed = parsePipelineParams(await searchParams);
   // Agents always see only their own leads; the RPC ignores these filters for them as well.
@@ -39,13 +45,13 @@ export default async function PipelinePage({
   return (
     <>
       <PageHeader
-        title="Pipeline"
+        title={t.pipelineTitle}
         description={
           <>
-            <span className="font-extrabold text-foreground tabular-nums">{total.toLocaleString("en-US")}</span>{" "}
-            {total === 1 ? "lead" : "leads"}
-            {params.closed ? "" : " open"}
-            {isAdmin ? (filtered ? " for this filter" : "") : " assigned to you"}
+            <span className="font-extrabold text-foreground tabular-nums">{formatNumber(total, locale)}</span>{" "}
+            {total === 1 ? t.pipelineLead : t.pipelineLeads}
+            {params.closed ? "" : t.pipelineOpen}
+            {isAdmin ? (filtered ? t.pipelineForFilter : "") : t.pipelineAssignedYou}
           </>
         }
       />
@@ -59,18 +65,18 @@ export default async function PipelinePage({
       {total === 0 ? (
         <EmptyState
           icon={<Columns3 />}
-          title={filtered ? "No leads for this filter" : "Your pipeline is empty"}
+          title={filtered ? t.pipelineEmptyFiltered : t.pipelineEmpty}
           description={
             params.closed
               ? isAdmin
-                ? "Import a CSV or assign leads to see them here."
-                : "Leads assigned to you will show up here."
-              : "Closed leads are hidden. Turn on Show closed to see them."
+                ? t.pipelineEmptyAdmin
+                : t.pipelineEmptyAgent
+              : t.pipelineClosedHidden
           }
           action={
             filtered ? (
               <Button asChild variant="outline" className="h-12 px-5">
-                <Link href={pipelineHref({ ...params, agent: null, unassigned: false })}>Show all agents</Link>
+                <Link href={pipelineHref({ ...params, agent: null, unassigned: false })}>{t.pipelineShowAll}</Link>
               </Button>
             ) : null
           }

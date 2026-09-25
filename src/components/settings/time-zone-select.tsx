@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { timeZoneLabel, timeZoneOptions } from "./timezones";
@@ -13,10 +14,11 @@ export interface TimeZoneSelectProps {
 }
 
 export function TimeZoneSelect({ id, value, onChange, disabled, className }: TimeZoneSelectProps) {
+  const t = useTranslations("operations");
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger id={id} className={cn("w-full px-3 text-base data-[size=default]:h-12 lg:text-sm", className)}>
-        <SelectValue placeholder="Choose a time zone" />
+        <SelectValue placeholder={t.chooseTimezone} />
       </SelectTrigger>
       <SelectContent position="popper" align="start" className="max-h-80">
         {timeZoneOptions(value).map((tz) => (

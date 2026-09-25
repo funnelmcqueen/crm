@@ -1,6 +1,8 @@
 "use client";
 
 import { Mic, Square, Volume2 } from "lucide-react";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import type { Locale } from "@/lib/i18n/locales";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { AUDIO_INPUT_STORAGE_KEY, AUDIO_OUTPUT_STORAGE_KEY, useDialer } from "@/components/dialer/dialer-context";
@@ -61,17 +63,19 @@ function audioContextCtor(): AudioContextCtor | null {
   return w.AudioContext ?? w.webkitAudioContext ?? null;
 }
 
-function micErrorMessage(error: unknown): string {
+function micErrorMessage(error: unknown, locale: Locale): string {
   const name = error instanceof DOMException ? error.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
-    return "Microphone access is blocked. Allow it in your browser's site settings, then try again.";
+    return locale === "de" ? "Der Mikrofonzugriff ist blockiert. Erlaube ihn in den Website-Einstellungen deines Browsers und versuche es erneut." : "Microphone access is blocked. Allow it in your browser's site settings, then try again.";
   }
-  if (name === "NotFoundError" || name === "OverconstrainedError") return "Microphone not found. Plug one in or pick another.";
-  if (name === "NotReadableError") return "Another app is using the microphone.";
-  return "The microphone could not be started.";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return locale === "de" ? "Mikrofon nicht gefunden. Schließe eines an oder wähle ein anderes." : "Microphone not found. Plug one in or pick another.";
+  if (name === "NotReadableError") return locale === "de" ? "Eine andere App verwendet das Mikrofon." : "Another app is using the microphone.";
+  return locale === "de" ? "Das Mikrofon konnte nicht gestartet werden." : "The microphone could not be started.";
 }
 
 export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const dialer = useDialer();
   const mediaSupported = useSyncExternalStore(
     noopSubscribe,
@@ -166,10 +170,10 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
       } catch (error) {
         stopMeter();
         setTesting(false);
-        setMicError(micErrorMessage(error));
+        setMicError(micErrorMessage(error, locale));
       }
     },
-    [refreshDevices, stopMeter],
+    [refreshDevices, stopMeter, locale],
   );
 
   async function chooseInput(id: string) {
@@ -179,7 +183,7 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
       try {
         await dialer.setInputDevice(id);
       } catch {
-        toast.error("That microphone could not be used for calls.");
+        toast.error(t.micFailed);
       }
     }
   }
@@ -190,7 +194,7 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
       try {
         await dialer.setOutputDevice(id);
       } catch {
-        toast.error("That speaker could not be used for calls.");
+        toast.error(t.speakerFailed);
       }
     }
   }
@@ -208,7 +212,7 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
       await audio.play();
       await new Promise<void>((resolve) => audio.addEventListener("ended", () => resolve(), { once: true }));
     } catch {
-      toast.error("The test sound could not play. Check the speaker and your volume.");
+      toast.error(t.soundFailed);
     } finally {
       setPlaying(false);
     }
@@ -217,12 +221,12 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
   if (!inAppAvailable) {
     return (
       <p className="text-sm text-muted-foreground">
-        In-app calling is off, so calls use your phone and its own microphone and speaker. Nothing to set up here.
+        {t.audioUnavailable}
       </p>
     );
   }
   if (!mediaSupported) {
-    return <p className="text-sm text-muted-foreground">This browser can&rsquo;t access audio devices. Try Chrome, Edge or Safari.</p>;
+    return <p className="text-sm text-muted-foreground">{t.audioUnsupported}</p>;
   }
 
   const selectedInput = inputs.some((d) => d.id === inputId) ? inputId : (inputs[0]?.id ?? "");
@@ -231,11 +235,11 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-microphone">Microphone</Label>
+        <Label htmlFor="settings-microphone">{t.mic}</Label>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Select value={selectedInput} onValueChange={(id) => void chooseInput(id)} disabled={inputs.length === 0}>
             <SelectTrigger id="settings-microphone" className="w-full min-w-0 px-3 text-base data-[size=default]:h-12 sm:flex-1 lg:text-sm">
-              <SelectValue placeholder={inputs.length === 0 ? "Test the microphone to list devices" : "Choose a microphone"} />
+              <SelectValue placeholder={inputs.length === 0 ? t.testMicFirst : t.chooseMic} />
             </SelectTrigger>
             <SelectContent position="popper" align="start" className="max-h-80">
               {inputs.map((device) => (
@@ -259,13 +263,13 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
             }}
           >
             {testing ? <Square aria-hidden /> : <Mic aria-hidden />}
-            {testing ? "Stop test" : "Test microphone"}
+            {testing ? t.stopTest : t.testMic}
           </Button>
         </div>
         <div
           ref={meterTrackRef}
           role="meter"
-          aria-label="Microphone level"
+          aria-label={t.micLevel}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={0}
@@ -274,17 +278,17 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
           <div ref={meterRef} className="h-full w-full origin-left bg-success" style={{ transform: "scaleX(0)" }} />
         </div>
         <p role={micError ? "alert" : undefined} className={micError ? "text-sm font-semibold text-destructive" : "text-xs text-muted-foreground"}>
-          {micError ?? (testing ? "Speak normally: the bar should move." : "The bar moves while you talk during a test.")}
+          {micError ?? (testing ? (locale === "de" ? "Sprich normal: Der Balken sollte sich bewegen." : "Speak normally: the bar should move.") : (locale === "de" ? "Während des Tests bewegt sich der Balken, wenn du sprichst." : "The bar moves while you talk during a test."))}
         </p>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-speaker">Speaker</Label>
+        <Label htmlFor="settings-speaker">{t.speaker}</Label>
         <div className="flex flex-col gap-2 sm:flex-row">
           {outputSupported ? (
             <Select value={selectedOutput} onValueChange={(id) => void chooseOutput(id)} disabled={outputs.length === 0}>
               <SelectTrigger id="settings-speaker" className="w-full min-w-0 px-3 text-base data-[size=default]:h-12 sm:flex-1 lg:text-sm">
-                <SelectValue placeholder={outputs.length === 0 ? "Test the microphone to list devices" : "Choose a speaker"} />
+                <SelectValue placeholder={outputs.length === 0 ? t.testMicFirst : t.chooseSpeaker} />
               </SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-80">
                 {outputs.map((device) => (
@@ -296,16 +300,16 @@ export function AudioSection({ inAppAvailable }: { inAppAvailable: boolean }) {
             </Select>
           ) : (
             <p id="settings-speaker" className="flex min-h-12 items-center text-sm text-muted-foreground sm:flex-1">
-              This browser always uses your system&rsquo;s default speaker. Change it in your computer&rsquo;s sound settings.
+              {locale === "de" ? "Dieser Browser verwendet immer den Standardlautsprecher des Systems. Ändere ihn in den Toneinstellungen deines Computers." : "This browser always uses your system’s default speaker. Change it in your computer’s sound settings."}
             </p>
           )}
           <Button type="button" variant="outline" className="h-12 gap-2 px-4" onClick={() => void testSpeaker()} disabled={playing}>
             <Volume2 aria-hidden />
-            {playing ? "Playing…" : "Test speaker"}
+            {playing ? (locale === "de" ? "Wird abgespielt…" : "Playing…") : t.testSpeaker}
           </Button>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">Your choices are saved on this device and used for in-app calls.</p>
+      <p className="text-xs text-muted-foreground">{t.audioSaved}</p>
     </div>
   );
 }

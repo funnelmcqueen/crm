@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CALL_MODE_LABELS, CALL_MODE_PREFERENCES, isCallModePreference, useCallModePreference } from "@/lib/dialer/preference";
@@ -12,13 +13,15 @@ const DESCRIPTIONS: Record<CallModePreference, string> = {
 };
 
 export function CallModeSection({ inAppAvailable }: { inAppAvailable: boolean }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [preference, setPreference] = useCallModePreference();
 
   return (
     <div className="flex flex-col gap-3">
       {inAppAvailable ? null : (
         <p className="rounded-lg border bg-muted/60 p-3 text-sm">
-          In-app calling is off for your account, so every call uses your phone whatever you pick here.
+          {t.callModeUnavailable}
         </p>
       )}
       <RadioGroup
@@ -26,7 +29,7 @@ export function CallModeSection({ inAppAvailable }: { inAppAvailable: boolean })
         onValueChange={(value) => {
           if (isCallModePreference(value)) setPreference(value);
         }}
-        aria-label="Call mode"
+        aria-label={t.callMode}
         className="gap-2"
       >
         {CALL_MODE_PREFERENCES.map((mode) => {
@@ -39,14 +42,14 @@ export function CallModeSection({ inAppAvailable }: { inAppAvailable: boolean })
             >
               <RadioGroupItem id={id} value={mode} className="mt-0.5" />
               <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-bold">{CALL_MODE_LABELS[mode]}</span>
-                <span className="text-sm text-muted-foreground">{DESCRIPTIONS[mode]}</span>
+                <span className="text-sm font-bold">{locale === "de" ? ({ auto: "Automatisch", "in-app": "In der App", phone: "Telefon" } as const)[mode] : CALL_MODE_LABELS[mode]}</span>
+                <span className="text-sm text-muted-foreground">{locale === "de" ? ({ auto: "Anrufe laufen am Computer in der CRM-App. Auf dem iPhone und wenn Anrufe in der App nicht bereit sind, öffnet ANRUFEN die Telefon-App (Browseranrufe enden, wenn der iPhone-Bildschirm gesperrt wird).", "in-app": "Anrufe laufen in der CRM-App, sobald Anrufe in der App bereit sind, auch auf Telefonen. Andernfalls öffnet ANRUFEN dein Telefon.", phone: "ANRUFEN öffnet immer die Telefon-App. Nach deiner Rückkehr protokollierst du das Ergebnis." } as const)[mode] : DESCRIPTIONS[mode]}</span>
               </span>
             </Label>
           );
         })}
       </RadioGroup>
-      <p className="text-xs text-muted-foreground">Saved on this device only.</p>
+      <p className="text-xs text-muted-foreground">{t.savedDevice}</p>
     </div>
   );
 }

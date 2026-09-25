@@ -2,6 +2,8 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import type { ReactNode } from "react";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import { Button } from "@/components/ui/button";
 import type { PipelineColumn } from "@/lib/domain/statuses";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,9 @@ export interface PipelineColumnViewProps {
 }
 
 export function PipelineColumnView({ column, total, shown, loading, dragging, onLoadMore, children }: PipelineColumnViewProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const stage = useTranslations("workspace").statuses[column.key];
   const { setNodeRef, isOver } = useDroppable({ id: column.key });
   const headingId = `pipeline-column-${column.key}`;
   const remaining = Math.max(0, total - shown);
@@ -44,17 +49,17 @@ export function PipelineColumnView({ column, total, shown, loading, dragging, on
           tabIndex={-1}
           className={cn("truncate rounded-sm text-sm font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/50", column.closed && "text-muted-foreground")}
         >
-          {column.label}
+          {stage}
         </h2>
-        <span className="text-sm font-extrabold tabular-nums" aria-label={`${total} ${total === 1 ? "lead" : "leads"}`}>
-          {total.toLocaleString("en-US")}
+        <span className="text-sm font-extrabold tabular-nums" aria-label={`${formatNumber(total, locale)} ${total === 1 ? t.pipelineLead : t.pipelineLeads}`}>
+          {formatNumber(total, locale)}
         </span>
       </header>
 
       <div className="flex min-h-32 flex-1 flex-col gap-2 p-2 md:min-h-0 md:overflow-y-auto">
         {shown === 0 ? (
           <p className="flex min-h-24 flex-1 items-center justify-center rounded-lg border border-dashed px-3 text-center text-xs text-muted-foreground">
-            {dragging ? `Drop here for ${column.label}` : "No leads"}
+            {dragging ? t.dropHere.replace("{stage}", stage) : t.noLeads}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">{children}</ul>
@@ -62,8 +67,8 @@ export function PipelineColumnView({ column, total, shown, loading, dragging, on
 
         {remaining > 0 ? (
           <Button variant="outline" className="h-12 w-full" disabled={loading} onClick={onLoadMore}>
-            {loading ? "Loading…" : `Load ${Math.min(remaining, PIPELINE_PAGE_SIZE_CLIENT)} more`}
-            <span className="sr-only"> in {column.label}</span>
+            {loading ? t.loading : t.loadMore.replace("{count}", formatNumber(Math.min(remaining, PIPELINE_PAGE_SIZE_CLIENT), locale))}
+            <span className="sr-only"> in {stage}</span>
           </Button>
         ) : null}
       </div>

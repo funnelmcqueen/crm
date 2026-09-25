@@ -1,9 +1,14 @@
+"use client";
+
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Role-neutral skeleton: a header, a compact stat block and a list of rows. */
 export default function DashboardLoading() {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   return (
-    <div role="status" aria-label="Loading dashboard">
+    <div role="status" aria-label={locale === "de" ? "Übersicht wird geladen" : "Loading dashboard"}>
       <div className="mb-6 flex flex-col gap-2">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-4 w-52" />
@@ -34,7 +39,7 @@ export default function DashboardLoading() {
           ))}
         </div>
       </div>
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">{t.loading}</span>
     </div>
   );
 }

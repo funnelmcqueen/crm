@@ -1,4 +1,6 @@
 // Groups availability into days on the lead's calendar for the booking panel (docs/DEVIATIONS.md D46). Pure.
+import { formatDate } from "@/lib/i18n/format";
+import type { Locale } from "@/lib/i18n/locales";
 import { endOfDayInTz, formatInTz, startOfDayInTz } from "@/lib/domain/time";
 import type { AgentAvailability, IntervalView, SlotView } from "@/server/services/calendar-booking";
 
@@ -15,9 +17,9 @@ export interface BookingDay {
   entries: BookingEntry[];
 }
 
-export function buildBookingDays(availability: AgentAvailability, dayCount = 14): BookingDay[] {
+export function buildBookingDays(availability: AgentAvailability, dayCount = 14, locale: Locale = "en"): BookingDay[] {
   const tz = availability.leadTimeZone;
-  const time = (date: Date) => formatInTz(date, tz, "h:mm a");
+  const time = (date: Date) => locale === "de" ? formatDate(date, locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz }) : formatInTz(date, tz, "h:mm a");
   const sameAsMine = (block: IntervalView) => availability.mine.some((meeting) => meeting.start === block.start && meeting.end === block.end);
 
   const days: BookingDay[] = [];
@@ -41,7 +43,7 @@ export function buildBookingDays(availability: AgentAvailability, dayCount = 14)
         .map((meeting): BookingEntry => ({ kind: "mine", start: meeting.start, label: `${time(new Date(meeting.start))} · ${meeting.businessName}` })),
     ].sort((a, b) => a.start.localeCompare(b.start));
 
-    days.push({ key, label: formatInTz(dayStart, tz, "EEE d"), hasSlots: entries.some((entry) => entry.kind === "slot"), entries });
+    days.push({ key, label: locale === "de" ? formatDate(dayStart, locale, { weekday: "short", day: "numeric", timeZone: tz }) : formatInTz(dayStart, tz, "EEE d"), hasSlots: entries.some((entry) => entry.kind === "slot"), entries });
     dayStart = dayEnd;
   }
   return days;

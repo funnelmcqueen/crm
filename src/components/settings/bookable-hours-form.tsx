@@ -1,5 +1,8 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatDate, formatNumber } from "@/lib/i18n/format";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -46,6 +49,8 @@ function TimeSelect({ label, value, onChange }: { label: string; value: number; 
 
 /** The bookable-hours editor (design §4, §9): one row per weekday, its ranges on the half hour, one Save for the week. */
 export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [drafts, setDrafts] = useState<RangeDraft[]>(() => draftsFromHours(hours));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -71,7 +76,7 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
       .sort((a, b) => a.weekday - b.weekday || a.startsMinute - b.startsMinute);
     const message = validateBookableRanges(ranges);
     if (message) {
-      setError(message);
+      setError(locale === "de" ? ({ "Pick a day of the week.": "Wähle einen Wochentag.", "Times must be on the hour or the half hour.": "Zeiten müssen zur vollen oder halben Stunde beginnen.", "A start time must come before its end time.": "Der Beginn muss vor dem Ende liegen.", "Times must be between 00:00 and 24:00.": "Zeiten müssen zwischen 00:00 und 24:00 liegen.", "Two ranges on the same day overlap.": "Zwei Zeiträume am selben Tag überschneiden sich." } as Record<string, string>)[message] ?? message : message);
       return;
     }
     setError(null);
@@ -79,22 +84,23 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
       const result = await saveBookableHoursAction(ranges);
       if (result.ok) {
         setDrafts(draftsFromHours(result.data));
-        toast.success("Bookable hours saved.");
+        toast.success(t.hoursSaved);
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
 
   return (
     <div className="flex flex-col gap-5">
-      {WEEKDAY_NAMES.map((name, weekday) => {
+      {WEEKDAY_NAMES.map((englishName, weekday) => {
+        const name = locale === "de" ? formatDate(new Date(Date.UTC(2024, 0, 7 + weekday)), locale, { weekday: "long", timeZone: "UTC" }) : englishName;
         const dayRanges = drafts.filter((draft) => draft.weekday === weekday).sort((a, b) => a.startsMinute - b.startsMinute);
         return (
           <div key={weekday} className="flex flex-col gap-2">
             <h4 className="text-sm font-bold">{name}</h4>
             {dayRanges.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Closed</p>
+              <p className="text-sm text-muted-foreground">{t.closed}</p>
             ) : (
               <ul className="flex flex-col gap-2">
                 {dayRanges.map((range, index) => (
@@ -103,12 +109,12 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
                       {formatMinutes(range.startsMinute)} – {formatMinutes(range.endsMinute)}
                     </span>
                     <TimeSelect
-                      label={`${name} range ${index + 1} start`}
+                      label={locale === "de" ? `${name}, Zeitraum ${formatNumber(index + 1, locale)}, Beginn` : `${name} range ${index + 1} start`}
                       value={range.startsMinute}
                       onChange={(value) => updateRange(range.id, { startsMinute: value })}
                     />
                     <TimeSelect
-                      label={`${name} range ${index + 1} end`}
+                      label={locale === "de" ? `${name}, Zeitraum ${formatNumber(index + 1, locale)}, Ende` : `${name} range ${index + 1} end`}
                       value={range.endsMinute}
                       onChange={(value) => updateRange(range.id, { endsMinute: value })}
                     />
@@ -116,10 +122,10 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
                       type="button"
                       variant="outline"
                       className="min-h-12"
-                      aria-label={`Remove ${name} range ${index + 1}`}
+                      aria-label={locale === "de" ? `Zeitraum ${formatNumber(index + 1, locale)} am ${name} entfernen` : `Remove ${name} range ${index + 1}`}
                       onClick={() => removeRange(range.id)}
                     >
-                      Remove
+                      {t.remove}
                     </Button>
                   </li>
                 ))}
@@ -127,7 +133,7 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
             )}
             <div>
               <Button type="button" variant="outline" className="min-h-12" onClick={() => addRange(weekday)}>
-                Add a range
+                {t.addRange}
               </Button>
             </div>
           </div>
@@ -138,7 +144,7 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
       </p>
       <div>
         <Button type="button" className="min-h-12 font-bold" disabled={pending} onClick={submit}>
-          {pending ? "Saving…" : "Save hours"}
+          {pending ? t.saving : t.saveHours}
         </Button>
       </div>
     </div>

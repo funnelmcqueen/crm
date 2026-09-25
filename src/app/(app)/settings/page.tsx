@@ -7,6 +7,10 @@ import { CallModeSection } from "@/components/settings/call-mode-section";
 import { PepSection } from "@/components/settings/pep-section";
 import { EmailForm, NameForm, PasswordForm, type EmailChangeNotice } from "@/components/settings/profile-forms";
 import { SettingsSection } from "@/components/settings/settings-section";
+import { getServerWorkspace } from "@/lib/i18n/server-workspace";
+import { formatNumber } from "@/lib/i18n/format";
+import operationsEn from "@/lib/i18n/messages/en/operations";
+import operationsDe from "@/lib/i18n/messages/de/operations";
 import { requireUserPage } from "@/server/context";
 import { getDialerDriver } from "@/server/env";
 import { getBookableHours, getCalendarConnectionStatus, listAgentCalendars } from "@/server/services/calendar-connection";
@@ -36,6 +40,8 @@ export default async function SettingsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireUserPage();
+  const { locale } = await getServerWorkspace(ctx.profile.primary_locale);
+  const t = locale === "de" ? operationsDe : operationsEn;
   const isAdmin = ctx.profile.role === "ADMIN";
   const [data, query, calendar] = await Promise.all([
     getSettingsPageData(ctx),
@@ -49,9 +55,9 @@ export default async function SettingsPage({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-      <PageHeader title="Settings" className="mb-2" />
+      <PageHeader title={t.settingsTitle} className="mb-2" />
 
-      <SettingsSection id="profile" title="Profile">
+      <SettingsSection id="profile" title={t.profile}>
         <NameForm name={profile.name} />
         <EmailForm email={profile.email} notice={parseNotice(query.email_change)} />
         <div className="border-t pt-4">
@@ -61,28 +67,28 @@ export default async function SettingsPage({
 
       <SettingsSection
         id="daily-target"
-        title="Daily target"
-        description={isAdmin ? "Change agent targets under Agent targets below." : "Set by your admin."}
+        title={t.dailyTarget}
+        description={isAdmin ? t.changeAgentTargets : t.setByAdmin}
       >
         <p className="flex items-baseline gap-2">
-          <span className="text-4xl leading-none font-extrabold tabular-nums">{profile.dailyCallTarget.toLocaleString("en-US")}</span>
-          <span className="text-sm text-muted-foreground">calls a day</span>
+          <span className="text-4xl leading-none font-extrabold tabular-nums">{formatNumber(profile.dailyCallTarget, locale)}</span>
+          <span className="text-sm text-muted-foreground">{t.callsADay}</span>
         </p>
       </SettingsSection>
 
-      <SettingsSection id="call-mode" title="Call mode" description="How CALL places calls on this device.">
+      <SettingsSection id="call-mode" title={t.callMode} description={t.callModeDesc}>
         <CallModeSection inAppAvailable={inAppAvailable} />
       </SettingsSection>
 
       <SettingsSection
         id="pep-talk"
-        title="Between-calls lines"
-        description="A one-liner after some calls and on your dashboard. Dark, rude, and entirely optional."
+        title={t.pepTitle}
+        description={t.pepDesc}
       >
         <PepSection />
       </SettingsSection>
 
-      <SettingsSection id="audio" title="Audio" description="Microphone and speaker for in-app calls.">
+      <SettingsSection id="audio" title={t.audio} description={t.audioDesc}>
         <AudioSection inAppAvailable={inAppAvailable} />
       </SettingsSection>
 
@@ -94,10 +100,10 @@ export default async function SettingsPage({
             agentCalendars={calendar[2]}
             timeZone={data.admin.company.defaultTimezone}
           />
-          <SettingsSection id="company" title="Company" description="Admin only.">
+          <SettingsSection id="company" title={t.company} description={t.adminOnly}>
             <CompanySettingsForm company={data.admin.company} />
           </SettingsSection>
-          <SettingsSection id="agent-targets" title="Agent targets" description="Daily call target per agent. Saved per row.">
+          <SettingsSection id="agent-targets" title={t.agentTargets} description={t.agentTargetsDesc}>
             <AgentTargetsList rows={data.admin.agentTargets} />
           </SettingsSection>
         </>

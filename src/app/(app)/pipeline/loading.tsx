@@ -1,10 +1,15 @@
+"use client";
+
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const CARDS_PER_COLUMN = [3, 2, 3, 1, 2];
 
 export default function PipelineLoading() {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   return (
-    <div role="status" aria-label="Loading pipeline">
+    <div role="status" aria-label={locale === "de" ? "Pipeline wird geladen" : "Loading pipeline"}>
       <div className="mb-6 flex flex-col gap-2">
         <Skeleton className="h-8 w-36" />
         <Skeleton className="h-4 w-28" />
@@ -36,7 +41,7 @@ export default function PipelineLoading() {
           </div>
         ))}
       </div>
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">{t.loading}</span>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import { Button } from "@/components/ui/button";
 import type { PipelineColumn } from "@/lib/domain/statuses";
 import { cn } from "@/lib/utils";
@@ -26,13 +28,16 @@ export interface PipelineStageNavProps {
  * the board sideways; on phones the columns still swipe.
  */
 export function PipelineStageNav({ stages, visible, canScrollBack, canScrollForward, onJump, onScroll }: PipelineStageNavProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const statuses = useTranslations("workspace").statuses;
   return (
-    <nav aria-label="Pipeline stages" className="mb-3 flex items-center gap-2">
+    <nav aria-label={t.stages} className="mb-3 flex items-center gap-2">
       <Button
         type="button"
         variant="outline"
         className="hidden size-12 shrink-0 md:inline-flex"
-        aria-label="Scroll to earlier stages"
+        aria-label={t.earlierStages}
         disabled={!canScrollBack}
         onClick={() => onScroll(-1)}
       >
@@ -55,11 +60,11 @@ export function PipelineStageNav({ stages, visible, canScrollBack, canScrollForw
                   column.closed && "border-dashed",
                 )}
               >
-                {column.label}
+                {statuses[column.key]}
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-background px-1.5 text-xs font-extrabold text-foreground tabular-nums">
-                  {total.toLocaleString("en-US")}
+                  {formatNumber(total, locale)}
                 </span>
-                <span className="sr-only">{total === 1 ? " lead" : " leads"}</span>
+                <span className="sr-only">{` ${total === 1 ? t.pipelineLead : t.pipelineLeads}`}</span>
               </button>
             </li>
           );
@@ -70,7 +75,7 @@ export function PipelineStageNav({ stages, visible, canScrollBack, canScrollForw
         type="button"
         variant="outline"
         className="hidden size-12 shrink-0 md:inline-flex"
-        aria-label="Scroll to later stages"
+        aria-label={t.laterStages}
         disabled={!canScrollForward}
         onClick={() => onScroll(1)}
       >

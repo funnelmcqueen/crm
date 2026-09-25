@@ -17,6 +17,8 @@ import {
 } from "@dnd-kit/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,9 +68,10 @@ const collisionDetection: CollisionDetection = (args) => {
   return hits.length > 0 ? hits : rectIntersection(args);
 };
 
-const MOVE_FAILED = "Couldn't move the lead. Try again.";
-
 export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz, now, agentNames }: PipelineBoardProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const stages = useTranslations("workspace").statuses;
   const [state, setState] = useState<BoardState>(() => initBoardState(initialColumns));
   // A new server render (filter change, navigation) replaces the board state.
   const [syncedColumns, setSyncedColumns] = useState(initialColumns);
@@ -147,15 +150,16 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
       }
       if (result?.ok) {
         dispatch({ type: "moveSucceeded", leadId: card.id, status: result.data.status });
-        setLiveMessage(`${card.businessName} moved to ${to.label}.`);
-        if (!state.columns[to.key]) toast.success(`${card.businessName} moved to ${to.label}`);
+        const moved = locale === "de" ? `${card.businessName} wurde nach ${stages[to.key]} verschoben.` : `${card.businessName} moved to ${stages[to.key]}.`;
+        setLiveMessage(moved);
+        if (!state.columns[to.key]) toast.success(moved);
       } else {
         dispatch({ type: "moveFailed", leadId: card.id });
-        toast.error(result ? result.error.message : MOVE_FAILED);
-        setLiveMessage(`${card.businessName} was not moved.`);
+        toast.error(result ? getAppErrorMessage(result.error.code, locale, result.error.message) : t.moveFailed);
+        setLiveMessage(locale === "de" ? `${card.businessName} wurde nicht verschoben.` : `${card.businessName} was not moved.`);
       }
     },
-    [dispatch, state.columns],
+    [dispatch, state.columns, locale, t, stages],
   );
 
   function apply(card: PipelineCard, decision: MoveDecision) {
@@ -164,7 +168,7 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
       case "noop":
         return;
       case "locked":
-        toast.error("Only an admin can reopen a Do Not Contact lead.");
+        toast.error(t.locked);
         return;
       case "confirm":
         setConfirm({ card, to: decision.to });
@@ -198,26 +202,26 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
     try {
       const result = await loadPipelineColumnAction({ column: key, offset: nextOffset(column), agentId, unassigned });
       if (result.ok) dispatch({ type: "pageLoaded", page: result.data });
-      else toast.error(result.error.message);
+      else toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
     } catch {
-      toast.error("Couldn't load more leads. Try again.");
+      toast.error(t.loadFailed);
     } finally {
       setLoadingColumns((current) => ({ ...current, [key]: false }));
     }
   }
 
   const nameOf = (id: UniqueIdentifier) => findCard(state, String(id))?.card.businessName ?? "Lead";
-  const labelOf = (id: UniqueIdentifier) => pipelineColumnByKey(id)?.label ?? "a column";
+  const labelOf = (id: UniqueIdentifier) => pipelineColumnByKey(id) ? stages[pipelineColumnByKey(id)!.key] : (locale === "de" ? "einer Spalte" : "a column");
   const announcements: Announcements = {
-    onDragStart: ({ active }) => `Picked up ${nameOf(active.id)}.`,
-    onDragOver: ({ active, over }) => (over ? `${nameOf(active.id)} is over ${labelOf(over.id)}.` : `${nameOf(active.id)} is not over a column.`),
-    onDragEnd: ({ active, over }) => (over ? `${nameOf(active.id)} dropped on ${labelOf(over.id)}.` : `${nameOf(active.id)} dropped.`),
-    onDragCancel: ({ active }) => `Moving ${nameOf(active.id)} was cancelled.`,
+    onDragStart: ({ active }) => locale === "de" ? `${nameOf(active.id)} aufgenommen.` : `Picked up ${nameOf(active.id)}.`,
+    onDragOver: ({ active, over }) => (over ? locale === "de" ? `${nameOf(active.id)} über ${labelOf(over.id)}.` : `${nameOf(active.id)} is over ${labelOf(over.id)}.` : locale === "de" ? `${nameOf(active.id)} ist über keiner Spalte.` : `${nameOf(active.id)} is not over a column.`),
+    onDragEnd: ({ active, over }) => (over ? locale === "de" ? `${nameOf(active.id)} in ${labelOf(over.id)} abgelegt.` : `${nameOf(active.id)} dropped on ${labelOf(over.id)}.` : locale === "de" ? `${nameOf(active.id)} abgelegt.` : `${nameOf(active.id)} dropped.`),
+    onDragCancel: ({ active }) => locale === "de" ? `Verschieben von ${nameOf(active.id)} abgebrochen.` : `Moving ${nameOf(active.id)} was cancelled.`,
   };
 
   const activeCard = activeId ? (findCard(state, activeId)?.card ?? null) : null;
   const agentLabel = (card: PipelineCard) =>
-    agentNames ? (card.assignedTo ? (agentNames[card.assignedTo] ?? "Unknown") : null) : undefined;
+    agentNames ? (card.assignedTo ? (agentNames[card.assignedTo] ?? t.unknown) : null) : undefined;
 
   return (
     <>
@@ -244,14 +248,14 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
           announcements,
           screenReaderInstructions: {
             draggable:
-              "To move a lead, press space or enter on its drag handle, use the left and right arrow keys to pick a column, then press space or enter to drop it. Press escape to cancel. The Move to menu does the same.",
+              locale === "de" ? "Um einen Lead zu verschieben, drücke auf dem Ziehpunkt die Leertaste oder Eingabetaste, wähle mit den Pfeiltasten eine Spalte und bestätige erneut. Mit Escape brichst du ab. Das Menü ‚Verschieben nach‘ geht ebenfalls." : "To move a lead, press space or enter on its drag handle, use the left and right arrow keys to pick a column, then press space or enter to drop it. Press escape to cancel. The Move to menu does the same.",
           },
         }}
       >
         <div
           ref={regionRef}
           role="region"
-          aria-label="Pipeline columns"
+          aria-label={t.pipelineColumns}
           className={cn(
             // relative: the region must be the containing block of the cards' absolutely positioned sr-only text,
             // otherwise that text is laid out against the page and widens it on phones despite overflow-x-auto.
@@ -304,13 +308,13 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
       <AlertDialog open={confirm !== null} onOpenChange={(open) => (open ? undefined : setConfirm(null))}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Mark as Do Not Contact?</AlertDialogTitle>
+            <AlertDialogTitle>{t.markDnc}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirm ? `${confirm.card.businessName} can no longer be called. ` : ""}Only an admin can reopen it.
+              {confirm ? (locale === "de" ? `${confirm.card.businessName} kann dann nicht mehr angerufen werden. ` : `${confirm.card.businessName} can no longer be called. `) : ""}{t.locked}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="h-12">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="h-12">{t.cancel}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               className="h-12"
@@ -319,7 +323,7 @@ export function PipelineBoard({ initialColumns, isAdmin, agentId, unassigned, tz
                 setConfirm(null);
               }}
             >
-              Do Not Contact
+              {t.doNotContact}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

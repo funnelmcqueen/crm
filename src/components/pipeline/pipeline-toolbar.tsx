@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "@/components/i18n/locale-provider";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ export interface PipelineToolbarProps {
 }
 
 export function PipelineToolbar({ params, isAdmin, agents }: PipelineToolbarProps) {
+  const t = useTranslations("operations");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -48,20 +50,20 @@ export function PipelineToolbar({ params, isAdmin, agents }: PipelineToolbarProp
             })
           }
         >
-          <SelectTrigger aria-label="Filter by agent" className="min-w-44 px-3 text-sm data-[size=default]:h-12">
+          <SelectTrigger aria-label={t.filterAgent} className="min-w-44 px-3 text-sm data-[size=default]:h-12">
             <SelectValue />
           </SelectTrigger>
           <SelectContent position="popper" align="start">
             <SelectItem value={ALL} className="min-h-12">
-              All agents
+              {t.allAgents}
             </SelectItem>
             <SelectItem value={UNASSIGNED} className="min-h-12">
-              Unassigned
+              {t.unassigned}
             </SelectItem>
             {agents.map((agent) => (
               <SelectItem key={agent.id} value={agent.id} className="min-h-12">
                 {agent.name}
-                {agent.active ? "" : " (disabled)"}
+                {agent.active ? "" : ` (${t.disabled})`}
               </SelectItem>
             ))}
           </SelectContent>
@@ -75,12 +77,12 @@ export function PipelineToolbar({ params, isAdmin, agents }: PipelineToolbarProp
           onCheckedChange={(checked) => navigate({ ...params, closed: checked })}
         />
         <Label htmlFor="pipeline-show-closed" className="cursor-pointer text-sm">
-          Show closed
+          {t.showClosed}
         </Label>
       </div>
 
       <span aria-live="polite" className="text-xs text-muted-foreground">
-        {pending ? "Updating…" : ""}
+        {pending ? t.updating : ""}
       </span>
     </div>
   );

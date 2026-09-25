@@ -4,6 +4,8 @@ import { useDraggable } from "@dnd-kit/core";
 import { ArrowRightLeft, CalendarClock, GripVertical, Lock } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import { FollowUpCell } from "@/components/leads/lead-list-cells";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +35,9 @@ export interface PipelineCardViewProps {
 }
 
 function CardBody({ card, tz, now, agentName }: Pick<PipelineCardViewProps, "card" | "tz" | "now" | "agentName">) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const statuses = useTranslations("workspace").statuses;
   const badge = pipelineBadgeFor(card.status);
   return (
     <>
@@ -45,22 +50,22 @@ function CardBody({ card, tz, now, agentName }: Pick<PipelineCardViewProps, "car
             className="inline-flex h-5 items-center gap-1 rounded-full border bg-muted/60 px-2 font-semibold whitespace-nowrap"
           >
             <span aria-hidden className="size-1.5 rounded-full bg-gold" />
-            {badge}
+            {badge ? statuses[card.status] : null}
           </span>
         ) : null}
         <span className="inline-flex min-w-0 items-center gap-1">
           <CalendarClock aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="sr-only">Next follow-up:</span>
+          <span className="sr-only">{t.nextFollowUp}</span>
           <FollowUpCell value={card.nextFollowUpAt} tz={tz} now={now} className="truncate" />
         </span>
         <span className="ml-auto text-muted-foreground">
-          <span className="font-extrabold text-foreground tabular-nums">{card.callCount}</span>{" "}
-          {card.callCount === 1 ? "call" : "calls"}
+          <span className="font-extrabold text-foreground tabular-nums">{formatNumber(card.callCount, locale)}</span>{" "}
+          {card.callCount === 1 ? t.call : t.calls}
         </span>
       </span>
       {agentName !== undefined ? (
         <span className="truncate text-xs text-muted-foreground">
-          Agent: <span className="text-foreground">{agentName ?? "Unassigned"}</span>
+          {t.agent}: <span className="text-foreground">{agentName ?? t.unassigned}</span>
         </span>
       ) : null}
     </>
@@ -112,6 +117,8 @@ const stopDragStart = {
 };
 
 export function DraggablePipelineCard({ card, tz, now, agentName, isAdmin, pending, onMove }: DraggablePipelineCardProps) {
+  const t = useTranslations("operations");
+  const stages = useTranslations("workspace").statuses;
   const targets = moveTargets(card.status, { isAdmin });
   const locked = targets.open.length === 0 && targets.closed.length === 0;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
@@ -140,7 +147,7 @@ export function DraggablePipelineCard({ card, tz, now, agentName, isAdmin, pendi
                 <Button
                   variant="ghost"
                   className="size-12 rounded-none rounded-tr-lg"
-                  aria-label={`Move ${card.businessName} to…`}
+                  aria-label={t.moveToAria.replace("{name}", card.businessName)}
                   disabled={pending}
                 >
                   {locked ? <Lock aria-hidden className="size-4" /> : <ArrowRightLeft aria-hidden className="size-4" />}
@@ -149,14 +156,14 @@ export function DraggablePipelineCard({ card, tz, now, agentName, isAdmin, pendi
               <DropdownMenuContent align="end" className="w-56">
                 {locked ? (
                   <DropdownMenuLabel className="px-2 py-3 text-sm font-normal text-muted-foreground">
-                    Only an admin can reopen a Do Not Contact lead.
+                    {t.locked}
                   </DropdownMenuLabel>
                 ) : (
                   <>
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">Move to…</DropdownMenuLabel>
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">{t.moveTo}</DropdownMenuLabel>
                     {targets.open.map((column) => (
                       <DropdownMenuItem key={column.key} className="min-h-12 px-3" onSelect={() => onMove(card, column.key)}>
-                        {column.label}
+                        {stages[column.key]}
                       </DropdownMenuItem>
                     ))}
                     {targets.closed.length > 0 ? <DropdownMenuSeparator /> : null}
@@ -167,7 +174,7 @@ export function DraggablePipelineCard({ card, tz, now, agentName, isAdmin, pendi
                         variant={column.dropStatus === "DO_NOT_CONTACT" ? "destructive" : "default"}
                         onSelect={() => onMove(card, column.key)}
                       >
-                        {column.label}
+                        {stages[column.key]}
                       </DropdownMenuItem>
                     ))}
                   </>
@@ -178,7 +185,7 @@ export function DraggablePipelineCard({ card, tz, now, agentName, isAdmin, pendi
               type="button"
               ref={setActivatorNodeRef}
               {...attributes}
-              aria-label={`Drag ${card.businessName}`}
+              aria-label={t.dragAria.replace("{name}", card.businessName)}
               aria-disabled={locked || pending || undefined}
               className={cn(
                 "flex min-h-12 w-12 flex-1 items-center justify-center rounded-br-lg text-muted-foreground outline-none transition-colors duration-100 hover:bg-muted/50 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",

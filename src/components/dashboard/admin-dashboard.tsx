@@ -1,3 +1,4 @@
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { ChevronRight, Phone, SkipForward, TriangleAlert, UserPlus } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -27,6 +28,7 @@ function agentHref(row: AgentStatsRow): string {
 }
 
 export function AdminDashboardView({ totals, agents, attention, driver }: AdminDashboardViewProps) {
+  const t = useTranslations("operations");
   const rows = visibleAgentRows(agents);
   return (
     <div className="flex flex-col gap-4">
@@ -37,7 +39,7 @@ export function AdminDashboardView({ totals, agents, attention, driver }: AdminD
       <section aria-labelledby="agents-heading" className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
           <h2 id="agents-heading" className="text-xs font-bold tracking-widest text-muted-foreground uppercase">
-            Agents today
+            {t.agentsToday}
           </h2>
           <Link
             href="/admin/agents"
@@ -45,13 +47,13 @@ export function AdminDashboardView({ totals, agents, attention, driver }: AdminD
             // the 48px rule on exactly the devices that need it.
             className="inline-flex min-h-12 items-center rounded-lg px-2 text-sm font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            Manage agents
+            {t.manageAgents}
           </Link>
         </div>
 
         {rows.length === 0 ? (
           <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            No agents yet. Create one from the Agents page.
+            {t.noAgentsYet}
           </p>
         ) : (
           <>
@@ -69,6 +71,9 @@ export function AdminDashboardView({ totals, agents, attention, driver }: AdminD
  * cannot connect, and skipped leads waiting on a decision. Renders nothing when there is nothing to do.
  */
 function AttentionList({ totals, attention, driver }: { totals: TeamTotals; attention: AdminAttention; driver: DialerDriverName }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const count = (value: number) => formatCount(value, locale);
   const items: Array<{ key: string; icon: ReactNode; text: ReactNode; href: string; cta: string; urgent: boolean }> = [];
   if (totals.leadsUnassigned > 0) {
     items.push({
@@ -76,12 +81,12 @@ function AttentionList({ totals, attention, driver }: { totals: TeamTotals; atte
       icon: <UserPlus />,
       text: (
         <>
-          <span className="font-extrabold tabular-nums">{formatCount(totals.leadsUnassigned)}</span> unassigned{" "}
-          {totals.leadsUnassigned === 1 ? "lead is" : "leads are"} not in anyone&rsquo;s call queue.
+          <span className="font-extrabold tabular-nums">{count(totals.leadsUnassigned)}</span> {locale === "de" ? totals.leadsUnassigned === 1 ? "nicht zugewiesener" : "nicht zugewiesene" : "unassigned"}{" "}
+          {locale === "de" ? totals.leadsUnassigned === 1 ? "Lead ist" : "Leads sind" : totals.leadsUnassigned === 1 ? "lead is" : "leads are"} {locale === "de" ? "in keiner Anrufliste." : "not in anyone’s call queue."}
         </>
       ),
       href: "/leads?unassigned=1",
-      cta: "Assign leads",
+      cta: t.assignLeads,
       urgent: true,
     });
   }
@@ -89,9 +94,9 @@ function AttentionList({ totals, attention, driver }: { totals: TeamTotals; atte
     items.push({
       key: "numbers",
       icon: <Phone />,
-      text: <>No active phone numbers, so in-app calls have no caller ID and cannot connect.</>,
+      text: <>{locale === "de" ? "Keine aktiven Telefonnummern. Anrufe in der App haben keine Anruferkennung und können nicht verbunden werden." : "No active phone numbers, so in-app calls have no caller ID and cannot connect."}</>,
       href: "/admin/phone-numbers",
-      cta: "Phone numbers",
+      cta: t.phoneNumbers,
       urgent: true,
     });
   }
@@ -101,12 +106,12 @@ function AttentionList({ totals, attention, driver }: { totals: TeamTotals; atte
       icon: <SkipForward />,
       text: (
         <>
-          <span className="font-extrabold tabular-nums">{formatCount(attention.skipped)}</span> skipped{" "}
-          {attention.skipped === 1 ? "lead is" : "leads are"} waiting for a decision.
+          <span className="font-extrabold tabular-nums">{count(attention.skipped)}</span> {locale === "de" ? attention.skipped === 1 ? "übersprungener" : "übersprungene" : "skipped"}{" "}
+          {locale === "de" ? attention.skipped === 1 ? "Lead wartet" : "Leads warten" : attention.skipped === 1 ? "lead is" : "leads are"} {locale === "de" ? "auf eine Entscheidung." : "waiting for a decision."}
         </>
       ),
       href: "/follow-ups?tab=skipped",
-      cta: "Review skipped",
+      cta: t.reviewSkipped,
       urgent: false,
     });
   }
@@ -115,7 +120,7 @@ function AttentionList({ totals, attention, driver }: { totals: TeamTotals; atte
   return (
     <section aria-labelledby="attention-heading" className="flex flex-col gap-2">
       <h2 id="attention-heading" className="text-xs font-bold tracking-widest text-muted-foreground uppercase">
-        Needs attention
+        {t.needsAttention}
       </h2>
       <ul className="flex flex-col gap-2">
         {items.map((item) => (
@@ -147,6 +152,9 @@ function AttentionList({ totals, attention, driver }: { totals: TeamTotals; atte
 }
 
 function DisabledAgentsBanner({ totals }: { totals: TeamTotals }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const count = (value: number) => formatCount(value, locale);
   const leads = totals.leadsOnDisabledAgents;
   const agents = totals.disabledAgentsWithLeads;
   return (
@@ -157,27 +165,27 @@ function DisabledAgentsBanner({ totals }: { totals: TeamTotals }) {
       <p className="flex items-start gap-3">
         <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-gold" />
         <span>
-          <span className="font-extrabold tabular-nums">{formatCount(leads)}</span> {leads === 1 ? "lead is" : "leads are"} still
-          assigned to <span className="font-extrabold tabular-nums">{formatCount(agents)}</span> disabled{" "}
-          {agents === 1 ? "agent" : "agents"}. Reassign them so they get called.
+          {locale === "de" ? <><span className="font-extrabold tabular-nums">{count(leads)}</span> {leads === 1 ? "Lead ist" : "Leads sind"} noch <span className="font-extrabold tabular-nums">{count(agents)}</span> {agents === 1 ? "deaktiviertem Agenten" : "deaktivierten Agenten"} zugewiesen. Weise sie neu zu, damit sie angerufen werden.</> : <><span className="font-extrabold tabular-nums">{count(leads)}</span> {leads === 1 ? "lead is" : "leads are"} still assigned to <span className="font-extrabold tabular-nums">{count(agents)}</span> disabled {agents === 1 ? "agent" : "agents"}. Reassign them so they get called.</>}
         </span>
       </p>
       <Link
         href="/admin/agents"
         className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl border bg-card px-4 font-bold outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
       >
-        Review agents
+        {t.reviewAgents}
       </Link>
     </div>
   );
 }
 
 function TeamTotalsRow({ totals }: { totals: TeamTotals }) {
-  const items = teamTotalsItems(totals);
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const items = teamTotalsItems(totals, locale);
   return (
     <section aria-labelledby="team-heading">
       <h2 id="team-heading" className="sr-only">
-        Team totals
+        {t.teamTotals}
       </h2>
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4 lg:grid-cols-7">
         {items.map((item) => (
@@ -193,6 +201,7 @@ function TeamTotalsRow({ totals }: { totals: TeamTotals }) {
 }
 
 function ActiveBadge({ active }: { active: boolean }) {
+  const { locale } = useLocale();
   return (
     <span
       className={cn(
@@ -200,28 +209,31 @@ function ActiveBadge({ active }: { active: boolean }) {
         active ? "border-success/30 bg-success/10 text-foreground" : "border-destructive/40 bg-destructive/10 text-destructive",
       )}
     >
-      {active ? "Active" : "Disabled"}
+      {active ? (locale === "de" ? "Aktiv" : "Active") : (locale === "de" ? "Deaktiviert" : "Disabled")}
     </span>
   );
 }
 
 function CallsVsTarget({ row }: { row: AgentStatsRow }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const count = (value: number) => formatCount(value, locale);
   const goal = dailyGoal(row.dialsToday, row.dailyCallTarget);
   return (
     <div className="flex min-w-32 flex-col gap-1">
       <span className="tabular-nums">
         {goal.hasTarget ? (
           <>
-            <span className={cn("text-base font-extrabold", goal.reached && "text-gold")}>{formatCount(goal.dials)}</span>
-            <span className="text-muted-foreground"> / {formatCount(goal.target)}</span>
+            <span className={cn("text-base font-extrabold", goal.reached && "text-gold")}>{count(goal.dials)}</span>
+            <span className="text-muted-foreground"> / {count(goal.target)}</span>
           </>
         ) : (
           <span className="text-base font-extrabold">
-            {goalFraction(goal)} <span className="text-xs font-semibold text-muted-foreground">no target</span>
+            {locale === "de" ? `${count(goal.dials)} ${goal.dials === 1 ? t.call : t.calls}` : goalFraction(goal)} <span className="text-xs font-semibold text-muted-foreground">{t.noTarget}</span>
           </span>
         )}
       </span>
-      <TargetBar goal={goal} size="thin" label={`Calls today for ${row.name || row.email}`} />
+      <TargetBar goal={goal} size="thin" label={locale === "de" ? `Anrufe heute für ${row.name || row.email}` : `Calls today for ${row.name || row.email}`} />
     </div>
   );
 }
@@ -234,17 +246,20 @@ function CallsVsTarget({ row }: { row: AgentStatsRow }) {
  * instead of the table scrolling inside its card. Same trap as follow-up-tabs.tsx and pipeline-board.tsx.
  */
 function AgentTable({ rows }: { rows: AgentStatsRow[] }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const count = (value: number) => formatCount(value, locale);
   return (
     <div className="relative hidden overflow-x-auto rounded-xl border bg-card md:block">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-xs text-muted-foreground">
-            <th scope="col" className="px-4 py-2.5 font-semibold">Agent</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">Calls today</th>
-            <th scope="col" className="px-4 py-2.5 text-right font-semibold">Connected</th>
-            <th scope="col" className="px-4 py-2.5 text-right font-semibold">Appointments</th>
-            <th scope="col" className="px-4 py-2.5 text-right font-semibold">Talk time</th>
-            <th scope="col" className="w-10 px-2 py-2.5"><span className="sr-only">Open</span></th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">{t.agent}</th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">{t.callsToday}</th>
+            <th scope="col" className="px-4 py-2.5 text-right font-semibold">{t.connected}</th>
+            <th scope="col" className="px-4 py-2.5 text-right font-semibold">{t.appointments}</th>
+            <th scope="col" className="px-4 py-2.5 text-right font-semibold">{t.talkTime}</th>
+            <th scope="col" className="w-10 px-2 py-2.5"><span className="sr-only">{t.open}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -263,15 +278,15 @@ function AgentTable({ rows }: { rows: AgentStatsRow[] }) {
                     {row.name || row.email}
                   </Link>
                   <ActiveBadge active={row.active} />
-                  {row.role === "ADMIN" ? <span className="text-[11px] font-semibold text-muted-foreground">Admin</span> : null}
+                  {row.role === "ADMIN" ? <span className="text-[11px] font-semibold text-muted-foreground">{t.admin}</span> : null}
                 </div>
                 <p className="truncate text-xs text-muted-foreground">{row.email}</p>
               </td>
               <td className="px-4 py-3">
                 <CallsVsTarget row={row} />
               </td>
-              <td className="px-4 py-3 text-right text-base font-extrabold tabular-nums">{formatCount(row.connectedToday)}</td>
-              <td className="px-4 py-3 text-right text-base font-extrabold tabular-nums">{formatCount(row.appointmentsToday)}</td>
+              <td className="px-4 py-3 text-right text-base font-extrabold tabular-nums">{count(row.connectedToday)}</td>
+              <td className="px-4 py-3 text-right text-base font-extrabold tabular-nums">{count(row.appointmentsToday)}</td>
               <td className="px-4 py-3 text-right text-base font-extrabold tabular-nums">{formatTalkTime(row.talkSecondsToday)}</td>
               <td className="px-2 py-3 text-muted-foreground">
                 <ChevronRight aria-hidden className="size-4" />
@@ -285,6 +300,9 @@ function AgentTable({ rows }: { rows: AgentStatsRow[] }) {
 }
 
 function AgentCards({ rows }: { rows: AgentStatsRow[] }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const count = (value: number) => formatCount(value, locale);
   return (
     <ul className="flex flex-col gap-2 md:hidden">
       {rows.map((row) => (
@@ -304,15 +322,15 @@ function AgentCards({ rows }: { rows: AgentStatsRow[] }) {
             <CallsVsTarget row={row} />
             <dl className="grid grid-cols-3 gap-2 text-xs">
               <div>
-                <dt className="text-muted-foreground">Connected</dt>
-                <dd className="text-base font-extrabold tabular-nums">{formatCount(row.connectedToday)}</dd>
+                <dt className="text-muted-foreground">{t.connected}</dt>
+                <dd className="text-base font-extrabold tabular-nums">{count(row.connectedToday)}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Appts</dt>
-                <dd className="text-base font-extrabold tabular-nums">{formatCount(row.appointmentsToday)}</dd>
+                <dt className="text-muted-foreground">{t.appts}</dt>
+                <dd className="text-base font-extrabold tabular-nums">{count(row.appointmentsToday)}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Talk</dt>
+                <dt className="text-muted-foreground">{t.talk}</dt>
                 <dd className="text-base font-extrabold tabular-nums">{formatTalkTime(row.talkSecondsToday)}</dd>
               </div>
             </dl>

@@ -5,6 +5,8 @@ import en from "@/lib/i18n/messages/en/core";
 import de from "@/lib/i18n/messages/de/core";
 import workspaceEn from "@/lib/i18n/messages/en/workspace";
 import workspaceDe from "@/lib/i18n/messages/de/workspace";
+import operationsEn from "@/lib/i18n/messages/en/operations";
+import operationsDe from "@/lib/i18n/messages/de/operations";
 import type { Locale } from "@/lib/i18n/locales";
 
 const messages = { en, de };
@@ -25,9 +27,12 @@ export function useLocale() {
 
 const workspaceMessages = { en: workspaceEn, de: workspaceDe };
 
+const operationsMessages = { en: operationsEn, de: operationsDe };
+
 /** Typed messages for the sales workspace, selected by the existing locale provider. */
-export function useTranslations(namespace: "workspace") {
+export function useTranslations(namespace: "operations"): typeof operationsEn;
+export function useTranslations(namespace: "workspace"): typeof workspaceEn;
+export function useTranslations(namespace: "workspace" | "operations") {
   const { locale } = useLocale();
-  if (namespace === "workspace") return workspaceMessages[locale];
-  return workspaceMessages[locale];
+  return namespace === "workspace" ? workspaceMessages[locale] : operationsMessages[locale];
 }

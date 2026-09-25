@@ -4,6 +4,9 @@
 // own calendar on the connected Google account: with their account when they are created, here when they
 // predate the connection or their provisioning failed. Renders no calendar id — it would say nothing useful
 // and belongs to the owner's account, not the page.
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +20,8 @@ export interface AgentCalendarsListProps {
 }
 
 export function AgentCalendarsList({ rows, connected }: AgentCalendarsListProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [current, setCurrent] = useState(rows);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -27,9 +32,9 @@ export function AgentCalendarsList({ rows, connected }: AgentCalendarsListProps)
       const result = await provisionCalendarForAgentAction(row.userId);
       if (result.ok) {
         setCurrent(result.data);
-        toast.success(`${row.name} can book meetings now.`);
+        toast.success(locale === "de" ? `${row.name} kann jetzt Termine buchen.` : `${row.name} can book meetings now.`);
       } else {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
       setPendingId(null);
     });
@@ -39,12 +44,12 @@ export function AgentCalendarsList({ rows, connected }: AgentCalendarsListProps)
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-bold">Who can book</h3>
+      <h3 className="text-sm font-bold">{t.whoCanBook}</h3>
       {waiting.length > 0 ? (
         <p role="alert" className="text-sm font-semibold text-destructive">
           {waiting.length === 1
-            ? "1 person has no calendar yet, so they cannot book meetings."
-            : `${waiting.length} people have no calendar yet, so they cannot book meetings.`}
+            ? locale === "de" ? "1 Person hat noch keinen Kalender und kann keine Termine buchen." : "1 person has no calendar yet, so they cannot book meetings."
+            : locale === "de" ? `${formatNumber(waiting.length, locale)} Personen haben noch keinen Kalender und können keine Termine buchen.` : `${waiting.length} people have no calendar yet, so they cannot book meetings.`}
         </p>
       ) : null}
       <ul className="flex flex-col gap-2">
@@ -55,7 +60,7 @@ export function AgentCalendarsList({ rows, connected }: AgentCalendarsListProps)
               <p className="truncate text-sm text-muted-foreground">{row.email}</p>
             </div>
             {row.hasCalendar ? (
-              <p className="text-sm font-semibold">Has a calendar</p>
+              <p className="text-sm font-semibold">{t.hasCalendar}</p>
             ) : (
               <Button
                 type="button"
@@ -64,14 +69,14 @@ export function AgentCalendarsList({ rows, connected }: AgentCalendarsListProps)
                 disabled={!connected || pendingId !== null}
                 onClick={() => provision(row)}
               >
-                {pendingId === row.userId ? "Creating…" : "Create calendar"}
+                {pendingId === row.userId ? t.creating : t.createCalendar}
               </Button>
             )}
           </li>
         ))}
       </ul>
       {connected ? null : (
-        <p className="text-sm text-muted-foreground">Connect Google Calendar first, then give each person a calendar.</p>
+        <p className="text-sm text-muted-foreground">{t.connectFirst}</p>
       )}
     </div>
   );

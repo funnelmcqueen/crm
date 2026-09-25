@@ -1,5 +1,8 @@
 "use client";
 
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
+import { formatNumber } from "@/lib/i18n/format";
 import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +25,8 @@ function parseTarget(value: string): number | null {
 }
 
 export function CompanySettingsForm({ company }: { company: CompanySettings }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [form, setForm] = useState({
     companyName: company.companyName,
     target: String(company.defaultDailyTarget),
@@ -37,11 +42,11 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
     event.preventDefault();
     const target = parseTarget(form.target);
     if (target === null) {
-      setError("Enter a default daily target between 0 and 1000.");
+      setError(locale === "de" ? "Gib ein Standard-Tagesziel zwischen 0 und 1000 ein." : "Enter a default daily target between 0 and 1000.");
       return;
     }
     if (tooLong) {
-      setError(`The voicemail greeting can be at most ${MAX_GREETING} characters.`);
+      setError(locale === "de" ? `Die Mailboxansage darf höchstens ${MAX_GREETING} Zeichen enthalten.` : `The voicemail greeting can be at most ${MAX_GREETING} characters.`);
       return;
     }
     setError(null);
@@ -59,9 +64,9 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
           timezone: result.data.defaultTimezone,
           greeting: result.data.voicemailGreeting,
         });
-        toast.success("Company settings saved");
+        toast.success(t.companySaved);
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -69,7 +74,7 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="company-name">Company name</Label>
+        <Label htmlFor="company-name">{t.companyName}</Label>
         <Input
           id="company-name"
           required
@@ -81,7 +86,7 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[10rem_1fr]">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="company-target">Default daily calls</Label>
+          <Label htmlFor="company-target">{t.defaultCalls}</Label>
           <Input
             id="company-target"
             type="number"
@@ -96,7 +101,7 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
           />
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
-          <Label htmlFor="company-timezone">Default time zone</Label>
+          <Label htmlFor="company-timezone">{t.defaultTimezone}</Label>
           <TimeZoneSelect
             id="company-timezone"
             value={form.timezone}
@@ -105,16 +110,16 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
           />
         </div>
       </div>
-      <p className="-mt-2 text-xs text-muted-foreground">New agents start with these. Existing agents keep their own.</p>
+      <p className="-mt-2 text-xs text-muted-foreground">{t.newAgentsDefaults}</p>
       <div className="flex flex-col gap-1.5">
         <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor="company-greeting">Voicemail greeting</Label>
+          <Label htmlFor="company-greeting">{t.voicemailGreeting}</Label>
           <span
             id="company-greeting-count"
             aria-live="polite"
             className={cn("text-xs tabular-nums", tooLong ? "font-semibold text-destructive" : "text-muted-foreground")}
           >
-            {greetingLength}/{MAX_GREETING}
+            {formatNumber(greetingLength, locale)}/{formatNumber(MAX_GREETING, locale)}
           </span>
         </div>
         <Textarea
@@ -128,7 +133,7 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
           className="min-h-28 text-base lg:text-sm"
         />
         <p id="company-greeting-help" className="text-xs text-muted-foreground">
-          Read to callers before the beep when nobody answers.
+          {locale === "de" ? "Wird Anrufern vor dem Signalton vorgespielt, wenn niemand antwortet." : "Read to callers before the beep when nobody answers."}
         </p>
       </div>
       <p role="alert" aria-live="polite" className="min-h-5 text-sm font-semibold text-destructive">
@@ -136,7 +141,7 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
       </p>
       <div>
         <Button type="submit" className="h-12 px-5 font-bold" disabled={pending || tooLong}>
-          {pending ? "Saving…" : "Save company settings"}
+          {pending ? t.saving : locale === "de" ? "Unternehmenseinstellungen speichern" : "Save company settings"}
         </Button>
       </div>
     </form>
@@ -144,6 +149,8 @@ export function CompanySettingsForm({ company }: { company: CompanySettings }) {
 }
 
 function AgentTargetRowForm({ row }: { row: AgentTargetRow }) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [saved, setSaved] = useState(row.dailyCallTarget);
   const [value, setValue] = useState(String(row.dailyCallTarget));
   const [error, setError] = useState<string | null>(null);
@@ -164,9 +171,9 @@ function AgentTargetRowForm({ row }: { row: AgentTargetRow }) {
       if (result.ok) {
         setSaved(result.data.dailyCallTarget);
         setValue(String(result.data.dailyCallTarget));
-        toast.success(`${row.name}: ${result.data.dailyCallTarget} calls a day`);
+        toast.success(`${row.name}: ${formatNumber(result.data.dailyCallTarget, locale)} ${t.callsADay}`);
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -177,7 +184,7 @@ function AgentTargetRowForm({ row }: { row: AgentTargetRow }) {
         <label htmlFor={inputId} className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">
             {row.name}
-            {row.active ? null : <span className="ml-2 text-xs font-semibold text-destructive">Disabled</span>}
+            {row.active ? null : <span className="ml-2 text-xs font-semibold text-destructive">{locale === "de" ? "Deaktiviert" : "Disabled"}</span>}
           </span>
           <span className="block truncate text-xs text-muted-foreground">{row.email}</span>
           {error ? (
@@ -199,8 +206,8 @@ function AgentTargetRowForm({ row }: { row: AgentTargetRow }) {
           aria-invalid={parsed === null || undefined}
           className="h-12 w-24 text-right text-base font-extrabold tabular-nums lg:text-sm"
         />
-        <Button type="submit" variant={dirty ? "default" : "outline"} className="h-12 w-20 font-bold" disabled={pending || !dirty}>
-          {pending ? "…" : "Save"}
+        <Button type="submit" variant={dirty ? "default" : "outline"} className="h-12 min-w-20 px-2 font-bold" disabled={pending || !dirty}>
+          {pending ? "…" : t.save}
         </Button>
       </form>
     </li>
@@ -208,7 +215,8 @@ function AgentTargetRowForm({ row }: { row: AgentTargetRow }) {
 }
 
 export function AgentTargetsList({ rows }: { rows: AgentTargetRow[] }) {
-  if (rows.length === 0) return <p className="text-sm text-muted-foreground">No agents yet.</p>;
+  const t = useTranslations("operations");
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">{t.noAgents}</p>;
   return (
     <ul className="flex flex-col divide-y">
       {rows.map((row) => (

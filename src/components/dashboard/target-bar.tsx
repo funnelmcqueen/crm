@@ -1,3 +1,5 @@
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatNumber } from "@/lib/i18n/format";
 import type { DailyGoal } from "@/lib/domain/daily-goal";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +13,9 @@ export interface TargetBarProps {
 
 /** Calls-vs-target progress bar from dailyGoal(). Red while in progress, gold once reached, empty with no target. */
 export function TargetBar({ goal, label, size = "default", className }: TargetBarProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
+  const n = (value: number) => formatNumber(value, locale);
   return (
     <div
       role="progressbar"
@@ -20,8 +25,10 @@ export function TargetBar({ goal, label, size = "default", className }: TargetBa
       aria-valuenow={Math.min(goal.dials, goal.target)}
       aria-valuetext={
         goal.hasTarget
-          ? `${goal.dials} of ${goal.target} calls${goal.reached ? ", goal reached" : `, ${goal.remaining} to go`}`
-          : `${goal.dials} calls, no target`
+          ? locale === "de"
+            ? `${n(goal.dials)} von ${n(goal.target)} Anrufen${goal.reached ? ", Ziel erreicht" : `, noch ${n(goal.remaining)}`}`
+            : `${n(goal.dials)} of ${n(goal.target)} ${t.calls}${goal.reached ? ", goal reached" : `, ${n(goal.remaining)} to go`}`
+          : locale === "de" ? `${n(goal.dials)} Anrufe, kein Ziel` : `${n(goal.dials)} calls, no target`
       }
       className={cn("w-full overflow-hidden rounded-full bg-muted", size === "thin" ? "h-1" : "h-2", className)}
     >

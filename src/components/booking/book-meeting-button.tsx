@@ -2,6 +2,8 @@
 
 import { CalendarPlus } from "lucide-react";
 import { useState, useTransition } from "react";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { BOOKING_UNAVAILABLE_MESSAGE, CALENDAR_LOAD_FAILED_MESSAGE } from "@/lib/domain/booking-messages";
@@ -16,6 +18,8 @@ export interface BookMeetingButtonProps {
 }
 
 export function BookMeetingButton({ leadId, businessName, triggerClassName }: BookMeetingButtonProps) {
+  const { locale } = useLocale();
+  const t = useTranslations("operations");
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<BookingLoadState>({ kind: "loading" });
   const [, startTransition] = useTransition();
@@ -24,9 +28,9 @@ export function BookMeetingButton({ leadId, businessName, triggerClassName }: Bo
     setState({ kind: "loading" });
     startTransition(async () => {
       const result = await getAvailabilityAction(leadId).catch(() => null);
-      if (!result) setState({ kind: "error", message: CALENDAR_LOAD_FAILED_MESSAGE, unavailable: false });
+      if (!result) setState({ kind: "error", message: locale === "de" ? t.bookingError : CALENDAR_LOAD_FAILED_MESSAGE, unavailable: false });
       // No calendar at all: retrying cannot help, so the panel offers none. A failed load can be retried.
-      else if (!result.ok) setState({ kind: "error", message: result.error.message, unavailable: result.error.message === BOOKING_UNAVAILABLE_MESSAGE });
+      else if (!result.ok) setState({ kind: "error", message: getAppErrorMessage(result.error.code, locale, result.error.message), unavailable: result.error.message === BOOKING_UNAVAILABLE_MESSAGE });
       else setState({ kind: "ready", availability: result.data });
     });
   }
@@ -41,21 +45,21 @@ export function BookMeetingButton({ leadId, businessName, triggerClassName }: Bo
     >
       <SheetTrigger asChild>
         {triggerClassName ? (
-          <button type="button" aria-label="Book meeting" className={triggerClassName}>
+          <button type="button" aria-label={t.bookMeeting} className={triggerClassName}>
             <CalendarPlus aria-hidden />
-            <span className="hidden md:inline">Book meeting</span>
+            <span className="hidden md:inline">{t.bookMeeting}</span>
           </button>
         ) : (
           <Button type="button" variant="outline" className="min-h-12 gap-2">
             <CalendarPlus aria-hidden />
-            Book meeting
+            {t.bookMeeting}
           </Button>
         )}
       </SheetTrigger>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle>Book a meeting with {businessName}</SheetTitle>
-          <SheetDescription>30 minutes in your calendar. Times are shown in the lead&apos;s time zone.</SheetDescription>
+          <SheetTitle>{locale === "de" ? `Termin mit ${businessName} buchen` : `Book a meeting with ${businessName}`}</SheetTitle>
+          <SheetDescription>{t.bookDescription}</SheetDescription>
         </SheetHeader>
         <BookingPanel leadId={leadId} state={state} onReload={load} onBooked={() => setOpen(false)} />
       </SheetContent>
