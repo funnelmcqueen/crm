@@ -7,6 +7,7 @@ const de: { [K in keyof typeof en]: typeof en[K] extends string ? string : { [P 
     not_found: "Nicht gefunden.",
     validation: "Einige Angaben sind ungültig.",
     conflict: "Das ist derzeit nicht möglich.",
+    rate_limited: "Zu viele Anfragen. Bitte versuche es gleich noch einmal.",
     unavailable: "Diese Funktion ist derzeit nicht verfügbar.",
     internal: "Es ist ein Fehler aufgetreten. Bitte versuche es erneut.",
   },

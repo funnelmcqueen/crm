@@ -5,6 +5,7 @@ const en = {
     not_found: "Not found.",
     validation: "Some of the information is invalid.",
     conflict: "That can't be done right now.",
+    rate_limited: "Too many requests. Try again in a moment.",
     unavailable: "This feature is not available right now.",
     internal: "Something went wrong. Please try again.",
   },

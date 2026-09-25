@@ -6,6 +6,16 @@ describe("localized app error messages", () => {
     expect(getAppErrorMessage("unauthorized", "de", "Please sign in again.")).toBe("Bitte melde dich erneut an.");
   });
 
+  it("localizes rate limits and preserves the English default or supplied message", () => {
+    expect(getAppErrorMessage("rate_limited", "de", "Too many requests. Try again in a moment.")).toBe(
+      "Zu viele Anfragen. Bitte versuche es gleich noch einmal.",
+    );
+    expect(getAppErrorMessage("rate_limited", "en")).toBe("Too many requests. Try again in a moment.");
+    expect(getAppErrorMessage("rate_limited", "en", "Too many exports. Try again shortly.")).toBe(
+      "Too many exports. Try again shortly.",
+    );
+  });
+
   it("preserves an English server message and uses a safe fallback for unknown codes", () => {
     expect(getAppErrorMessage("validation", "en", "Choose an active agent.")).toBe("Choose an active agent.");
     expect(getAppErrorMessage("unknown", "de", "Database error 42")).toBe("Es ist ein Fehler aufgetreten. Bitte versuche es erneut.");
