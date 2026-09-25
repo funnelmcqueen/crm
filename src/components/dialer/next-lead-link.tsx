@@ -1,3 +1,4 @@
+"use client";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "@/components/i18n/locale-provider";
