@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
-import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
+import { getAppErrorMessage, getCreateAgentWarningMessage } from "@/lib/i18n/app-error-message";
 import {
   agentDeleteCheckAction,
   bulkReassignAction,
@@ -165,7 +165,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
             </p>
             {created.warning ? (
               <p role="alert" className="text-sm font-semibold text-destructive">
-                {created.warning}
+                {getCreateAgentWarningMessage(created.warning, locale)}
               </p>
             ) : null}
             <DialogFooter>

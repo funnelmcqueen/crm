@@ -3,6 +3,9 @@ import type en from "../en/admin";
 const de: { [K in keyof typeof en]: string } = {
   "Create agent": "Agent erstellen",
   "Agent created": "Agent erstellt",
+  "The account was created, but its daily target, time zone and language could not be saved. Edit the agent to set them.": "Das Konto wurde erstellt, aber Tagesziel, Zeitzone und Sprache konnten nicht gespeichert werden. Bearbeite den Agenten, um diese Angaben festzulegen.",
+  "The account was created, but Google Calendar isn't connected, so they can't book meetings yet.": "Das Konto wurde erstellt, aber Google Kalender ist nicht verbunden. Der Agent kann noch keine Termine buchen.",
+  "The account was created, but their meetings calendar could not be. Give them one from Settings.": "Das Konto wurde erstellt, aber der Kalender für Termine konnte nicht eingerichtet werden. Weise dem Agenten in den Einstellungen einen Kalender zu.",
   "One-time password": "Einmalpasswort",
   "Share it securely; the agent can change it in Settings. It is shown only once.": "Gib es sicher weiter. Der Agent kann es in den Einstellungen ändern. Es wird nur einmal angezeigt.",
   "Done": "Fertig",

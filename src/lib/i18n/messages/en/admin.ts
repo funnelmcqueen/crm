@@ -1,6 +1,9 @@
 const en = {
   "Create agent": "Create agent",
   "Agent created": "Agent created",
+  "The account was created, but its daily target, time zone and language could not be saved. Edit the agent to set them.": "The account was created, but its daily target, time zone and language could not be saved. Edit the agent to set them.",
+  "The account was created, but Google Calendar isn't connected, so they can't book meetings yet.": "The account was created, but Google Calendar isn't connected, so they can't book meetings yet.",
+  "The account was created, but their meetings calendar could not be. Give them one from Settings.": "The account was created, but their meetings calendar could not be. Give them one from Settings.",
   "One-time password": "One-time password",
   "Share it securely; the agent can change it in Settings. It is shown only once.": "Share it securely; the agent can change it in Settings. It is shown only once.",
   "Done": "Done",

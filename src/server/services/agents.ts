@@ -4,6 +4,7 @@ import type { Database, Json } from "@/lib/database.types";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
 import { endOfDayInTz, isValidTimeZone, startOfDayInTz } from "@/lib/domain/time";
 import { isGoogleDriver } from "@/server/calendar/client";
+import type { CreateAgentWarning } from "@/lib/i18n/app-error-message";
 import { requireAdmin, type RequestContext } from "@/server/context";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
 import { provisionAgentCalendar } from "@/server/services/calendar-connection";
@@ -272,7 +273,7 @@ export interface CreateAgentResult {
   /** Shown once. Never stored or logged by the app. */
   password: string;
   /** Set when the account exists but the target/timezone could not be saved. */
-  warning: string | null;
+  warning: CreateAgentWarning | null;
 }
 
 function isEmailTaken(error: { code?: string; status?: number; message?: string } | null): boolean {
@@ -313,9 +314,9 @@ export async function createAgent(
     .update({ name: values.name, daily_call_target: values.dailyCallTarget, timezone: values.timezone, primary_locale: values.primaryLocale })
     .eq("id", userId)
     .select("id");
-  const warning =
+  const warning: CreateAgentWarning | null =
     updated.error || (updated.data ?? []).length !== 1
-      ? "The account was created, but its daily target, time zone and language could not be saved. Edit the agent to set them."
+      ? "profile_settings_save_failed"
       : (await provisionCalendar(userId, values.name, values.timezone));
 
   return { userId, name: values.name, email: values.email, password, warning };
@@ -326,16 +327,16 @@ export async function createAgent(
  * day. Never fails the account: an agent without a calendar simply cannot book yet, and Settings provisions
  * them later. Returns the warning to show, or null when there is nothing to say.
  */
-async function provisionCalendar(userId: string, name: string, timeZone: string): Promise<string | null> {
+async function provisionCalendar(userId: string, name: string, timeZone: string): Promise<CreateAgentWarning | null> {
   if (!isGoogleDriver()) return null;
   try {
     const created = await provisionAgentCalendar(userId, name, timeZone);
     return created
       ? null
-      : "The account was created, but Google Calendar isn't connected, so they can't book meetings yet.";
+      : "calendar_not_connected";
   } catch (error) {
     console.error("[agents] provisioning a calendar failed", { userId, code: error instanceof Error ? error.name : typeof error });
-    return "The account was created, but their meetings calendar could not be. Give them one from Settings.";
+    return "calendar_provision_failed";
   }
 }
 

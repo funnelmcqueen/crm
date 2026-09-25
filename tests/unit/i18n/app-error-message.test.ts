@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
+import { getAppErrorMessage, getCreateAgentWarningMessage } from "@/lib/i18n/app-error-message";
 
 describe("localized app error messages", () => {
+  it("localizes stable agent creation warning codes", () => {
+    expect(getCreateAgentWarningMessage("calendar_not_connected", "de")).toBe(
+      "Das Konto wurde erstellt, aber Google Kalender ist nicht verbunden. Der Agent kann noch keine Termine buchen.",
+    );
+  });
+
   it("maps standard errors to German messages instead of server English text", () => {
     expect(getAppErrorMessage("unauthorized", "de", "Please sign in again.")).toBe("Bitte melde dich erneut an.");
   });
