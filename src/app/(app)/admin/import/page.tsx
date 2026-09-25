@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { ImportWizard } from "@/components/import/import-wizard";
@@ -8,9 +9,9 @@ import adminEn from "@/lib/i18n/messages/en/admin";
 import adminDe from "@/lib/i18n/messages/de/admin";
 import { requireAdminPage } from "@/server/context";
 
-export const metadata: Metadata = {
-  title: "Import leads",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Import leads", "Leads importieren");
+}
 
 export default async function ImportLeadsPage() {
   const ctx = await requireAdminPage();

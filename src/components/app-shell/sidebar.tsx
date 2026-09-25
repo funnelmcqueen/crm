@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/i18n/locale-provider";
 import { Brand } from "./brand";
-import { getNavItems, isNavItemActive, type NavKey, type ShellUser } from "./nav-config";
+import { getNavItems, isNavItemActive, navLabel, type NavKey, type ShellUser } from "./nav-config";
 import { UserMenu } from "./user-menu";
 
 export interface SidebarProps {
@@ -16,6 +17,7 @@ export interface SidebarProps {
 
 /** Desktop navigation (md and up). */
 export function Sidebar({ user, badges, headerSlot }: SidebarProps) {
+  const { locale } = useLocale();
   const pathname = usePathname();
   const items = getNavItems(user.role);
 
@@ -30,7 +32,7 @@ export function Sidebar({ user, badges, headerSlot }: SidebarProps) {
         ) : null}
       </div>
 
-      <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-2">
+      <nav aria-label={locale === "de" ? "Hauptnavigation" : "Main"} className="flex-1 overflow-y-auto px-3 py-2">
         <ul className="flex flex-col gap-1">
           {items.map((navItem) => {
             const active = isNavItemActive(pathname, navItem);
@@ -48,7 +50,7 @@ export function Sidebar({ user, badges, headerSlot }: SidebarProps) {
                   )}
                 >
                   <Icon aria-hidden className={cn("size-5 shrink-0", active && "text-primary")} />
-                  <span className="min-w-0 flex-1 truncate">{navItem.label}</span>
+                  <span className="min-w-0 flex-1">{navLabel(navItem, locale)}</span>
                   {badges?.[navItem.key] ?? null}
                 </Link>
               </li>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { publicPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { safeNextPath } from "@/lib/supabase/auth-redirect";
@@ -6,9 +7,9 @@ import { LoginForm } from "./login-form";
 import { cookies } from "next/headers";
 import { resolveLocale } from "@/lib/i18n/locales";
 
-export const metadata: Metadata = {
-  title: "Sign in",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return publicPageMetadata("Sign in", "Anmelden");
+}
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 

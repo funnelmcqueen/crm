@@ -1,5 +1,6 @@
 import { ArrowLeft, Contact, PhoneOff } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -21,9 +22,9 @@ import { timeZoneLabel } from "@/components/settings/timezones";
 import { requireAdminPage } from "@/server/context";
 import { getAgentActivity, parseActivityRange } from "@/server/services/agents";
 
-export const metadata: Metadata = {
-  title: "Agent activity",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Agent activity", "Agentenaktivität");
+}
 
 export default async function AgentActivityPage({
   params,

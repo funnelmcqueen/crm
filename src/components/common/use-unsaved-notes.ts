@@ -4,9 +4,10 @@ import { useEffect } from "react";
 
 const dirtyForms = new Set<symbol>();
 export function confirmUnsavedNotes(signingOut = false): boolean {
+  const german = document.documentElement.lang === "de";
   return dirtyForms.size === 0 || window.confirm(signingOut
-    ? "Sign out and discard your unsaved lead notes? Drafts are removed when you sign out."
-    : "You have unsaved lead notes. Leave this page? Your draft stays in this tab until you save it or sign out.");
+    ? german ? "Abmelden und ungespeicherte Lead-Notizen verwerfen? Entwürfe werden beim Abmelden gelöscht." : "Sign out and discard your unsaved lead notes? Drafts are removed when you sign out."
+    : german ? "Du hast ungespeicherte Lead-Notizen. Seite verlassen? Dein Entwurf bleibt bis zum Speichern oder Abmelden in diesem Tab." : "You have unsaved lead notes. Leave this page? Your draft stays in this tab until you save it or sign out.");
 }
 export function releaseUnsavedNotes(): void { dirtyForms.clear(); }
 

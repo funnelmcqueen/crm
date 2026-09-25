@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import { PageHeader } from "@/components/common/page-header";
 import { AgentTargetsList, CompanySettingsForm } from "@/components/settings/admin-settings";
 import { AudioSection } from "@/components/settings/audio-section";
@@ -16,9 +17,9 @@ import { getDialerDriver } from "@/server/env";
 import { getBookableHours, getCalendarConnectionStatus, listAgentCalendars } from "@/server/services/calendar-connection";
 import { getSettingsPageData } from "@/server/services/settings";
 
-export const metadata: Metadata = {
-  title: "Settings",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Settings", "Einstellungen");
+}
 
 function parseNotice(value: string | string[] | undefined): EmailChangeNotice {
   const raw = Array.isArray(value) ? value[0] : value;

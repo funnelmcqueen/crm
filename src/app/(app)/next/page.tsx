@@ -1,5 +1,6 @@
 import { CheckCheck } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/common/empty-state";
@@ -9,9 +10,9 @@ import { getServerWorkspace } from "@/lib/i18n/server-workspace";
 import { requireUserPage } from "@/server/context";
 import { nextLead } from "@/server/services/next-lead";
 
-export const metadata: Metadata = {
-  title: "Next lead",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Next lead", "Nächster Lead");
+}
 
 export default async function NextLeadPage({
   searchParams,

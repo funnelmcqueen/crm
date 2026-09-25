@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { MOBILE_TAB_LIMIT, getNavItems, isNavItemActive, type NavKey, type ShellRole } from "./nav-config";
+import { useLocale } from "@/components/i18n/locale-provider";
+import { MOBILE_TAB_LIMIT, getNavItems, isNavItemActive, navLabel, type NavKey, type ShellRole } from "./nav-config";
 
 export interface BottomNavProps {
   role: ShellRole;
@@ -22,6 +23,7 @@ function ActiveBar() {
 
 /** Mobile navigation (below md): up to five tabs, the rest in a "More" sheet. */
 export function BottomNav({ role, badges }: BottomNavProps) {
+  const { locale } = useLocale();
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const items = getNavItems(role);
@@ -32,7 +34,7 @@ export function BottomNav({ role, badges }: BottomNavProps) {
 
   return (
     <nav
-      aria-label="Main"
+      aria-label={locale === "de" ? "Hauptnavigation" : "Main"}
       className="fixed inset-x-0 bottom-0 z-40 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <ul className="grid h-16 grid-cols-5">
@@ -44,6 +46,7 @@ export function BottomNav({ role, badges }: BottomNavProps) {
             <li key={navItem.key}>
               <Link
                 href={navItem.href}
+                aria-label={navLabel(navItem, locale)}
                 aria-current={active ? "page" : undefined}
                 className={cn(tabClass, active ? "text-foreground" : "text-muted-foreground")}
               >
@@ -52,7 +55,7 @@ export function BottomNav({ role, badges }: BottomNavProps) {
                   <Icon aria-hidden className={cn("size-5", active && "text-primary")} />
                   {badge ? <span className="absolute -top-1.5 -right-3">{badge}</span> : null}
                 </span>
-                <span className="max-w-full truncate">{navItem.label}</span>
+                <span className="max-w-full truncate">{navLabel(navItem, locale, true)}</span>
               </Link>
             </li>
           );
@@ -68,13 +71,13 @@ export function BottomNav({ role, badges }: BottomNavProps) {
                 >
                   {overflowActive ? <ActiveBar /> : null}
                   <Ellipsis aria-hidden className={cn("size-5", overflowActive && "text-primary")} />
-                  <span>More</span>
+                  <span>{locale === "de" ? "Mehr" : "More"}</span>
                 </button>
               </SheetTrigger>
               <SheetContent side="bottom" className="rounded-t-2xl pb-[calc(env(safe-area-inset-bottom)+1rem)]">
                 <SheetHeader className="px-5 pt-5">
-                  <SheetTitle className="text-lg font-bold">More</SheetTitle>
-                  <SheetDescription className="sr-only">Other sections of the CRM</SheetDescription>
+                  <SheetTitle className="text-lg font-bold">{locale === "de" ? "Mehr" : "More"}</SheetTitle>
+                  <SheetDescription className="sr-only">{locale === "de" ? "Weitere Bereiche des CRM" : "Other sections of the CRM"}</SheetDescription>
                 </SheetHeader>
                 <ul className="flex flex-col gap-1 px-3">
                   {overflow.map((navItem) => {
@@ -92,7 +95,7 @@ export function BottomNav({ role, badges }: BottomNavProps) {
                           )}
                         >
                           <Icon aria-hidden className={cn("size-5", active && "text-primary")} />
-                          <span className="flex-1">{navItem.label}</span>
+                          <span className="flex-1">{navLabel(navItem, locale)}</span>
                           {badges?.[navItem.key] ?? null}
                         </Link>
                       </li>

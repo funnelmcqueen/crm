@@ -1,5 +1,6 @@
 import { CalendarCheck, CalendarClock, CircleCheck, History, SearchX, SkipForward, Voicemail } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { currentTime } from "@/components/common/datetime";
@@ -18,9 +19,9 @@ import { followUpCounts, listFollowUps, listVoicemails } from "@/server/services
 import { listAgentsForFilter } from "@/server/services/leads";
 import { listSkippedLeads } from "@/server/services/skipped-leads";
 
-export const metadata: Metadata = {
-  title: "Follow-ups",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Follow-ups", "Wiedervorlagen");
+}
 
 interface EmptyCopy {
   icon: ReactNode;

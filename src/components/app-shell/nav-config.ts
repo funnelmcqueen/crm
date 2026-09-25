@@ -10,6 +10,7 @@ import {
   SquareKanban,
   UsersRound,
 } from "lucide-react";
+import type { Locale } from "@/lib/i18n/locales";
 
 export type ShellRole = "ADMIN" | "AGENT";
 
@@ -69,6 +70,16 @@ export const MOBILE_TAB_LIMIT = 5;
 
 export function getNavItems(role: ShellRole): readonly NavItem[] {
   return role === "ADMIN" ? ADMIN_NAV : AGENT_NAV;
+}
+
+export function navLabel(item: NavItem, locale: Locale, mobile = false): string {
+  if (locale === "en") return item.label;
+  const labels: Record<NavKey, string> = {
+    dashboard: "Dashboard", leads: item.label === "My Leads" ? "Meine Leads" : "Alle Leads",
+    pipeline: "Pipeline", calls: "Anrufe", "follow-ups": mobile ? "Fällig" : "Wiedervorlagen",
+    agents: "Agenten", "phone-numbers": "Telefonnummern", reports: "Berichte", settings: "Einstellungen",
+  };
+  return labels[item.key];
 }
 
 export function isNavItemActive(pathname: string, navItem: NavItem): boolean {

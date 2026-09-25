@@ -19,14 +19,19 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "Funnel McQueen CRM",
-    template: "%s | Funnel McQueen CRM",
-  },
-  description: "Cold-calling CRM for the Funnel McQueen sales team.",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = resolveLocale((await cookies()).get("crm_locale")?.value);
+  return {
+    title: {
+      default: "Funnel McQueen CRM",
+      template: "%s | Funnel McQueen CRM",
+    },
+    description: locale === "de"
+      ? "CRM für Kaltakquise im Vertriebsteam von Funnel McQueen."
+      : "Cold-calling CRM for the Funnel McQueen sales team.",
+    robots: { index: false, follow: false },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#1a1a1a",

@@ -1,5 +1,6 @@
 import { UsersRound } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { CreateAgentDialog } from "@/components/admin/agents/agent-dialogs";
 import { AgentCards, AgentsTable } from "@/components/admin/agents/agents-list";
@@ -15,9 +16,9 @@ import { requireAdminPage } from "@/server/context";
 import { listAgents } from "@/server/services/agents";
 import { getCompanyDefaults } from "@/server/services/settings";
 
-export const metadata: Metadata = {
-  title: "Agents",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Agents", "Agenten");
+}
 
 export default async function AgentsPage() {
   const ctx = await requireAdminPage();

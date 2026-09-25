@@ -3,6 +3,8 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
+import { useLocale } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +48,8 @@ export interface AdminLeadPanelProps {
 }
 
 export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, details }: AdminLeadPanelProps) {
+  const { locale } = useLocale();
+  const de = locale === "de";
   const current = assignedTo?.id ?? UNASSIGNED;
   const [target, setTarget] = useState(current);
   const [syncedCurrent, setSyncedCurrent] = useState(current);
@@ -58,16 +62,16 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
   const [deleting, startDelete] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const targetName = target === UNASSIGNED ? null : (agents.find((a) => a.id === target)?.name ?? "this agent");
+  const targetName = target === UNASSIGNED ? null : (agents.find((a) => a.id === target)?.name ?? (de ? "diesem Agenten" : "this agent"));
 
   function reassign() {
     startReassign(async () => {
       const result = await reassignLeadAction(leadId, target === UNASSIGNED ? null : target);
       if (result.ok) {
-        toast.success(targetName ? `Reassigned to ${targetName}` : "Lead unassigned");
+        toast.success(targetName ? (de ? `Neu zugewiesen an ${targetName}` : `Reassigned to ${targetName}`) : (de ? "Lead nicht zugewiesen" : "Lead unassigned"));
         setConfirmReassign(false);
       } else {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -77,7 +81,7 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
       // Redirects to /leads on success.
       const result = await deleteLeadAction(leadId);
       if (!result.ok) {
-        toast.error(result.error.message);
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
         setDeleteOpen(false);
       }
     });
@@ -87,28 +91,28 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
     <section aria-labelledby="admin-panel-title" className="flex flex-col gap-4 rounded-xl border bg-card p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 id="admin-panel-title" className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Admin
+          {de ? "Administration" : "Admin"}
         </h2>
         <EditLeadDialog leadId={leadId} details={details} />
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className="text-xs text-muted-foreground">Assigned agent</span>
+        <span className="text-xs text-muted-foreground">{de ? "Zugewiesener Agent" : "Assigned agent"}</span>
         <p className="font-bold">
           {assignedTo ? (
             <>
               {assignedTo.name}
-              {assignedTo.active ? null : <span className="ml-2 text-xs font-semibold text-destructive">Disabled</span>}
+              {assignedTo.active ? null : <span className="ml-2 text-xs font-semibold text-destructive">{de ? "Deaktiviert" : "Disabled"}</span>}
             </>
           ) : (
-            <span className="text-muted-foreground">Unassigned</span>
+            <span className="text-muted-foreground">{de ? "Nicht zugewiesen" : "Unassigned"}</span>
           )}
         </p>
       </div>
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="reassign-target" className="text-xs text-muted-foreground">
-          Reassign to
+          {de ? "Neu zuweisen an" : "Reassign to"}
         </Label>
         <div className="flex gap-2">
           <Select value={target} onValueChange={setTarget} disabled={reassigning}>
@@ -117,7 +121,7 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
             </SelectTrigger>
             <SelectContent position="popper" align="start" className="max-h-80">
               <SelectItem value={UNASSIGNED} className="min-h-12">
-                Unassigned
+                {de ? "Nicht zugewiesen" : "Unassigned"}
               </SelectItem>
               {agents.map((agent) => (
                 <SelectItem key={agent.id} value={agent.id} className="min-h-12">
@@ -129,22 +133,22 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
           <AlertDialog open={confirmReassign} onOpenChange={setConfirmReassign}>
             <AlertDialogTrigger asChild>
               <Button variant="outline" className="h-12 px-4" disabled={target === current || reassigning}>
-                Reassign
+                {de ? "Neu zuweisen" : "Reassign"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>{targetName ? `Reassign to ${targetName}?` : "Unassign this lead?"}</AlertDialogTitle>
+                <AlertDialogTitle>{targetName ? (de ? `An ${targetName} neu zuweisen?` : `Reassign to ${targetName}?`) : (de ? "Zuweisung dieses Leads aufheben?" : "Unassign this lead?")}</AlertDialogTitle>
                 <AlertDialogDescription>
                   {targetName
-                    ? `${businessName} moves to ${targetName} with its call history and open follow-ups.`
-                    : `${businessName} will have no agent.`}{" "}
-                  {assignedTo ? "The current agent loses access." : ""}
+                    ? (de ? `${businessName} wird mit Anrufverlauf und offenen Wiedervorlagen an ${targetName} übertragen.` : `${businessName} moves to ${targetName} with its call history and open follow-ups.`)
+                    : (de ? `${businessName} hat danach keinen zugewiesenen Agenten.` : `${businessName} will have no agent.`)}{" "}
+                  {assignedTo ? (de ? "Der bisherige Agent verliert den Zugriff." : "The current agent loses access.") : ""}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel className="h-12" disabled={reassigning}>
-                  Cancel
+                  {de ? "Abbrechen" : "Cancel"}
                 </AlertDialogCancel>
                 <AlertDialogAction
                   className="h-12 font-bold"
@@ -154,7 +158,7 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
                     reassign();
                   }}
                 >
-                  {reassigning ? "Reassigning…" : "Reassign"}
+                  {reassigning ? (de ? "Wird neu zugewiesen…" : "Reassigning…") : (de ? "Neu zuweisen" : "Reassign")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -166,17 +170,17 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
         <AlertDialogTrigger asChild>
           <Button variant="destructive" className="h-12 gap-2">
             <Trash2 aria-hidden />
-            Delete lead
+            {de ? "Lead löschen" : "Delete lead"}
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete lead permanently?</AlertDialogTitle>
-            <AlertDialogDescription>This also deletes its call history and follow-ups.</AlertDialogDescription>
+            <AlertDialogTitle>{de ? "Lead dauerhaft löschen?" : "Delete lead permanently?"}</AlertDialogTitle>
+            <AlertDialogDescription>{de ? "Dadurch werden auch Anrufverlauf und Wiedervorlagen gelöscht." : "This also deletes its call history and follow-ups."}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="h-12" disabled={deleting}>
-              Cancel
+              {de ? "Abbrechen" : "Cancel"}
             </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
@@ -187,7 +191,7 @@ export function AdminLeadPanel({ leadId, businessName, assignedTo, agents, detai
                 remove();
               }}
             >
-              {deleting ? "Deleting…" : "Delete"}
+              {deleting ? (de ? "Wird gelöscht…" : "Deleting…") : (de ? "Löschen" : "Delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -218,6 +222,8 @@ const FIELDS: ReadonlyArray<{
 ];
 
 function EditLeadDialog({ leadId, details }: { leadId: string; details: LeadDetailsForm }) {
+  const { locale } = useLocale();
+  const de = locale === "de";
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<LeadDetailsForm>(details);
   const [error, setError] = useState<string | null>(null);
@@ -237,10 +243,10 @@ function EditLeadDialog({ leadId, details }: { leadId: string; details: LeadDeta
     startTransition(async () => {
       const result = await updateLeadDetailsAction(leadId, form);
       if (result.ok) {
-        toast.success("Lead details saved");
+        toast.success(de ? "Lead-Angaben gespeichert" : "Lead details saved");
         setOpen(false);
       } else {
-        setError(result.error.message);
+        setError(getAppErrorMessage(result.error.code, locale, result.error.message));
       }
     });
   }
@@ -250,21 +256,21 @@ function EditLeadDialog({ leadId, details }: { leadId: string; details: LeadDeta
       <DialogTrigger asChild>
         <Button variant="outline" className="h-12 gap-2 px-3">
           <Pencil aria-hidden />
-          Edit details
+          {de ? "Angaben bearbeiten" : "Edit details"}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Edit lead details</DialogTitle>
-            <DialogDescription>Phone numbers are saved in international format.</DialogDescription>
+            <DialogTitle>{de ? "Lead-Angaben bearbeiten" : "Edit lead details"}</DialogTitle>
+            <DialogDescription>{de ? "Telefonnummern werden im internationalen Format gespeichert." : "Phone numbers are saved in international format."}</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {FIELDS.map((field) => {
               const id = `edit-lead-${field.key}`;
               return (
                 <div key={field.key} className={field.wide ? "flex flex-col gap-1.5 sm:col-span-2" : "flex flex-col gap-1.5"}>
-                  <Label htmlFor={id}>{field.label}</Label>
+                  <Label htmlFor={id}>{de ? ({ businessName: "Firmenname", contactName: "Kontaktname", phone: "Telefon", email: "E-Mail", website: "Website", address: "Adresse", city: "Stadt", state: "Bundesland", country: "Land", source: "Quelle" } as Record<keyof LeadDetailsForm, string>)[field.key] : field.label}</Label>
                   <Input
                     id={id}
                     type={field.type ?? "text"}
@@ -283,10 +289,10 @@ function EditLeadDialog({ leadId, details }: { leadId: string; details: LeadDeta
           </p>
           <DialogFooter>
             <Button type="button" variant="outline" className="h-12" onClick={() => setOpen(false)} disabled={pending}>
-              Cancel
+              {de ? "Abbrechen" : "Cancel"}
             </Button>
             <Button type="submit" className="h-12 font-bold" disabled={pending}>
-              {pending ? "Saving…" : "Save details"}
+              {pending ? (de ? "Wird gespeichert…" : "Saving…") : (de ? "Angaben speichern" : "Save details")}
             </Button>
           </DialogFooter>
         </form>

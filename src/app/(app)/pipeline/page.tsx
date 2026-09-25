@@ -1,5 +1,6 @@
 import { Columns3 } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { currentTime } from "@/components/common/datetime";
 import { EmptyState } from "@/components/common/empty-state";
@@ -16,9 +17,9 @@ import { requireUserPage } from "@/server/context";
 import { listAgentsForFilter, type AgentOption } from "@/server/services/leads";
 import { getPipelineBoard } from "@/server/services/pipeline";
 
-export const metadata: Metadata = {
-  title: "Pipeline",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Pipeline", "Pipeline");
+}
 
 export default async function PipelinePage({
   searchParams,

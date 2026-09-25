@@ -1,5 +1,6 @@
 import { Phone } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import { AddNumberDialog } from "@/components/admin/phone-numbers/add-number-dialog";
 import { PhoneNumbersList } from "@/components/admin/phone-numbers/phone-numbers-list";
 import { currentTime } from "@/components/common/datetime";
@@ -11,9 +12,9 @@ import adminDe from "@/lib/i18n/messages/de/admin";
 import { requireAdminPage } from "@/server/context";
 import { listAssignableAgents, listPhoneNumbers, numberVerificationMode } from "@/server/services/phone-numbers";
 
-export const metadata: Metadata = {
-  title: "Phone Numbers",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Phone Numbers", "Telefonnummern");
+}
 
 export default async function PhoneNumbersPage() {
   const ctx = await requireAdminPage();

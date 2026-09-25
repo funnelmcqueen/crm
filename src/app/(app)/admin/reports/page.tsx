@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import {
   REPORT_PRESETS,
   formatRangeLabel,
@@ -16,9 +17,9 @@ import adminDe from "@/lib/i18n/messages/de/admin";
 import { requireAdminPage } from "@/server/context";
 import { getReport } from "@/server/services/reports";
 
-export const metadata: Metadata = {
-  title: "Reports",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Reports", "Berichte");
+}
 
 export default async function ReportsPage({
   searchParams,

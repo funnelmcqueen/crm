@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import { PageHeader } from "@/components/common/page-header";
 import { AdminDashboardView } from "@/components/dashboard/admin-dashboard";
 import { AgentDashboardView } from "@/components/dashboard/agent-dashboard";
@@ -13,9 +14,9 @@ import { requireUserPage } from "@/server/context";
 import { getDialerDriver, type DialerDriver } from "@/server/env";
 import { getAdminDashboard, getAgentDashboard } from "@/server/services/dashboard";
 
-export const metadata: Metadata = {
-  title: "Dashboard",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Dashboard", "Dashboard");
+}
 
 function todayLabel(tz: string, now: number, locale: Locale): string {
   return formatDate(new Date(now), locale, { weekday: "long", month: "short", day: "numeric", timeZone: isValidTimeZone(tz) ? tz : "America/New_York" });

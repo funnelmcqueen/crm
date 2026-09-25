@@ -1,5 +1,6 @@
 import { Contact, SearchX } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
@@ -19,9 +20,9 @@ import { getServerWorkspace } from "@/lib/i18n/server-workspace";
 import { requireUserPage } from "@/server/context";
 import { countUnassignedLeads, listAgentsForFilter, listLeadSources, listLeads, type AgentOption } from "@/server/services/leads";
 
-export const metadata: Metadata = {
-  title: "Leads",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Leads", "Leads");
+}
 
 export default async function LeadsPage({
   searchParams,

@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, PhoneCall, SearchX } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { z } from "zod";
 import { currentTime } from "@/components/common/datetime";
@@ -15,7 +16,9 @@ import { requireUserPage } from "@/server/context";
 import { CALL_HISTORY_TABS, listCallHistory, type CallHistoryTab } from "@/server/services/calls";
 import { listAgentsForFilter } from "@/server/services/leads";
 
-export const metadata: Metadata = { title: "Calls" };
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Calls", "Anrufe");
+}
 
 const tabs = new Set<string>(CALL_HISTORY_TABS);
 const pageSchema = z.coerce.number().int().min(1).max(100_000);

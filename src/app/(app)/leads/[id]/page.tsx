@@ -1,5 +1,6 @@
 import { ChevronLeft, Globe, Mail, MapPin, ShieldBan } from "lucide-react";
 import type { Metadata } from "next";
+import { appPageMetadata } from "@/lib/i18n/metadata";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BookMeetingButton } from "@/components/booking/book-meeting-button";
@@ -30,9 +31,9 @@ import { getNextMeeting } from "@/server/services/calendar-booking";
 import { getLeadDetail, listAgentsForFilter } from "@/server/services/leads";
 import { getLeadSkipHistory } from "@/server/services/skipped-leads";
 
-export const metadata: Metadata = {
-  title: "Lead",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return appPageMetadata("Lead", "Lead");
+}
 
 function sectionTitle(text: string, id?: string) {
   return (
