@@ -175,15 +175,34 @@ async function buildGoogleDeps(ctx: RequestContext, timeZone: string, ownerId: s
   };
 }
 
+/**
+ * Every branch that gives up logs why. Agents only ever see BOOKING_UNAVAILABLE_MESSAGE (calendarFor), which
+ * is deliberate, but an unexplained "booking isn't available" with a healthy-looking Settings page is close to
+ * undiagnosable from the outside: the driver resolving to anything but google used to return null silently, so
+ * a missing GOOGLE_* variable looked identical to a broken connection and to an agent with no calendar.
+ */
 async function defaultCalendar(ctx: RequestContext, ownerId: string): Promise<CalendarClient | null> {
   const timeZone = await companyTimeZone(ctx);
   let driver: ReturnType<typeof getCalendarDriver>;
   try {
     driver = getCalendarDriver();
-  } catch {
+  } catch (error) {
+    console.error("[booking] calendar driver unresolved", {
+      reason: "invalid_env",
+      code: error instanceof Error ? error.name : typeof error,
+    });
     return null;
   }
-  if (driver !== "google") return resolveCalendarClient(timeZone, ownerId);
+  if (driver !== "google") {
+    const calendar = resolveCalendarClient(timeZone, ownerId);
+    if (!calendar) {
+      // In production an unset CALENDAR_DRIVER resolves to "unavailable" unless all three GOOGLE_* variables
+      // are present — the encryption key included, which the OAuth connect flow does not require. So Settings
+      // can say "Connected" while booking is off, purely because that one variable is missing.
+      console.error("[booking] no calendar for driver", { driver, reason: "driver_not_google" });
+    }
+    return calendar;
+  }
   const deps = await buildGoogleDeps(ctx, timeZone, ownerId);
   return deps ? resolveGoogleCalendar(deps) : null;
 }

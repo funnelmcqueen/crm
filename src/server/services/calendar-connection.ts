@@ -6,7 +6,7 @@ import { z } from "zod";
 import { type BookableRange, validateBookableRanges } from "@/lib/domain/bookable-hours";
 import { requireActive, requireAdmin, type RequestContext } from "@/server/context";
 import { AppError, mapPostgrestError, type PostgrestLikeError } from "@/server/errors";
-import { accessTokenFor, createAppCalendar } from "@/server/google/api";
+import { accessTokenFor, createAppCalendar, GoogleApiError } from "@/server/google/api";
 import { decryptRefreshToken } from "@/server/google/crypto";
 import { revokeToken } from "@/server/google/oauth";
 import { createAdminClient } from "@/server/supabase/admin";
@@ -208,7 +208,31 @@ export async function provisionCalendarForAgent(ctx: RequestContext | null, user
   // Already provisioned: making a second calendar would strand the first, with its meetings on it.
   if (profile.google_calendar_id) return listAgentCalendars(admin);
 
-  const created = await provisionAgentCalendar(profile.id, profile.name || profile.email, profile.timezone);
+  let created: string | null;
+  try {
+    created = await provisionAgentCalendar(profile.id, profile.name || profile.email, profile.timezone);
+  } catch (cause) {
+    // Admin-only, so unlike the agent-facing booking messages this says what actually went wrong. Without it
+    // every cause — a missing encryption key, a Google refusal, a rate limit — arrived as the generic
+    // "Something went wrong", which is close to undiagnosable without server logs.
+    console.error("[calendar-connection] provisioning failed", {
+      userId: profile.id,
+      code: cause instanceof GoogleApiError ? `${cause.kind}:${cause.reason}` : cause instanceof Error ? cause.name : typeof cause,
+      status: cause instanceof GoogleApiError ? cause.status : undefined,
+    });
+    if (cause instanceof GoogleApiError) {
+      if (cause.kind === "invalid_grant") {
+        throw new AppError("unavailable", "Google has revoked access. Reconnect Google Calendar, then try again.", { cause });
+      }
+      if (cause.kind === "transient") {
+        throw new AppError("unavailable", "Google is rate-limiting or unavailable. Wait a few minutes and try again.", { cause });
+      }
+      throw new AppError("unavailable", `Google refused to create the calendar (${cause.reason}).`, { cause });
+    }
+    throw new AppError("unavailable", "Couldn't create the calendar. Check GOOGLE_TOKEN_ENCRYPTION_KEY is set and redeploy.", {
+      cause,
+    });
+  }
   if (!created) throw new AppError("unavailable", NOT_CONNECTED_MESSAGE);
   return listAgentCalendars(admin);
 }
