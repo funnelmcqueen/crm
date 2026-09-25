@@ -1,3 +1,5 @@
+"use client";
+
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { formatDate } from "@/lib/i18n/format";
 import { CalendarCheck } from "lucide-react";

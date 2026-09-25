@@ -1,3 +1,5 @@
+"use client";
+
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { formatNumber } from "@/lib/i18n/format";
 import type { DailyGoal } from "@/lib/domain/daily-goal";

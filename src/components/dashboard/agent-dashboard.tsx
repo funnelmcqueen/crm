@@ -1,3 +1,5 @@
+"use client";
+
 import { CalendarClock, ChevronRight, PartyPopper, SkipForward, Voicemail } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";

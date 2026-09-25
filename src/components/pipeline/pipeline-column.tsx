@@ -68,7 +68,7 @@ export function PipelineColumnView({ column, total, shown, loading, dragging, on
         {remaining > 0 ? (
           <Button variant="outline" className="h-12 w-full" disabled={loading} onClick={onLoadMore}>
             {loading ? t.loading : t.loadMore.replace("{count}", formatNumber(Math.min(remaining, PIPELINE_PAGE_SIZE_CLIENT), locale))}
-            <span className="sr-only"> in {stage}</span>
+            <span className="sr-only">{locale === "de" ? ` in der Phase ${stage}` : ` in ${stage}`}</span>
           </Button>
         ) : null}
       </div>

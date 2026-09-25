@@ -1,3 +1,5 @@
+"use client";
+
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { ChevronRight, Phone, SkipForward, TriangleAlert, UserPlus } from "lucide-react";
 import Link from "next/link";
