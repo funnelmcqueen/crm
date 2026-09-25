@@ -3,8 +3,8 @@
 import { CalendarClock, Check, ChevronDown } from "lucide-react";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
-import { useTranslations } from "@/components/i18n/locale-provider";
-import { formatDateTime } from "@/components/common/datetime";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { formatDate } from "@/lib/i18n/format";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -66,6 +66,9 @@ export interface RescheduleMenuProps {
 
 export function RescheduleMenu({ followUpId, businessName, tz, className }: RescheduleMenuProps) {
   const t = useTranslations("workspace").queues;
+  const details = useTranslations("workspace").queueList;
+  const { locale } = useLocale();
+  const localizedDate = (value: string | Date) => formatDate(new Date(value), locale, { dateStyle: "medium", timeStyle: "short", timeZone: tz });
   const [pending, startTransition] = useTransition();
   const [picks, setPicks] = useState<FollowUpQuickPicks | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
@@ -79,7 +82,7 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
     startTransition(async () => {
       const result = await rescheduleFollowUpAction(followUpId, choice);
       if (result.ok) {
-        toast.success(`Rescheduled to ${formatDateTime(result.data.dueAt, tz)}`);
+        toast.success(details.savedTo.replace("{date}", localizedDate(result.data.dueAt)));
         onDone?.();
       } else {
         setError(result.error.message);
@@ -135,7 +138,7 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
             >
               <span className="font-semibold">{{ tomorrow9am: t.tomorrow, in3Days: t.in3Days, nextWeek: t.nextWeek }[pick.key]}</span>
               {picks ? (
-                <span className="text-xs text-muted-foreground tabular-nums">{formatDateTime(picks[pick.key], tz)}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{localizedDate(picks[pick.key])}</span>
               ) : null}
             </DropdownMenuItem>
           ))}
@@ -149,13 +152,13 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
       <Dialog open={customOpen} onOpenChange={(open) => !pending && setCustomOpen(open)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reschedule follow-up</DialogTitle>
+            <DialogTitle>{details.rescheduleTitle}</DialogTitle>
             <DialogDescription>
-              {businessName}. Times are in {tz.replace(/_/g, " ")}.
+              {businessName}. {details.timesIn.replace("{zone}", tz.replace(/_/g, " "))}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={onCustomSubmit} className="flex flex-col gap-3">
-            <Label htmlFor={inputId}>Date and time</Label>
+            <Label htmlFor={inputId}>{details.dateTime}</Label>
             <Input
               id={inputId}
               type="datetime-local"
@@ -171,10 +174,10 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
             </p>
             <DialogFooter>
               <Button type="button" variant="outline" className="h-12 px-5" disabled={pending} onClick={() => setCustomOpen(false)}>
-                Cancel
+                {details.cancel}
               </Button>
               <Button type="submit" className="h-12 px-5 font-bold" disabled={pending || custom === ""}>
-                {pending ? "Saving…" : "Save"}
+                {pending ? t.saving : details.save}
               </Button>
             </DialogFooter>
           </form>

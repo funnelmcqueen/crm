@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useOptimistic, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import { DateTime, formatDateTime } from "@/components/common/datetime";
+import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { DateTime } from "@/components/common/datetime";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { leadFlowHref } from "@/lib/dialer/skip-list";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
-import { describeSkipReason } from "@/lib/domain/skips";
+import { formatDate } from "@/lib/i18n/format";
 import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/domain/statuses";
 import { followUpQuickPicks, tryZonedLocalInputToUtc, utcToZonedLocalInput } from "@/lib/domain/time";
 import { reassignLeadAction, setNextFollowUpAction, updateLeadStatusAction } from "@/server/actions/leads";
@@ -59,6 +60,14 @@ const CLOSED_STATUSES: readonly LeadStatus[] = ["NOT_INTERESTED", "DO_NOT_CONTAC
  * the skip through the existing lead actions. The row leaves at once and comes back if the save fails.
  */
 export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: SkippedLeadListProps) {
+  const t = useTranslations("workspace").skippedQueue;
+  const { locale } = useLocale();
+  const reasonLabels = { CALL_LATER: t.reasonCallLater, NEEDS_RESEARCH: t.reasonResearch, BAD_DATA: t.reasonBadData, NOT_PRIORITY: t.reasonNotPriority, OTHER: t.reasonOther };
+  const describeReason = (reason: SkippedLeadRow["reason"], note: string | null) => {
+    const label = reason ? reasonLabels[reason] : null;
+    const text = note?.trim() || null;
+    return label && text ? (reason === "OTHER" ? text : `${label}: ${text}`) : label ?? text ?? t.noReason;
+  };
   const router = useRouter();
   const [visibleRows, hideRow] = useOptimistic(rows, (state: SkippedLeadRow[], id: string) => state.filter((row) => row.skipId !== id));
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -80,7 +89,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
         toast.success(success(result.data));
         after?.();
       } else {
-        toast.error(result ? result.error.message : `${row.businessName} was not updated. Try again.`);
+        toast.error(result ? result.error.message : t.updateFailed.replace("{name}", row.businessName));
       }
     });
   }
@@ -89,7 +98,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
     act(
       row,
       () => resumeSkippedLeadAction(row.leadId),
-      () => (isAdmin && row.ownerName ? `${row.businessName} is back in ${row.ownerName}'s call queue` : `${row.businessName} is back in your call queue`),
+      () => (isAdmin && row.ownerName ? t.resumedAgent.replace("{name}", row.businessName).replace("{agent}", row.ownerName) : t.resumedOwn.replace("{name}", row.businessName)),
       // An agent resumes to call it now; an admin only hands it back.
       isAdmin ? undefined : () => router.push(leadFlowHref(row.leadId, [], null)),
     );
@@ -99,16 +108,16 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
     act(
       row,
       () => setNextFollowUpAction(row.leadId, due.toISOString()),
-      () => `Follow-up set for ${formatDateTime(due, tz)}: ${row.businessName}`,
+      () => t.followUpSet.replace("{date}", formatDate(due, locale, { dateStyle: "medium", timeStyle: "short", timeZone: tz })).replace("{name}", row.businessName),
     );
   }
 
   function setStatus(row: SkippedLeadRow, status: LeadStatus) {
-    act(row, () => updateLeadStatusAction(row.leadId, status), () => `${row.businessName} moved to ${STATUS_LABELS[status]}`);
+    act(row, () => updateLeadStatusAction(row.leadId, status), () => t.movedStatus.replace("{name}", row.businessName).replace("{status}", STATUS_LABELS[status]));
   }
 
   function reassign(row: SkippedLeadRow, agent: SkippedAgentOption) {
-    act(row, () => reassignLeadAction(row.leadId, agent.id), () => `${row.businessName} reassigned to ${agent.name}`);
+    act(row, () => reassignLeadAction(row.leadId, agent.id), () => t.reassigned.replace("{name}", row.businessName).replace("{agent}", agent.name));
   }
 
   if (visibleRows.length === 0) return <>{empty}</>;
@@ -136,7 +145,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
                   </p>
                   {isAdmin ? (
                     <p className="truncate text-xs text-muted-foreground">
-                      Agent: <span className="text-foreground">{row.ownerName ?? "Unknown"}</span>
+                      {t.agent}: <span className="text-foreground">{row.ownerName ?? t.unknown}</span>
                     </p>
                   ) : null}
                 </div>
@@ -144,17 +153,17 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
               </div>
 
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                <dt className="text-muted-foreground">Skipped</dt>
+                <dt className="text-muted-foreground">{t.skipped}</dt>
                 <dd>
-                  <DateTime value={row.skippedAt} tz={tz} now={now} />
+                  <DateTime value={row.skippedAt} tz={tz} now={now} locale={locale} />
                 </dd>
-                <dt className="text-muted-foreground">Reason</dt>
-                <dd className="break-words">{describeSkipReason(row.reason, row.note)}</dd>
+                <dt className="text-muted-foreground">{t.reason}</dt>
+                <dd className="break-words">{describeReason(row.reason, row.note)}</dd>
                 {row.nextFollowUpAt ? (
                   <>
-                    <dt className="text-muted-foreground">Follow-up</dt>
+                    <dt className="text-muted-foreground">{t.followUp}</dt>
                     <dd>
-                      <DateTime value={row.nextFollowUpAt} tz={tz} now={now} />
+                      <DateTime value={row.nextFollowUpAt} tz={tz} now={now} locale={locale} />
                     </dd>
                   </>
                 ) : null}
@@ -163,7 +172,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
               <div className="flex flex-wrap gap-2">
                 <Button className="h-12 gap-2 px-4 font-bold" disabled={busy} onClick={() => resume(row)}>
                   <PhoneForwarded aria-hidden />
-                  {isAdmin ? "Resume" : "Resume calling"}
+                  {isAdmin ? t.resume : t.resumeCalling}
                   <span className="sr-only"> {row.businessName}</span>
                 </Button>
 
@@ -171,20 +180,20 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="h-12 gap-1.5 px-3 font-semibold" disabled={busy}>
                       <CalendarClock aria-hidden />
-                      Follow-up
-                      <span className="sr-only"> for {row.businessName}</span>
+                      {t.followUp}
+                      <span className="sr-only"> {t.forName.replace("{name}", row.businessName)}</span>
                       <ChevronDown aria-hidden className="text-muted-foreground" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-56">
                     {QUICK_PICKS.map((pick) => (
                       <DropdownMenuItem key={pick.key} className="min-h-12" onSelect={() => schedule(row, followUpQuickPicks(tz)[pick.key])}>
-                        {pick.label}
+                        {{ tomorrow9am: t.tomorrow, in3Days: t.in3Days, nextWeek: t.nextWeek }[pick.key]}
                       </DropdownMenuItem>
                     ))}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem className="min-h-12" onSelect={() => setCustomFor(row)}>
-                      Custom…
+                      {t.custom}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -192,22 +201,22 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="h-12 gap-1.5 px-3 font-semibold" disabled={busy || statusChoices.length === 0}>
-                      Status
-                      <span className="sr-only"> of {row.businessName}</span>
+                      {t.status}
+                      <span className="sr-only"> {t.ofName.replace("{name}", row.businessName)}</span>
                       <ChevronDown aria-hidden className="text-muted-foreground" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="max-h-80 min-w-56 overflow-y-auto">
                     {statusChoices.includes("NOT_INTERESTED") ? (
                       <>
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Close the lead</DropdownMenuLabel>
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">{t.closeLead}</DropdownMenuLabel>
                         <DropdownMenuItem className="min-h-12" onSelect={() => setStatus(row, "NOT_INTERESTED")}>
-                          Close as Not Interested
+                          {t.closeNotInterested}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                       </>
                     ) : null}
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">Move to</DropdownMenuLabel>
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">{t.moveTo}</DropdownMenuLabel>
                     {statusChoices
                       .filter((status) => !CLOSED_STATUSES.includes(status) || isAdmin)
                       .map((status) => (
@@ -223,7 +232,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" className="h-12 gap-1.5 px-3 font-semibold" disabled={busy || agents.length === 0}>
                         <UserRoundCog aria-hidden />
-                        Reassign
+                        {t.reassign}
                         <span className="sr-only"> {row.businessName}</span>
                         <ChevronDown aria-hidden className="text-muted-foreground" />
                       </Button>
@@ -272,6 +281,7 @@ function CustomFollowUpDialog({
   onClose(): void;
   onSubmit(due: Date): void;
 }) {
+  const t = useTranslations("workspace").skippedQueue;
   const inputId = useId();
   const [value, setValue] = useState(() => utcToZonedLocalInput(followUpQuickPicks(tz).tomorrow9am, tz));
   const [error, setError] = useState<string | null>(null);
@@ -280,7 +290,7 @@ function CustomFollowUpDialog({
     event.preventDefault();
     const due = tryZonedLocalInputToUtc(value, tz);
     if (!due || due.getTime() <= Date.now()) {
-      setError("Pick a date and time in the future.");
+      setError(t.pickFuture);
       return;
     }
     onSubmit(due);
@@ -290,13 +300,13 @@ function CustomFollowUpDialog({
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Schedule a follow-up</DialogTitle>
+          <DialogTitle>{t.schedule}</DialogTitle>
           <DialogDescription>
-            {row.businessName}. Times are in {tz.replace(/_/g, " ")}.
+            {t.timesIn.replace("{name}", row.businessName).replace("{zone}", tz.replace(/_/g, " "))}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-3">
-          <Label htmlFor={inputId}>Date and time</Label>
+          <Label htmlFor={inputId}>{t.dateTime}</Label>
           <Input
             id={inputId}
             type="datetime-local"
@@ -311,10 +321,10 @@ function CustomFollowUpDialog({
           </p>
           <DialogFooter>
             <Button type="button" variant="outline" className="h-12 px-5" onClick={onClose}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="submit" className="h-12 px-5 font-bold">
-              Save
+              {t.save}
             </Button>
           </DialogFooter>
         </form>

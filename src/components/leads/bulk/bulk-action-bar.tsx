@@ -148,7 +148,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
 
   function assign(agent: BulkAgentOption | null) {
     run(
-      agent ? `Assigning ${leadCount(count)} to ${agent.name}…` : `Unassigning ${leadCount(count)}…`,
+      agent ? t.assigning.replace("{count}", leadCount(count)).replace("{agent}", agent.name) : t.unassigning.replace("{count}", leadCount(count)),
       () => bulkAssignAction(selectedIds, agent?.id ?? null),
       (data) => confirmed(describeAssignResult(data, agent?.name ?? null), data.undo),
     );
@@ -156,7 +156,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
 
   function setStatus(status: LeadStatus) {
     run(
-      `Moving ${leadCount(count)} to ${STATUS_LABELS[status]}…`,
+      t.moving.replace("{count}", leadCount(count)).replace("{status}", STATUS_LABELS[status]),
       () => bulkUpdateStatusAction(selectedIds, status),
       (data) => confirmed(describeStatusResult(data, status), data.undo),
     );
@@ -180,8 +180,8 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         selection.replace(result.data.ids);
         setMessage(
           result.data.total > result.data.ids.length
-            ? `Selected the first ${leadCount(result.data.ids.length)} of ${result.data.total.toLocaleString("en-US")}.`
-            : `Selected all ${leadCount(result.data.ids.length)}.`,
+            ? t.selectedFirst.replace("{count}", leadCount(result.data.ids.length)).replace("{total}", result.data.total.toLocaleString(locale === "de" ? "de-DE" : "en-US"))
+            : t.selectedAll.replace("{count}", leadCount(result.data.ids.length)),
         );
       } catch {
         setMessage(t.selectAllFailed);
@@ -190,7 +190,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
   }
 
   function exportSelected() {
-    setMessage(`Preparing a CSV of ${leadCount(count)}…`);
+    setMessage(t.preparingCsv.replace("{count}", leadCount(count)));
     startTransition(async () => {
       try {
         const response = await fetch("/api/leads/export", {
@@ -219,7 +219,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
         setMessage("");
-        toast.success(`Exported ${leadCount(count)}.`);
+        toast.success(t.exported.replace("{count}", leadCount(count)));
       } catch {
         setMessage(t.exportFailed);
       }
@@ -365,7 +365,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           onClose={() => setDialog(null)}
           onSubmit={(due, note) =>
             run(
-              `Setting a follow-up on ${leadCount(count)}…`,
+              t.settingFollowUp.replace("{count}", leadCount(count)),
               () => bulkScheduleFollowUpAction(selectedIds, due.toISOString(), note),
               (data) => confirmed(describeFollowUpResult(data), null),
             )
@@ -379,7 +379,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           onClose={() => setDialog(null)}
           onSubmit={(source) =>
             run(
-              source === null ? `Clearing the source on ${leadCount(count)}…` : `Setting the source on ${leadCount(count)}…`,
+              source === null ? t.clearingSource.replace("{count}", leadCount(count)) : t.settingSource.replace("{count}", leadCount(count)),
               () => bulkSetSourceAction(selectedIds, source),
               (data) => confirmed(describeSourceResult(data, data.source), null),
             )
@@ -392,7 +392,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           onClose={() => setDialog(null)}
           onSubmit={(type) =>
             run(
-              type === null ? `Clearing the business type on ${leadCount(count)}…` : `Setting the business type on ${leadCount(count)}…`,
+              type === null ? t.clearingBusinessType.replace("{count}", leadCount(count)) : t.settingBusinessType.replace("{count}", leadCount(count)),
               () => bulkSetBusinessTypeAction(selectedIds, type),
               (data) => confirmed(describeBusinessTypeResult(data, data.businessType), null),
             )
@@ -406,7 +406,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           confirmLabel={t.clearFollowUps}
           onClose={() => setDialog(null)}
           onConfirm={() =>
-            run(`Clearing follow-ups on ${leadCount(count)}…`, () => bulkCompleteFollowUpsAction(selectedIds), (data) =>
+            run(t.clearingFollowUps.replace("{count}", leadCount(count)), () => bulkCompleteFollowUpsAction(selectedIds), (data) =>
               confirmed(describeCompletedFollowUps(data), null),
             )
           }
@@ -430,7 +430,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
           destructive
           onClose={() => setDialog(null)}
           onConfirm={() =>
-            run(`Deleting ${leadCount(count)}…`, () => bulkDeleteAction(selectedIds), (data) => confirmed(describeDeleteResult(data), null))
+            run(t.deleting.replace("{count}", leadCount(count)), () => bulkDeleteAction(selectedIds), (data) => confirmed(describeDeleteResult(data), null))
           }
         />
       ) : null}
