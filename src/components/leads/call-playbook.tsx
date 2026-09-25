@@ -1,3 +1,4 @@
+"use client";
 import { BookOpenCheck } from "lucide-react";
 import { MARCH_RESTAURANT_PLAYBOOK } from "@/lib/domain/call-playbook";
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";

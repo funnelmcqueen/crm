@@ -1,3 +1,4 @@
+"use client";
 import Link from "next/link";
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { cn } from "@/lib/utils";

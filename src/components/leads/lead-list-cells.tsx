@@ -1,3 +1,4 @@
+"use client";
 import { DateTime } from "@/components/common/datetime";
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { cn } from "@/lib/utils";

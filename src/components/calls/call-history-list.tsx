@@ -1,3 +1,4 @@
+"use client";
 import { PhoneIncoming, PhoneOutgoing, Voicemail } from "lucide-react";
 import Link from "next/link";
 import { DateTime, formatDuration } from "@/components/common/datetime";

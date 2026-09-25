@@ -1,3 +1,4 @@
+"use client";
 import { PhoneIncoming, PhoneOutgoing } from "lucide-react";
 import { DateTime, formatDuration } from "@/components/common/datetime";
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
