@@ -4,6 +4,7 @@ import { CalendarClock, Check, ChevronDown } from "lucide-react";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { formatDate } from "@/lib/i18n/format";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,8 +86,9 @@ export function RescheduleMenu({ followUpId, businessName, tz, className }: Resc
         toast.success(details.savedTo.replace("{date}", localizedDate(result.data.dueAt)));
         onDone?.();
       } else {
-        setError(result.error.message);
-        toast.error(result.error.message);
+        const message = getAppErrorMessage(result.error.code, locale, result.error.message);
+        setError(message);
+        toast.error(message);
       }
     });
   }

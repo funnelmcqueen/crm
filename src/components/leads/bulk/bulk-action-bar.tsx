@@ -26,7 +26,8 @@ import {
   leadCount,
   type BulkUndo,
 } from "@/lib/domain/bulk-leads";
-import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/domain/statuses";
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
 import { cn } from "@/lib/utils";
 import {
   bulkAssignAction,
@@ -69,6 +70,7 @@ const BUTTON = "h-12 gap-2 px-4";
  */
 export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) {
   const t = useTranslations("workspace").bulkUi;
+  const statusLabels = useTranslations("workspace").statuses;
   const { locale } = useLocale();
   const countLabel = (n: number) => `${n.toLocaleString(locale === "de" ? "de-DE" : "en-US")} ${n === 1 ? t.lead : t.leads}`;
   const selection = useLeadSelectionContext();
@@ -106,7 +108,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         return;
       }
       if (!result.ok) {
-        setMessage(result.error.message);
+        setMessage(getAppErrorMessage(result.error.code, locale, result.error.message));
         return;
       }
       setMessage("");
@@ -138,7 +140,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
         label: t.undo,
         onClick: () => {
           void undoBulkChangeAction(undo).then(
-            (result) => (result.ok ? toast.success(describeUndoResult(result.data)) : toast.error(result.error.message)),
+            (result) => (result.ok ? toast.success(describeUndoResult(result.data)) : toast.error(getAppErrorMessage(result.error.code, locale, result.error.message))),
             () => toast.error(t.undoFailed),
           );
         },
@@ -156,7 +158,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
 
   function setStatus(status: LeadStatus) {
     run(
-      t.moving.replace("{count}", leadCount(count)).replace("{status}", STATUS_LABELS[status]),
+      t.moving.replace("{count}", leadCount(count)).replace("{status}", statusLabels[status]),
       () => bulkUpdateStatusAction(selectedIds, status),
       (data) => confirmed(describeStatusResult(data, status), data.undo),
     );
@@ -174,7 +176,7 @@ export function BulkActionBar({ agents, sources, tz, now }: BulkActionBarProps) 
       try {
         const result = await listMatchingLeadIdsAction(selection.filters);
         if (!result.ok) {
-          setMessage(result.error.message);
+          setMessage(getAppErrorMessage(result.error.code, locale, result.error.message));
           return;
         }
         selection.replace(result.data.ids);

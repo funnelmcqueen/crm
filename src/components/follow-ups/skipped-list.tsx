@@ -23,7 +23,8 @@ import { Label } from "@/components/ui/label";
 import { leadFlowHref } from "@/lib/dialer/skip-list";
 import { formatPhoneDisplay } from "@/lib/domain/phone";
 import { formatDate } from "@/lib/i18n/format";
-import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/domain/statuses";
+import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/domain/statuses";
 import { followUpQuickPicks, tryZonedLocalInputToUtc, utcToZonedLocalInput } from "@/lib/domain/time";
 import { reassignLeadAction, setNextFollowUpAction, updateLeadStatusAction } from "@/server/actions/leads";
 import { resumeSkippedLeadAction } from "@/server/actions/skipped-leads";
@@ -61,6 +62,7 @@ const CLOSED_STATUSES: readonly LeadStatus[] = ["NOT_INTERESTED", "DO_NOT_CONTAC
  */
 export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: SkippedLeadListProps) {
   const t = useTranslations("workspace").skippedQueue;
+  const statusLabels = useTranslations("workspace").statuses;
   const { locale } = useLocale();
   const reasonLabels = { CALL_LATER: t.reasonCallLater, NEEDS_RESEARCH: t.reasonResearch, BAD_DATA: t.reasonBadData, NOT_PRIORITY: t.reasonNotPriority, OTHER: t.reasonOther };
   const describeReason = (reason: SkippedLeadRow["reason"], note: string | null) => {
@@ -89,7 +91,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
         toast.success(success(result.data));
         after?.();
       } else {
-        toast.error(result ? result.error.message : t.updateFailed.replace("{name}", row.businessName));
+        toast.error(result ? getAppErrorMessage(result.error.code, locale, result.error.message) : t.updateFailed.replace("{name}", row.businessName));
       }
     });
   }
@@ -113,7 +115,7 @@ export function SkippedLeadList({ rows, tz, now, isAdmin, agents, empty }: Skipp
   }
 
   function setStatus(row: SkippedLeadRow, status: LeadStatus) {
-    act(row, () => updateLeadStatusAction(row.leadId, status), () => t.movedStatus.replace("{name}", row.businessName).replace("{status}", STATUS_LABELS[status]));
+    act(row, () => updateLeadStatusAction(row.leadId, status), () => t.movedStatus.replace("{name}", row.businessName).replace("{status}", statusLabels[status]));
   }
 
   function reassign(row: SkippedLeadRow, agent: SkippedAgentOption) {

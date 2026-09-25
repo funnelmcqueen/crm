@@ -1,4 +1,13 @@
 const en = {
+  appErrors: {
+    unauthorized: "Please sign in again.",
+    forbidden: "You don't have permission to do that.",
+    not_found: "Not found.",
+    validation: "Some of the information is invalid.",
+    conflict: "That can't be done right now.",
+    unavailable: "This feature is not available right now.",
+    internal: "Something went wrong. Please try again.",
+  },
   statuses: {
     NEW: "New",
     TO_CALL: "To Call",

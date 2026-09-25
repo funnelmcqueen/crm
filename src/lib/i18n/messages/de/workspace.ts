@@ -1,6 +1,15 @@
 import type en from "../en/workspace";
 
 const de: { [K in keyof typeof en]: typeof en[K] extends string ? string : { [P in keyof typeof en[K]]: string } } = {
+  appErrors: {
+    unauthorized: "Bitte melde dich erneut an.",
+    forbidden: "Du hast keine Berechtigung für diese Aktion.",
+    not_found: "Nicht gefunden.",
+    validation: "Einige Angaben sind ungültig.",
+    conflict: "Das ist derzeit nicht möglich.",
+    unavailable: "Diese Funktion ist derzeit nicht verfügbar.",
+    internal: "Es ist ein Fehler aufgetreten. Bitte versuche es erneut.",
+  },
   statuses: {
     NEW: "Neu",
     TO_CALL: "Anzurufen",
