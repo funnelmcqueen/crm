@@ -473,6 +473,83 @@ export async function setAgentActive(
   return { userId: id, active: next };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Password reset (docs/DEVIATIONS.md D51)
+// ---------------------------------------------------------------------------------------------
+
+export interface ResetAgentPasswordResult {
+  userId: string;
+  name: string;
+  email: string;
+  /** Shown once. Never stored or logged by the app. */
+  password: string;
+}
+
+/**
+ * Gives one agent a new one-time password, the same way `createAgent` gives them their first: generated
+ * here, returned once, never stored. Three things happen, in this order, and each is required.
+ *
+ * 1. The password is set with the Auth admin API, which also confirms the email address. Confirming looks
+ *    incidental and is not: an account made straight in the Supabase dashboard ("Add user" without the
+ *    invite being clicked) has an unconfirmed email, which blocks sign-in while Auth requires confirmation
+ *    and makes the dashboard refuse to send its own recovery mail. Resetting here fixes that account too.
+ * 2. Every open session of theirs is ended (D31). Supabase leaves other sessions alone when an admin
+ *    changes a password, so without this the browser that still holds the old session keeps working — and
+ *    the reason to reset is usually that someone else may have the old password. The agent stays active,
+ *    unlike a disable, so an access token lifted out of a browser still reads their own rows straight from
+ *    PostgREST until it expires; what this closes is every route the app itself offers.
+ * 3. Only then is the new password returned to the caller, so a half-finished reset is never reported as
+ *    done. Resetting again generates another password and repeats the steps, so a retry always heals.
+ *
+ * Admins only, and only on an AGENT: resetting another admin's password would be a full account takeover
+ * of an equal, which `admin_delete_agent` already refuses for the same reason. An admin's own password
+ * goes through Settings, where the current one must be typed.
+ */
+export async function resetAgentPassword(
+  ctx: RequestContext | null,
+  userId: unknown,
+  deps?: Partial<AgentServiceDeps>,
+): Promise<ResetAgentPasswordResult> {
+  const admin = requireAdmin(ctx);
+  const id = parseUserId(userId);
+  if (id === admin.userId) {
+    throw new AppError("forbidden", "Change your own password in Settings.");
+  }
+  const { authAdmin, generatePassword, revokeSessions } = resolveDeps(deps);
+
+  // Read with the admin's own session, like every other management action. A deleted agent is not_found.
+  const { data, error } = await admin.supabase
+    .from("profiles")
+    .select("id, name, email, role, deleted_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) fail(error);
+  if (!data || data.deleted_at !== null) throw new AppError("not_found");
+  if (data.role !== "AGENT") {
+    throw new AppError("forbidden", "Only an agent's password can be reset here.");
+  }
+
+  const password = generatePassword();
+  const updated = await authAdmin().auth.admin.updateUserById(id, { password, email_confirm: true });
+  if (updated.error) {
+    throw new AppError("unavailable", "Their password could not be changed. Try again.", { cause: updated.error });
+  }
+
+  try {
+    await revokeSessions(id);
+  } catch (cause) {
+    // The password is already live, so this one is now the only way in — but a session from before the
+    // reset may still be open. Say so rather than hand over a password and imply the account is sealed.
+    throw new AppError(
+      "unavailable",
+      "Their password was changed, but their open sessions could not be ended. Reset it again to finish.",
+      { cause },
+    );
+  }
+
+  return { userId: id, name: data.name || data.email, email: data.email, password };
+}
+
 export async function setInAppCalling(
   ctx: RequestContext | null,
   userId: unknown,

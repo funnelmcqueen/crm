@@ -14,9 +14,25 @@ something in the UI.
 ### Add an agent
 
 Admin → Agents → Create. Name, email, daily target, timezone. A 20-character one-time password is
-shown once in the dialog with a Copy button; it is never stored or logged. If you lose it before
-the agent signs in, disable the account and create a new one, or have them use the Supabase password
-reset flow.
+shown once in the dialog with a Copy button; it is never stored or logged. If you lose it, reset it
+(below) rather than making a second account.
+
+### Reset an agent's password (they lost it, or it may be known to someone else)
+
+Admin → Agents → the row's menu → **Reset password**. This issues a new 20-character one-time
+password, shown once with a Copy button, and signs the agent out of every device: their next
+navigation lands on the login form and the old password stops working. Share the new one securely;
+they can change it in Settings, where the current password has to be typed. Resetting again simply
+issues another, so a reset that reports an error is always safe to repeat.
+
+Only agents appear on this list, and only agents can be reset: an admin changes their own password in
+Settings, and no admin can reset another admin's (D51). Nothing is emailed — this deployment has no
+SMTP, which is also why there is no forgot-password link on the login page.
+
+An account created directly in the Supabase dashboard rather than here has an unconfirmed email
+address, which blocks sign-in and makes the dashboard refuse to send its own recovery mail. Reset
+confirms the address as well, so it repairs those accounts; create agents here and the case never
+arises.
 
 ### Disable an agent (they left, or a device was lost)
 

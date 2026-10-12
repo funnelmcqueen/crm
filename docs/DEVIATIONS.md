@@ -88,6 +88,7 @@ worse than no index.
 | [D48](#d48-a-google-calendar-per-agent) | A Google calendar per agent |
 | [D49](#d49-between-calls-lines) | Between-calls lines |
 | [D50](#d50-versioned-march-restaurant-call-playbook) | Versioned March restaurant call playbook |
+| [D51](#d51-admins-reset-an-agents-password-from-the-agents-list) | Admins reset an agent’s password from the Agents list |
 
 ## D1. Tests run against "localbase" instead of `supabase start`
 **Spec:** §13 run against local Supabase (`supabase start`).
@@ -908,3 +909,34 @@ the milestone counter counts calls logged in that browser rather than reading th
 **Built:** every lead workspace now includes a compact, read-only Call Playbook panel with the reviewed March restaurant callback script (v3): a personalized opening, five stages, eight objection responses, booking handoff, no-show recovery, and factual-call guardrails. The content lives in the pure `src/lib/domain/call-playbook.ts` module and the page panel needs no client state, new API, database table, or permission.
 **Why:** agents need the next useful line while a lead is open. A static, versioned source gives every caller the same approved words without introducing an admin configuration surface before the team has tested the flow.
 **Not built:** per-campaign assignment, a playbook editor, automatic calendar invites, automatic messages, and AI-generated call responses. The `CallPlaybook` component consumes a small typed module so a future campaign-backed source can replace it without changing the lead workspace.
+
+## D51. Admins reset an agent's password from the Agents list
+**Spec:** §8 lists the Agents actions as create, disable, reactivate, toggle in-app calling, bulk reassign and
+view activity, and §8 Settings gives each person their own password change. Neither covers an agent who has
+lost the one-time password they were created with.
+**Built:** **Reset password** on each agent row's menu (`resetAgentPassword`), which issues a new 20-character
+one-time password the same way `createAgent` issues the first — generated server-side, shown once in the
+dialog with a Copy button, never stored or logged. Three steps, in order: the password is set through the Auth
+admin API with `email_confirm: true`, every open session of that agent is ended (D31), and only then is the
+password returned, so a half-finished reset is never reported as done. Resetting again issues another and
+repeats the steps, so a retry always heals.
+
+- **Confirming the email is not incidental.** An account created straight in the Supabase dashboard ("Add
+  user", invitation never clicked) has an unconfirmed address, which blocks sign-in while Auth requires
+  confirmation and makes the dashboard refuse to send its own recovery mail — the state this entry was written
+  for. Resetting repairs that account as well as changing its password.
+- **Admin only, and only on an `AGENT`.** Resetting a fellow admin's password is a full account takeover of an
+  equal, which `admin_delete_agent` already refuses for the same reason; an admin's own password goes through
+  Settings, where the current one must be typed. A deleted agent is `not_found`, as everywhere else.
+- **The agent stays active**, unlike a disable, so an access token lifted out of their browser still reads
+  their own rows straight from PostgREST until it expires. What the revoke closes is every route the app
+  itself offers: `getUser()` in `src/proxy.ts` and `src/server/context.ts` stops accepting the old session, so
+  the agent's next navigation lands on the login form.
+
+**Why:** the one-time password is shown once by design, so losing it before first sign-in had no remedy in the
+app. `docs/RUNBOOK.md` pointed at "the Supabase password reset flow", which was never wired up: there is no
+forgot-password link, and `src/app/(auth)/auth/confirm/route.ts` accepts only `email_change` tokens, so a
+recovery link would bounce to `/settings?email_change=invalid`. The alternative on offer was deleting the
+account and making a new one, which `admin_delete_agent` refuses for anyone holding leads or open follow-ups.
+**Not built:** a self-service forgot-password flow (it needs SMTP, which this deployment does not have, and a
+set-new-password page), password expiry, and any record of who reset whom — the Agents list has no audit log.

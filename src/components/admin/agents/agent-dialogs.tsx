@@ -38,10 +38,11 @@ import {
   countReassignableLeadsAction,
   createAgentAction,
   deleteAgentAction,
+  resetAgentPasswordAction,
   setAgentActiveAction,
   updateAgentProfileAction,
 } from "@/server/actions/agents";
-import type { AgentDeleteCheck, CreateAgentResult } from "@/server/services/agents";
+import type { AgentDeleteCheck, CreateAgentResult, ResetAgentPasswordResult } from "@/server/services/agents";
 import { formatCount } from "./format";
 
 const INPUT_CLASS = "h-12 text-base lg:text-sm";
@@ -61,6 +62,36 @@ function parseTarget(value: string): number | null {
   return n <= 1000 ? n : null;
 }
 
+/**
+ * The one-time password panel, shown after creating an agent and after resetting their password. The
+ * value is never stored anywhere: it lives in the calling dialog's state until that dialog closes.
+ */
+function OneTimePassword({ password }: { password: string }) {
+  const t = useTranslations("admin");
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopied(true);
+    } catch {
+      toast.error(t["Copy failed. Select the password and copy it manually."]);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border bg-muted p-2 pl-3">
+      <code aria-label={t["One-time password"]} className="min-w-0 flex-1 font-mono text-base font-bold break-all select-all">
+        {password}
+      </code>
+      <Button type="button" variant="outline" className="h-12 gap-2 px-3" onClick={() => void copy()}>
+        {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+        {copied ? t["Copied"] : t["Copy"]}
+      </Button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------------------------
@@ -78,7 +109,6 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
   const [form, setForm] = useState(blank);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreateAgentResult | null>(null);
-  const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function onOpenChange(next: boolean) {
@@ -88,7 +118,6 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
     }
     // The one-time password only lives in this dialog's state; closing forgets it.
     setCreated(null);
-    setCopied(false);
     setOpen(next);
   }
 
@@ -117,16 +146,6 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
     });
   }
 
-  async function copyPassword() {
-    if (!created) return;
-    try {
-      await navigator.clipboard.writeText(created.password);
-      setCopied(true);
-    } catch {
-      toast.error(t["Copy failed. Select the password and copy it manually."]);
-    }
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -148,18 +167,7 @@ export function CreateAgentDialog({ defaultTarget, defaultTimezone }: CreateAgen
               <DialogTitle>{t["Agent created"]}</DialogTitle>
               <DialogDescription>{t["{name} signs in with {email} and this one-time password."].replace("{name}", created.name).replace("{email}", created.email)}</DialogDescription>
             </DialogHeader>
-            <div className="flex items-center gap-2 rounded-lg border bg-muted p-2 pl-3">
-              <code
-                aria-label={t["One-time password"]}
-                className="min-w-0 flex-1 font-mono text-base font-bold break-all select-all"
-              >
-                {created.password}
-              </code>
-              <Button type="button" variant="outline" className="h-12 gap-2 px-3" onClick={() => void copyPassword()}>
-                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                {copied ? t["Copied"] : t["Copy"]}
-              </Button>
-            </div>
+            <OneTimePassword password={created.password} />
             <p className="text-sm text-muted-foreground">
               {t["Share it securely; the agent can change it in Settings. It is shown only once."]}
             </p>
@@ -438,6 +446,95 @@ export function SetAgentActiveDialog({ agent, onClose }: { agent: ActiveToggleAg
             {pending ? (disabling ? t["Disabling…"] : t["Reactivating…"]) : disabling ? t["Disable agent"] : t["Reactivate"]}
           </AlertDialogAction>
         </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Password reset (docs/DEVIATIONS.md D51)
+// ---------------------------------------------------------------------------------------------
+
+export interface ResettableAgent {
+  userId: string;
+  name: string;
+}
+
+export function ResetAgentPasswordDialog({ agent, onClose }: { agent: ResettableAgent; onClose(): void }) {
+  const t = useTranslations("admin");
+  const { locale } = useLocale();
+  const [reset, setReset] = useState<ResetAgentPasswordResult | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function confirm() {
+    startTransition(async () => {
+      const result = await resetAgentPasswordAction(agent.userId);
+      if (result.ok) {
+        // The new password only lives in this dialog's state; closing it forgets it for good.
+        setReset(result.data);
+        toast.success(t["{name}’s password was reset"].replace("{name}", agent.name));
+      } else {
+        toast.error(getAppErrorMessage(result.error.code, locale, result.error.message));
+        onClose();
+      }
+    });
+  }
+
+  // One dialog, two phases, so nothing unmounts and remounts between the confirm and the password.
+  // Once the password is on screen the dialog stops being dismissible — it is shown exactly once, and
+  // an AlertDialog already ignores outside clicks, so only Done closes it.
+  return (
+    <AlertDialog open onOpenChange={(next) => (next || pending || reset ? undefined : onClose())}>
+      <AlertDialogContent>
+        {reset ? (
+          <>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t["Password reset"]}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t["{name} signs in with {email} and this one-time password."]
+                  .replace("{name}", reset.name)
+                  .replace("{email}", reset.email)}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <OneTimePassword password={reset.password} />
+            <p className="text-sm text-muted-foreground">
+              {t["Share it securely; the agent can change it in Settings. It is shown only once."]}
+            </p>
+            <AlertDialogFooter>
+              <AlertDialogAction className="h-12 font-bold" onClick={onClose}>
+                {t["Done"]}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </>
+        ) : (
+          <>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t["Reset the password for {name}?"].replace("{name}", agent.name)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {
+                  t[
+                    "They get a new one-time password now. Their current one stops working and every device they are signed in on is signed out."
+                  ]
+                }
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="h-12" disabled={pending}>
+                {t["Cancel"]}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="h-12 font-bold"
+                disabled={pending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  confirm();
+                }}
+              >
+                {pending ? t["Resetting…"] : t["Reset password"]}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </>
+        )}
       </AlertDialogContent>
     </AlertDialog>
   );
