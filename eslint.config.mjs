@@ -88,6 +88,11 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "blob-report/**",
     "src/lib/database.types.ts",
+    // Other checkouts of this repo, parked inside it: `git worktree add .worktrees/<branch>` is this
+    // project's own convention, and the agent tooling adds more under .claude/. Linting them makes
+    // `npm run lint` grade another branch's code — and fail on it — instead of the working copy.
+    ".worktrees/**",
+    ".claude/**",
   ]),
 ]);
 

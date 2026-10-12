@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { appPageMetadata } from "@/lib/i18n/metadata";
+import { appPageMetadata } from "@/server/i18n/metadata";
 import { PageHeader } from "@/components/common/page-header";
 import { AgentTargetsList, CompanySettingsForm } from "@/components/settings/admin-settings";
 import { AudioSection } from "@/components/settings/audio-section";

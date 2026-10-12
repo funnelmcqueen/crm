@@ -1,7 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // scripts/e2e-server.ts: in-memory seeded localbase on 54370 + `next dev` on 3170 with DIALER_DRIVER=mock.
-const APP_PORT = 3170;
+// Both ports are overridable, like the script's own E2E_APP_PORT/E2E_LOCALBASE_PORT: `reuseExistingServer`
+// below adopts whatever already listens on the app port, so a dev server left behind by another checkout
+// of this repo would otherwise be tested instead of the working copy, and pass or fail for its own code.
+const APP_PORT = Number.parseInt(process.env.E2E_APP_PORT ?? '3170', 10);
+const LOCALBASE_PORT = Number.parseInt(process.env.E2E_LOCALBASE_PORT ?? '54370', 10);
 const baseURL = `http://localhost:${APP_PORT}`;
 const isCI = Boolean(process.env.CI);
 const desktopViewport = { width: 1280, height: 800 };
@@ -82,6 +86,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npx tsx scripts/e2e-server.ts',
+    env: { E2E_APP_PORT: String(APP_PORT), E2E_LOCALBASE_PORT: String(LOCALBASE_PORT) },
     url: `${baseURL}/login`,
     wait: { stdout: /\[e2e-server\] ready on/ },
     // Locally a running e2e server is reused (its data is no longer a fresh seed); CI always starts clean.

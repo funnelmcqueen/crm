@@ -1,6 +1,6 @@
 import { Phone } from "lucide-react";
 import type { Metadata } from "next";
-import { appPageMetadata } from "@/lib/i18n/metadata";
+import { appPageMetadata } from "@/server/i18n/metadata";
 import { AddNumberDialog } from "@/components/admin/phone-numbers/add-number-dialog";
 import { PhoneNumbersList } from "@/components/admin/phone-numbers/phone-numbers-list";
 import { currentTime } from "@/components/common/datetime";

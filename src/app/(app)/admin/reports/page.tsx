@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { appPageMetadata } from "@/lib/i18n/metadata";
+import { appPageMetadata } from "@/server/i18n/metadata";
 import {
   REPORT_PRESETS,
   formatRangeLabel,
