@@ -229,7 +229,7 @@ describe('profile edits', () => {
 
     await expect(
       updateAgentProfile(adminCtx, agent.id, { name: 'Edited', dailyCallTarget: 80, timezone: 'Europe/London' }),
-    ).resolves.toEqual({ userId: agent.id, name: 'Edited', dailyCallTarget: 80, timezone: 'Europe/London' });
+    ).resolves.toEqual({ userId: agent.id, name: 'Edited', dailyCallTarget: 80, timezone: 'Europe/London', primaryLocale: 'en' });
     expect(await profileRow(agent.id)).toMatchObject({ name: 'Edited', daily_call_target: 80, timezone: 'Europe/London' });
 
     await expect(updateAgentProfile(adminCtx, agent.id, { dailyCallTarget: 0 })).resolves.toMatchObject({ dailyCallTarget: 0 });
