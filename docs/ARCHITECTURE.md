@@ -456,9 +456,12 @@ Stage 10a (`20260915001000_admin_agents.sql`, DEVIATIONS D28):
 | `admin_agent_activity(p_user_id uuid, p_from timestamptz, p_to timestamptz) → jsonb` | admin (else `42501`) | `{profile {user_id, name, email, role, active, timezone, daily_call_target, in_app_calling_enabled, created_at, leads_assigned, clients}, from, to, stats {dials, connected, interested, appointments, talk_seconds, calls_with_duration, inbound_calls, total_calls}, outcomes {OUTCOME: count}, recent_calls [≤50 newest {id, created_at, direction, mode, outcome, call_status, duration_seconds, lead_id, business_name}]}`. Calls by `calls.user_id` in half-open `[p_from, p_to)`, shared stat definitions. Unknown user → `P0002`; null bounds, `p_to <= p_from` or a span over 400 days → `22023`. `clients` is current, not range-bound. |
 
 App side: `src/server/services/agents.ts` (`listAgents`, `createAgent(ctx, input, deps)`, `setAgentActive(ctx, id, active, deps)`,
-`setInAppCalling`, `updateAgentProfile`, `countReassignableLeads`, `bulkReassign`, `reassignSelected`, `getAgentActivity(ctx, id, range)`
+`resetAgentPassword(ctx, id, deps)`, `setInAppCalling`, `updateAgentProfile`, `countReassignableLeads`, `bulkReassign`,
+`reassignSelected`, `getAgentActivity(ctx, id, range)`
 with `range ∈ today | 7d | 30d` in the admin's timezone). `deps.authAdmin` (service role) is used only for `auth.admin.createUser` and
-`auth.admin.updateUserById({ ban_duration })`; every profile/lead read and write uses the admin's session. `src/server/services/settings.ts`
+`auth.admin.updateUserById({ ban_duration })` / `({ password, email_confirm })`; every profile/lead read and write uses the admin's
+session. `resetAgentPassword` issues a fresh one-time password, confirms the email and ends the agent's sessions before returning it,
+refuses a non-`AGENT` and the caller themselves, and is the only password path an admin has over someone else (DEVIATIONS D51). `src/server/services/settings.ts`
 (`getSettingsPageData`, `updateOwnName`, `changePassword`, `requestEmailChange`, `getCompanyDefaults`, `updateCompanySettings`,
 `updateAgentTarget`). Dialer context additions: `deviceReady`, `setInputDevice(id)`, `setOutputDevice(id)`, `testSpeaker()` (each resolves
 false without a loaded driver that supports it); the chosen devices live in localStorage `fmq.audioInput` / `fmq.audioOutput` and are

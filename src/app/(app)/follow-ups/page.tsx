@@ -1,6 +1,6 @@
 import { CalendarCheck, CalendarClock, CircleCheck, History, SearchX, SkipForward, Voicemail } from "lucide-react";
 import type { Metadata } from "next";
-import { appPageMetadata } from "@/lib/i18n/metadata";
+import { appPageMetadata } from "@/server/i18n/metadata";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { currentTime } from "@/components/common/datetime";

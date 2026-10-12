@@ -1,7 +1,9 @@
+// Server-only: it reads the request cookies and the caller's profile, so it cannot live under
+// src/lib/** — that tree may be bundled for the browser (ARCHITECTURE golden rule 7).
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { requireUserPage } from "@/server/context";
-import { resolveLocale } from "./locales";
+import { resolveLocale } from "@/lib/i18n/locales";
 
 /** Match the app shell's cookie/profile precedence for browser tab titles. */
 export async function appPageMetadata(english: string, german: string): Promise<Metadata> {

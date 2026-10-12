@@ -11,6 +11,7 @@ import {
   getAgentActivity,
   listAgents,
   reassignSelected,
+  resetAgentPassword,
   revokeAuthSessionsWith,
   setAgentActive,
   setInAppCalling,
@@ -19,6 +20,7 @@ import {
 } from '@/server/services/agents';
 import { clientWithAccessToken, serviceClient, signInAs, trySignIn } from '../../helpers/clients';
 import { contextForUser } from '../../helpers/context';
+import { testStack } from '../../helpers/env';
 import {
   createCall,
   createFollowUp,
@@ -43,6 +45,15 @@ async function expectAppError(promise: Promise<unknown>, code: AppError['code'])
   expect(error, `expected AppError(${code})`).toBeInstanceOf(AppError);
   expect((error as AppError).code).toBe(code);
   return error as AppError;
+}
+
+/** What getUser() in src/proxy.ts and src/server/context.ts ask Auth on every request. */
+async function getUserStatus(accessToken: string): Promise<number> {
+  const stack = testStack();
+  const response = await fetch(`${stack.url}/auth/v1/user`, {
+    headers: { apikey: stack.anonKey, Authorization: `Bearer ${accessToken}` },
+  });
+  return response.status;
 }
 
 async function profileRow(id: string) {
@@ -221,6 +232,87 @@ describe('setAgentActive', () => {
   });
 });
 
+describe('resetAgentPassword', () => {
+  it('issues a new one-time password, refuses the old one, and ends every open session', async () => {
+    const agent = await createUser({ name: 'Lost My Password' });
+    const lead = await createLead({ assigned_to: agent.id });
+    const before = await signInAs(agent.email, agent.password);
+    expect((await before.client.from('leads').select('id').eq('id', lead.id)).data).toHaveLength(1);
+
+    const result = await resetAgentPassword(adminCtx, agent.id, deps);
+    expect(result).toMatchObject({ userId: agent.id, name: 'Lost My Password', email: agent.email });
+    expect(result.password.length).toBeGreaterThanOrEqual(20);
+    expect(result.password).not.toBe(agent.password);
+
+    // The old password no longer signs in, and the session it opened is gone: /auth/v1/user is what
+    // getUser() in src/proxy.ts and src/server/context.ts ask on every request, so that browser is out.
+    expect((await trySignIn(agent.email, agent.password)).user).toBeNull();
+    expect(await getUserStatus(before.accessToken)).not.toBe(200);
+
+    // Nothing else about the account changed: the new password signs in and the leads are still theirs.
+    const after = await signInAs(agent.email, result.password);
+    expect(after.userId).toBe(agent.id);
+    expect((await after.client.from('leads').select('id').eq('id', lead.id)).data).toHaveLength(1);
+    expect(await profileRow(agent.id)).toMatchObject({ name: 'Lost My Password', role: 'AGENT', active: true });
+    expect(await leadOwner(lead.id)).toBe(agent.id);
+
+    // Resetting again issues a different password and retires the one just used.
+    const second = await resetAgentPassword(adminCtx, agent.id, deps);
+    expect(second.password).not.toBe(result.password);
+    expect((await trySignIn(agent.email, result.password)).user).toBeNull();
+    await expect(signInAs(agent.email, second.password)).resolves.toBeTruthy();
+  });
+
+  it('confirms the email, which is what blocks sign-in on an account created outside the CRM', async () => {
+    // What "Add user" in the Supabase dashboard leaves behind when the invitation is never clicked.
+    const email = uniqueEmail('unconfirmed');
+    const password = 'dashboard-made-this-1234';
+    const created = await serviceClient().auth.admin.createUser({ email, password, email_confirm: false });
+    const userId = created.data.user?.id;
+    if (!userId) throw new Error(`createUser: ${created.error?.message ?? 'no user returned'}`);
+    expect(await profileRow(userId)).toMatchObject({ role: 'AGENT', active: true });
+    expect((await trySignIn(email, password)).user).toBeNull();
+
+    const result = await resetAgentPassword(adminCtx, userId, deps);
+    expect((await signInAs(email, result.password)).userId).toBe(userId);
+  });
+
+  it('refuses the admin themselves and another admin, and reports unknown ids as not_found', async () => {
+    const self = await createUser({ role: 'ADMIN' });
+    const ctx = await contextForUser(self);
+    const own = await expectAppError(resetAgentPassword(ctx, self.id, deps), 'forbidden');
+    expect(own.message).toBe('Change your own password in Settings.');
+    await expect(signInAs(self.email, self.password)).resolves.toBeTruthy();
+
+    // An admin resetting an equal's password would be a full account takeover.
+    const peer = await createUser({ role: 'ADMIN', name: 'Equal Admin' });
+    const other = await expectAppError(resetAgentPassword(adminCtx, peer.id, deps), 'forbidden');
+    expect(other.message).toBe("Only an agent's password can be reset here.");
+    await expect(signInAs(peer.email, peer.password)).resolves.toBeTruthy();
+
+    let authCalls = 0;
+    const counting = () => {
+      authCalls += 1;
+      return serviceClient();
+    };
+    const missing = { ...deps, authAdmin: counting };
+    await expectAppError(resetAgentPassword(adminCtx, '00000000-0000-4000-8000-000000000000', missing), 'not_found');
+    await expectAppError(resetAgentPassword(adminCtx, 'nope', missing), 'not_found');
+    expect(authCalls).toBe(0);
+  });
+
+  it('reports a failed session revoke instead of handing over a password that leaves a session open', async () => {
+    const agent = await createUser({ name: 'Revoke Fails' });
+    const error = await expectAppError(
+      resetAgentPassword(adminCtx, agent.id, { ...deps, revokeSessions: () => Promise.reject(new Error('rpc down')) }),
+      'unavailable',
+    );
+    expect(error.message).toContain('Reset it again to finish');
+    // The password did change, so the old one is gone too: the admin has to reset again, which is safe.
+    expect((await trySignIn(agent.email, agent.password)).user).toBeNull();
+  });
+});
+
 describe('profile edits', () => {
   it('toggles in-app calling and edits name, target and timezone', async () => {
     const agent = await createUser({ name: 'Edit Me' });
@@ -229,7 +321,7 @@ describe('profile edits', () => {
 
     await expect(
       updateAgentProfile(adminCtx, agent.id, { name: 'Edited', dailyCallTarget: 80, timezone: 'Europe/London' }),
-    ).resolves.toEqual({ userId: agent.id, name: 'Edited', dailyCallTarget: 80, timezone: 'Europe/London' });
+    ).resolves.toEqual({ userId: agent.id, name: 'Edited', dailyCallTarget: 80, timezone: 'Europe/London', primaryLocale: 'en' });
     expect(await profileRow(agent.id)).toMatchObject({ name: 'Edited', daily_call_target: 80, timezone: 'Europe/London' });
 
     await expect(updateAgentProfile(adminCtx, agent.id, { dailyCallTarget: 0 })).resolves.toMatchObject({ dailyCallTarget: 0 });

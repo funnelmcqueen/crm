@@ -366,6 +366,12 @@ const de: { [K in keyof typeof en]: string } = {
   "{row}: skip or import": "{row}: überspringen oder importieren",
   "Invalid row; check its values.": "Ungültige Zeile; prüfe die Werte.",
   "{name} signs in with {email} and this one-time password.": "{name} meldet sich mit {email} und diesem Einmalpasswort an.",
+  "Reset password": "Passwort zurücksetzen",
+  "Reset the password for {name}?": "Passwort für {name} zurücksetzen?",
+  "They get a new one-time password now. Their current one stops working and every device they are signed in on is signed out.": "Sie erhalten jetzt ein neues Einmalpasswort. Das bisherige gilt nicht mehr, und alle Geräte, auf denen sie angemeldet sind, werden abgemeldet.",
+  "Resetting…": "Wird zurückgesetzt…",
+  "Password reset": "Passwort zurückgesetzt",
+  "{name}’s password was reset": "Passwort von {name} wurde zurückgesetzt",
 };
 
 export default de;

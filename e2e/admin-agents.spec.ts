@@ -105,6 +105,70 @@ test('admin creates an agent, the agent signs in, is disabled, and is reactivate
   }
 });
 
+/**
+ * Resetting an agent's password (docs/DEVIATIONS.md D51): the new password works, the old one does
+ * not, and the session the agent already held is gone. Its own agent, named "Zz…" for the same
+ * ordering reason as the test above, so neither test can disturb the other.
+ */
+test("admin resets an agent's password, retiring the old one and the agent's open session", async ({ page, browser }) => {
+  const email = uniqueEmail('zz-e2e-reset');
+  const name = `Zz E2E Reset ${email.split('@')[0].slice(-6)}`;
+
+  await signIn(page, 'admin');
+  await page.goto('/admin/agents');
+
+  await page.getByRole('button', { name: 'Create agent' }).click();
+  const createDialog = page.getByRole('dialog');
+  await createDialog.getByLabel('Name').fill(name);
+  await createDialog.getByLabel('Email').fill(email);
+  await createDialog.getByRole('button', { name: 'Create agent' }).click();
+  await expect(createDialog.getByText('Agent created')).toBeVisible();
+  const firstPassword = (await createDialog.getByLabel('One-time password').innerText()).trim();
+  await createDialog.getByRole('button', { name: 'Done' }).click();
+
+  const agentContext = await browser.newContext();
+  try {
+    const agentPage = await agentContext.newPage();
+    await signInWith(agentPage, email, firstPassword);
+    await agentPage.goto('/leads');
+    await expect(agentPage.getByRole('heading', { level: 1, name: 'My Leads' })).toBeVisible();
+
+    // --- the admin resets their password ----------------------------------------------------
+    await rowActions(page, name).click();
+    await page.getByRole('menuitem', { name: 'Reset password' }).click();
+    const resetDialog = page.getByRole('alertdialog');
+    await expect(resetDialog).toContainText(`Reset the password for ${name}?`);
+    await resetDialog.getByRole('button', { name: 'Reset password' }).click();
+
+    // The same dialog swaps its contents to the new password rather than opening a second one.
+    await expect(resetDialog).toContainText('Password reset');
+    await expect(resetDialog).toContainText(email);
+    const newPassword = (await resetDialog.getByLabel('One-time password').innerText()).trim();
+    expect(newPassword.length).toBeGreaterThanOrEqual(12);
+    expect(newPassword).not.toBe(firstPassword);
+    await resetDialog.getByRole('button', { name: 'Done' }).click();
+    await expect(resetDialog).toBeHidden();
+
+    // --- the agent's open session is gone, and so is the old password ------------------------
+    await agentPage.goto('/follow-ups');
+    await expect(agentPage).toHaveURL(/\/login(\?|$)/);
+    await expect(agentPage.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await expect(agentPage.getByRole('heading', { level: 1, name: 'Follow-ups' })).toHaveCount(0);
+
+    await agentContext.clearCookies();
+    await submitLogin(agentPage, email, firstPassword);
+    await expect(agentPage.getByText('Invalid email or password')).toBeVisible();
+
+    // --- the new password works and the account is otherwise untouched ----------------------
+    await agentContext.clearCookies();
+    await signInWith(agentPage, email, newPassword);
+    await agentPage.goto('/leads');
+    await expect(agentPage.getByRole('heading', { level: 1, name: 'My Leads' })).toBeVisible();
+  } finally {
+    await agentContext.close();
+  }
+});
+
 /** The row's "…" menu button. The agent list renders a table and cards; only one of them is visible. */
 function rowActions(page: Page, agentName: string) {
   return page.getByRole('button', { name: `Actions for ${agentName}` }).filter({ visible: true });

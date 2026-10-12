@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { publicPageMetadata } from "@/lib/i18n/metadata";
+import { publicPageMetadata } from "@/server/i18n/metadata";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { safeNextPath } from "@/lib/supabase/auth-redirect";

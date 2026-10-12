@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from "@/components/i18n/locale-provider";
 import { getAppErrorMessage } from "@/lib/i18n/app-error-message";
-import { Activity, ArrowRightLeft, MoreHorizontal, Pencil, PhoneOff, PhoneCall, Trash2, UserCheck, UserX } from "lucide-react";
+import { Activity, ArrowRightLeft, KeyRound, MoreHorizontal, Pencil, PhoneOff, PhoneCall, Trash2, UserCheck, UserX } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   DeleteAgentDialog,
   EditAgentDialog,
   ReassignLeadsDialog,
+  ResetAgentPasswordDialog,
   SetAgentActiveDialog,
   type ReassignTarget,
 } from "./agent-dialogs";
@@ -30,7 +31,7 @@ export interface AgentRowActionsProps {
   reassignTargets: ReassignTarget[];
 }
 
-type OpenDialog = "edit" | "active" | "reassign" | "delete" | null;
+type OpenDialog = "edit" | "password" | "active" | "reassign" | "delete" | null;
 
 const ITEM = "min-h-12 gap-2";
 const DESTRUCTIVE_ITEM = `${ITEM} text-destructive focus:text-destructive`;
@@ -92,6 +93,10 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
                 <ArrowRightLeft aria-hidden />
                 {t["Reassign leads"]}
               </DropdownMenuItem>
+              <DropdownMenuItem className={ITEM} onSelect={() => setDialog("password")}>
+                <KeyRound aria-hidden />
+                {t["Reset password"]}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className={agent.active ? DESTRUCTIVE_ITEM : ITEM} onSelect={() => setDialog("active")}>
                 {agent.active ? <UserX aria-hidden /> : <UserCheck aria-hidden />}
@@ -107,6 +112,7 @@ export function AgentRowActions({ agent, reassignTargets }: AgentRowActionsProps
       </DropdownMenu>
 
       {dialog === "edit" ? <EditAgentDialog agent={agent} onClose={close} /> : null}
+      {dialog === "password" ? <ResetAgentPasswordDialog agent={agent} onClose={close} /> : null}
       {dialog === "active" ? <SetAgentActiveDialog agent={agent} onClose={close} /> : null}
       {dialog === "reassign" ? (
         <ReassignLeadsDialog from={{ userId: agent.userId, name: agent.name }} targets={reassignTargets} onClose={close} />

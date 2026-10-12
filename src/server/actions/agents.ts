@@ -10,6 +10,7 @@ import {
   deleteAgent,
   getAgentDeleteCheck,
   reassignSelected,
+  resetAgentPassword,
   setAgentActive,
   setInAppCalling,
   updateAgentProfile,
@@ -19,6 +20,7 @@ import {
   type CreateAgentInput,
   type CreateAgentResult,
   type DeleteAgentResult,
+  type ResetAgentPasswordResult,
   type SetAgentActiveResult,
   type UpdateAgentProfileInput,
 } from "@/server/services/agents";
@@ -33,6 +35,14 @@ export async function createAgentAction(input: CreateAgentInput): Promise<Action
 
 export async function setAgentActiveAction(userId: string, active: boolean): Promise<ActionResult<SetAgentActiveResult>> {
   const result = await runAction(async () => setAgentActive(await getActionContext(), userId, active));
+  if (result.ok) refresh();
+  return result;
+}
+
+export async function resetAgentPasswordAction(userId: string): Promise<ActionResult<ResetAgentPasswordResult>> {
+  // Nothing on the Agents list changes, but the agent is signed out everywhere, so refresh anyway: a
+  // stale row would keep showing their activity as if the session were still live.
+  const result = await runAction(async () => resetAgentPassword(await getActionContext(), userId));
   if (result.ok) refresh();
   return result;
 }

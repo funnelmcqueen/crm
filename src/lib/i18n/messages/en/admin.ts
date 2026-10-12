@@ -364,6 +364,12 @@ const en = {
   "{row}: skip or import": "{row}: skip or import",
   "Invalid row; check its values.": "Invalid row; check its values.",
   "{name} signs in with {email} and this one-time password.": "{name} signs in with {email} and this one-time password.",
+  "Reset password": "Reset password",
+  "Reset the password for {name}?": "Reset the password for {name}?",
+  "They get a new one-time password now. Their current one stops working and every device they are signed in on is signed out.": "They get a new one-time password now. Their current one stops working and every device they are signed in on is signed out.",
+  "Resetting…": "Resetting…",
+  "Password reset": "Password reset",
+  "{name}’s password was reset": "{name}’s password was reset",
 };
 
 export default en;
