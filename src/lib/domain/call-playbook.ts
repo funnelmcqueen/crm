@@ -36,97 +36,98 @@ export function playbookGreeting(contactName: string | null, agentName: string |
   const name = firstName(contactName) ?? "there";
   const agent = firstName(agentName);
   return agent
-    ? `Hey ${name} — ${agent}. We spoke in March and you asked me to call you back around now. Is now still a good time?`
-    : `Hey ${name}. We spoke in March and you asked me to call you back around now. Is now still a good time?`;
+    ? `Hi ${name}, it’s ${agent} from FunnelMcQueen. We spoke a few months ago about helping you bring in more customers, but the timing wasn’t right. How have things been?`
+    : `Hi ${name}, I’m calling from FunnelMcQueen. We spoke a few months ago about helping you bring in more customers, but the timing wasn’t right. How have things been?`;
 }
 
+// Keep the exported name and ID stable for existing consumers.
 export const MARCH_RESTAURANT_PLAYBOOK: CallPlaybook = {
   id: "march-restaurants-paid",
-  version: "v3",
-  title: "March restaurant callback",
-  audience: "Independent local restaurants who asked for a callback in March.",
-  goal: "Book a 15-minute fit call. Nothing else.",
+  version: "v4",
+  title: "Restaurant reconnecting call",
+  audience: "Restaurant owners who previously said the timing was not right.",
+  goal: "Book a 20-minute video meeting to explore opportunities for more customers.",
   stages: [
     {
       id: "open",
-      title: "Open",
-      line: "We spoke in March and you asked me to call you back around now. Is now still a good time?",
-      coaching: "Pause. If they do not remember, say you spoke about their website and ask whether timing is any better. Do not recap the old call.",
+      title: "Reconnect",
+      line: "We spoke a few months ago about helping you bring in more customers, but the timing wasn’t right. How have things been?",
+      coaching: "Pause and listen. Refer to the earlier conversation only when the lead history supports it. Keep the call to 2-4 minutes; save discovery for the meeting."
     },
     {
       id: "hook",
-      title: "Hook",
-      line: "Are you using DoorDash or another ordering platform today? Roughly what do they keep from an order once fees and promotions are included?",
-      coaching: "Let them answer. The point is to see whether repeat customers should have a direct way to order.",
+      title: "Check timing",
+      line: "Has anything changed since we last spoke? Is bringing in more customers something you’re looking at right now?",
+      coaching: "Listen for changed priorities. If it is still not the right time, ask what would need to change and agree on a callback date if they want one."
     },
     {
       id: "offer",
-      title: "Offer",
-      line: "I build custom restaurant sites with direct online ordering, plus catering or reservation pages when they make sense. It is a paid build, but the goal is to give regulars a direct route back to you.",
-      coaching: "Say “paid build” early. Do not promise a timeline or outcome before the scope is confirmed.",
+      title: "Meeting purpose",
+      line: "I’d like to learn more about the restaurant and share a couple of ideas that could help bring in more customers.",
+      coaching: "Keep the benefit simple: more customers or more bookings. Save website, ads, SEO, your business story and detailed questions for the meeting. Do not guarantee results."
     },
     {
       id: "ask",
-      title: "Ask",
-      line: "Worth 15 minutes to see whether that would make sense for your restaurant? Is Tuesday at 10 better, or Wednesday at 2?",
-      coaching: "Pause for two seconds. If they hesitate, offer the two times once more, then stop.",
+      title: "Book the meeting",
+      line: "Would you be open to a quick 20-minute Zoom or Google Meet call? Would [day/time A] or [day/time B] work better? No need to have your camera on.",
+      coaching: "Offer two real available times outside service hours and confirm the client’s timezone. Prefer video for screen sharing; accept a phone meeting if they prefer."
     },
     {
       id: "booked",
-      title: "After booking",
-      line: "Are you on any other delivery apps too? Will anyone else be involved in deciding on this?",
-      coaching: "Ask only these two questions after a time is agreed. Everything else belongs in the 15-minute fit call.",
-    },
+      title: "Confirm email and time",
+      line: "What’s the best email to send you the calendar invite? Just to confirm, that’s [day] at [time] your time, [timezone] - correct?",
+      coaching: "Send the invite while still on the call if possible, then say: “I’ve just sent it over - could you check that it came through?” Check whether anyone else should join. Do not say it was sent until it actually was."
+    }
   ],
   objections: [
     {
       id: "price",
       prompt: "How much is it?",
-      response: "Most builds are $2,000. The 15 minutes tells us whether direct ordering or a catering page is the better fit and what the scope would be. Tuesday at 10 or Wednesday at 2?",
+      response: "It depends on what you need. The meeting helps us understand that so I can give you a clear scope and price. If you need a number before meeting, I can share our current pricing once we know the scope."
     },
     {
       id: "low-delivery",
       prompt: "I do not do much delivery.",
-      response: "Fair. Then I would look at reservations, private events, and catering. Do you have a page built for that today? Worth 15 minutes to take a look?",
+      response: "That’s fine. The opportunity might be dine-in guests, reservations, or private events. We can use the meeting to see what matters most to your restaurant."
     },
     {
       id: "discovery",
       prompt: "DoorDash brings me new customers.",
-      response: "It can. Keep it for discovery. I am talking about repeat customers who already know you—giving them a direct route so every repeat order is not charged a platform fee.",
+      response: "Good to hear. I’d like to understand what is already working and whether there are other opportunities to bring in more customers."
     },
     {
       id: "website",
       prompt: "I already have a website.",
-      response: "Good. We can compare it with what direct ordering and a proper catering page could add. If your current site already does that well, I will tell you.",
+      response: "That’s helpful. We can look at how your current online presence supports your goals and whether anything could work better. We don’t need to assume you need a new website."
     },
     {
       id: "busy",
       prompt: "I am slammed.",
-      response: "I know. That is why I am asking for 15 minutes, not an hour. Is Tuesday at 10, before service, better—or Wednesday at 2?",
+      response: "Of course. When would be a quieter time to reconnect? We can arrange the meeting outside service hours."
     },
     {
       id: "location",
       prompt: "You are in Albania.",
-      response: "I am. The company is registered in the US. You get a written scope and invoice; it is half to start and the balance only when the site is live.",
+      response: "Yes, I’m based in Albania. We can meet online, and any proposal will clearly set out the scope, timing and payment terms."
     },
     {
       id: "email",
       prompt: "Just email me.",
-      response: "I can send a short summary. The useful part is seeing whether delivery, catering, or reservations is the bigger opportunity for you. Can we reserve 15 minutes first—Tuesday at 10 or Wednesday at 2?",
+      response: "Of course. What’s the best email address? I’ll send a brief summary, and you can let me know if a conversation would be useful."
     },
     {
       id: "decline",
-      prompt: "Not interested.",
-      response: "Understood. Is that mainly timing, or is this simply not a priority for the restaurant? If it is not a priority, thank them and close the call.",
-    },
+      prompt: "Not now / not interested.",
+      response: "If timing is the issue: “What would need to change for this to become a priority?” If they clearly decline, thank them and end the call. Do not keep pushing for a meeting."
+    }
   ],
-  bookingHandoff: "Send a calendar invite immediately with their local time, meeting link or phone number, and a one-line agenda. Two hours before the call, send: “We are set for 10:00 AM today for 15 minutes. Still good? Reply YES and I will call you then.”",
-  noShowRecovery: "Call three minutes after the scheduled start. Ten minutes later, offer two new times by text. Try once more on the next business day, then return the lead to the callback queue with a dated note.",
+  bookingHandoff: "Manually send a calendar invite by email using Google Calendar or Outlook with a Meet/Zoom link, agreed time and timezone, and 20-minute duration. Title: FunnelMcQueen × [Restaurant Name]. Agenda: Discuss your restaurant’s goals and opportunities to bring in more customers. Confirm receipt; email a short reminder before the meeting.",
+  noShowRecovery: "Call once shortly after the scheduled start. If they do not answer, email a brief rescheduling message with two available times. Record the outcome and a dated next step in the CRM.",
   guardrails: [
-    "The only job on this call is booking the 15 minutes.",
-    "Answer the price question directly; do not dodge it twice.",
-    "Make only claims that are accurate for the business.",
+    "This call is for reconnecting and booking the meeting; detailed discovery belongs in the second meeting.",
+    "Use real availability and confirm the client’s local date, time and timezone.",
+    "Make only verified claims. Do not invent prior conversations, prices, results, registration details or payment terms.",
     "Stop after a clear decline or a request not to be contacted.",
-    "Call restaurants in their local quiet window, never during lunch or dinner service.",
-  ],
+    "Call outside lunch and dinner service. Log the outcome and the next step with a date."
+  ]
 };

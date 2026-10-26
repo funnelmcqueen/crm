@@ -940,3 +940,8 @@ recovery link would bounce to `/settings?email_change=invalid`. The alternative 
 account and making a new one, which `admin_delete_agent` refuses for anyone holding leads or open follow-ups.
 **Not built:** a self-service forgot-password flow (it needs SMTP, which this deployment does not have, and a
 set-new-password page), password expiry, and any record of who reset whom — the Agents list has no audit log.
+
+
+## 2026-10-26: Restaurant reconnecting script v4
+
+Replaces the March/direct-ordering pitch with the approved benefit-led reconnecting workflow: a short callback, 20-minute video meeting, optional client camera, and manual email/calendar confirmation. Updates both English and German playbooks. Removes fixed commercial claims and SMS-only follow-up instructions. No schema, telephony, calendar automation, or second-meeting changes.

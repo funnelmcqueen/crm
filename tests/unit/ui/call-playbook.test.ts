@@ -17,7 +17,7 @@ describe("lead workspace call playbook", () => {
   it("renders every stage and objection from the approved playbook beside the lead context", () => {
     const html = renderToStaticMarkup(createElement(CallPlaybook, { contactName: "Ava Smith", agentName: "Maya Lee" }));
     expect(html).toContain('aria-label="Call playbook"');
-    for (const label of ["Open", "Hook", "Offer", "Ask", "After booking", "How much is it?", "Just email me."]) {
+    for (const label of ["Reconnect", "Check timing", "Meeting purpose", "Book the meeting", "Confirm email and time", "How much is it?", "Just email me."]) {
       expect(html, `missing ${label}`).toContain(label);
     }
     for (const label of ["Objections", "Booking handoff", "No-show recovery", "Call rules and guardrails"]) {
