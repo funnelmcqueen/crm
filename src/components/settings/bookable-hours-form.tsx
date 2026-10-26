@@ -70,8 +70,8 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
     setDrafts((prev) => prev.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)));
   }
 
-  function submit() {
-    const ranges: BookableRange[] = drafts
+  function submit(preset?: BookableRange[]) {
+    const ranges: BookableRange[] = preset ?? drafts
       .map(({ weekday, startsMinute, endsMinute }) => ({ weekday, startsMinute, endsMinute }))
       .sort((a, b) => a.weekday - b.weekday || a.startsMinute - b.startsMinute);
     const message = validateBookableRanges(ranges);
@@ -93,6 +93,20 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-12 font-bold"
+          disabled={pending}
+          onClick={() => submit(Array.from({ length: 7 }, (_, weekday) => ({ weekday, startsMinute: 0, endsMinute: MINUTES_PER_DAY })))}
+        >
+          {pending ? t.saving : locale === "de" ? "24/7 aktivieren" : "Activate 24/7"}
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          {locale === "de" ? "Speichert 00:00-24:00 für jeden Tag." : "Saves 00:00-24:00 for every day."}
+        </p>
+      </div>
       {WEEKDAY_NAMES.map((englishName, weekday) => {
         const name = locale === "de" ? formatDate(new Date(Date.UTC(2024, 0, 7 + weekday)), locale, { weekday: "long", timeZone: "UTC" }) : englishName;
         const dayRanges = drafts.filter((draft) => draft.weekday === weekday).sort((a, b) => a.startsMinute - b.startsMinute);
@@ -143,7 +157,7 @@ export function BookableHoursForm({ hours }: { hours: BookableRange[] }) {
         {error ?? ""}
       </p>
       <div>
-        <Button type="button" className="min-h-12 font-bold" disabled={pending} onClick={submit}>
+        <Button type="button" className="min-h-12 font-bold" disabled={pending} onClick={() => submit()}>
           {pending ? t.saving : t.saveHours}
         </Button>
       </div>

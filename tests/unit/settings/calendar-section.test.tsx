@@ -30,6 +30,12 @@ function render(status: CalendarConnectionStatus, hours: BookableRange[] = NO_HO
 }
 
 describe("CalendarSection", () => {
+  it("offers a one-click 24/7 preset that saves all seven days", () => {
+    const html = render(CONNECTED);
+    expect(html).toContain("Activate 24/7");
+    expect(html).toContain("Saves 00:00-24:00 for every day.");
+  });
+
   it("shows Not connected with a Connect link to /api/google/start when there is no connection", () => {
     const html = render(NOT_CONNECTED);
     expect(html).toContain("Not connected");

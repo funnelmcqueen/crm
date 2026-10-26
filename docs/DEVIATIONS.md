@@ -945,3 +945,8 @@ set-new-password page), password expiry, and any record of who reset whom — th
 ## 2026-10-26: Restaurant reconnecting script v4
 
 Replaces the March/direct-ordering pitch with the approved benefit-led reconnecting workflow: a short callback, 20-minute video meeting, optional client camera, and manual email/calendar confirmation. Updates both English and German playbooks. Removes fixed commercial claims and SMS-only follow-up instructions. No schema, telephony, calendar automation, or second-meeting changes.
+
+
+## 2026-10-26: One-click 24/7 bookable hours
+
+Admin Settings includes Activate 24/7, which saves seven 00:00-24:00 ranges through the existing validated admin action. The editor updates only on successful save; failures retain current hours and show the existing error. Existing calendar busy-time checks and connection requirements still apply.
