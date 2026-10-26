@@ -950,3 +950,8 @@ Replaces the March/direct-ordering pitch with the approved benefit-led reconnect
 ## 2026-10-26: One-click 24/7 bookable hours
 
 Admin Settings includes Activate 24/7, which saves seven 00:00-24:00 ranges through the existing validated admin action. The editor updates only on successful save; failures retain current hours and show the existing error. Existing calendar busy-time checks and connection requirements still apply.
+
+
+## 2026-10-26: Production-safe bookable hours replacement
+
+Runtime logs confirmed SQLSTATE 21000: DELETE requires a WHERE clause. A forward migration replaces the existing admin-only set_bookable_hours function with the same validation and transaction, adding an explicit weekday 0-6 filter to its delete. Does not disable database safety settings or widen permissions. Adds coverage for all seven full-day ranges. Apply the migration to the production database; an app deployment alone does not apply SQL migrations.

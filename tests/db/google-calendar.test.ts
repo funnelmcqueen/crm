@@ -80,6 +80,12 @@ describe('bookable_hours seed', () => {
 });
 
 describe('set_bookable_hours', () => {
+  it('saves 24/7 availability for all seven days', async () => {
+    const rows = Array.from({ length: 7 }, (_, weekday) => ({ weekday, starts_minute: 0, ends_minute: 1440 }));
+    await setHours(admin, rows);
+    expect(await adminSqlRows<BookableHourRow>(db, 'select weekday, starts_minute, ends_minute from public.bookable_hours order by weekday')).toEqual(rows);
+  });
+
   it('is admin only: an agent and anon both raise 42501', async () => {
     const agent = await createAuthUser(db, { name: 'Hours Agent' });
     const payload = [{ weekday: 1, starts_minute: 540, ends_minute: 660 }];
